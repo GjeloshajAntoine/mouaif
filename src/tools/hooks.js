@@ -18,7 +18,8 @@ const chatHooks = require('../chatHooks.js');
 const { err } = require('../util.js');
 
 const NAMES = Object.freeze(hooks.HOOK_TOOLS);
-const SCOPES = Object.freeze(['chat', 'app']);
+// Narrowest first: the card can only move a request down this list.
+const SCOPES = Object.freeze(['chat', 'project', 'app']);
 // A script the model writes is shown in full on the approval card, which
 // caps a value at 12000 characters; stay well under it.
 const MAX_MODEL_SCRIPT = 8 * 1024;
@@ -55,14 +56,14 @@ const SPECS = Object.freeze({
       timeoutMs: { type: 'number', description: 'Timeout, 500–60000 ms (default 5000). Use more for a hook that runs tests.' },
       failClosed: { type: 'boolean', description: 'prompt.submit / tool.before only: block when the hook fails or times out.' },
       subagents: { type: 'boolean', description: 'Tool events only: also run for subagents\' tool calls.' },
-      scope: { type: 'string', enum: SCOPES.slice(), description: 'chat (default): only this chat. app: every chat in every project; the user can lower it to chat on the card.' },
+      scope: { type: 'string', enum: SCOPES.slice(), description: 'chat (default): only this chat. project: every chat of this project (saved in its settings). app: every chat in every project. The user can narrow it on the card.' },
       note: { type: 'string', description: 'Why this hook exists, in one sentence; shown with the hook.' }
     }, required: ['event'], additionalProperties: false } } },
   hook_list: { type: 'function', function: {
     name: 'hook_list',
     description: 'List the hooks that apply to this chat: the app\'s hooks (every chat) and this chat\'s own, with their event, match, command, status, who added them and their last decision.',
     parameters: { type: 'object', properties: {
-      scope: { type: 'string', enum: ['all', 'chat', 'app'], description: 'Which hooks (default all).' }
+      scope: { type: 'string', enum: ['all', 'chat', 'project', 'app'], description: 'Which hooks (default all).' }
     }, required: [], additionalProperties: false } } },
   hook_delete: { type: 'function', function: {
     name: 'hook_delete',
@@ -89,7 +90,7 @@ function draft(args) {
   if (hasCommand && hasScript) throw err('EBADINPUT', 'give command or script, not both');
   if (hasScript && Buffer.byteLength(args.script) > MAX_MODEL_SCRIPT) throw err('EBADINPUT', 'script is longer than ' + MAX_MODEL_SCRIPT + ' bytes');
   const scope = args.scope === undefined ? 'chat' : args.scope;
-  if (!SCOPES.includes(scope)) throw err('EBADINPUT', 'scope must be chat or app');
+  if (!SCOPES.includes(scope)) throw err('EBADINPUT', 'scope must be chat, project or app');
   const raw = {
     id: slug(args.name) || hooks.newId(),
     event: args.event,
@@ -123,7 +124,7 @@ function matchText(hook) {
 // says the hook persists; the text shows the command or script verbatim.
 function describe(args) {
   const { hook, scope } = draft(args);
-  const where = scope === 'app' ? 'in every chat' : 'in this chat';
+  const where = scope === 'app' ? 'in every chat' : scope === 'project' ? 'in every chat of this project' : 'in this chat';
   const tool = hook.event === 'tool.before' || hook.event === 'tool.after';
   const what = tool
     ? EVENT_TEXT[hook.event] + ' ' + ((hook.match && (hook.match.tool || hook.match.family)) ? 'matching tool calls' : 'every tool call')
@@ -145,7 +146,10 @@ function summarize(hook, extra = {}) {
   const out = { id: hook.id, event: hook.event, enabled: hook.enabled !== false };
   if (hook.name) out.name = hook.name;
   if (hook.match) out.match = hook.match;
-  out.handler = hook.handler.command ? { command: hook.handler.command } : { shell: hook.handler.shell, script: hook.handler.script };
+  const h = hook.handler;
+  // An http hook's secret never reaches the model.
+  out.handler = h.kind === 'http' ? { http: h.url } : h.kind === 'module' ? { module: true }
+    : h.command ? { command: h.command } : { shell: h.shell, script: h.script };
   if (hook.createdBy) out.createdBy = hook.createdBy;
   if (hook.note) out.note = hook.note;
   return Object.assign(out, extra);
@@ -161,10 +165,16 @@ const runners = {
   hook_create(args, opts) {
     const { projectDir, chatId } = target(opts);
     const { hook, scope: requested } = draft(args);
-    // The approval card sends the scope the user picked; it can only lower
+    // The approval card sends the scope the user picked; it can only narrow
     // the request. No pick (a decision without the card's payload) = chat.
-    const picked = opts.hookScope === 'app' || opts.hookScope === 'chat' ? opts.hookScope : 'chat';
-    const scope = requested === 'app' && picked === 'app' ? 'app' : 'chat';
+    const picked = SCOPES.includes(opts.hookScope) ? opts.hookScope : 'chat';
+    const scope = SCOPES[Math.min(SCOPES.indexOf(requested), SCOPES.indexOf(picked))];
+    if (scope === 'project') {
+      const added = require('../projectHooks.js').append(projectDir, hook);
+      return { ok: true, hookId: added.hook.id, scope: 'project', status: added.trusted ? 'active' : 'needs review',
+        ...(requested !== 'project' ? { requestedScope: requested } : {}),
+        ...(added.trusted ? {} : { note: 'This project has hooks the user has not reviewed yet; all of them, this one included, stay off until the user reviews them from the banner in the chat.' }) };
+    }
     if (scope === 'app') {
       const config = hooks.getConfig();
       // Free across the app list and this chat's hooks, so one id names one hook here.
@@ -194,6 +204,10 @@ const runners = {
     };
     const out = { ok: true, hooksOn: config.enabled };
     if (which !== 'chat') out.app = config.list.map((h) => summarize(h, lastOf(h.id)));
+    if (which === 'all' || which === 'project') {
+      const ph = require('../projectHooks.js').status(projectDir);
+      out.project = ph.hooks.map((h) => summarize(h, Object.assign({ trusted: ph.trusted }, lastOf(h.id))));
+    }
     if (which !== 'app') {
       out.chat = chatHooks.list(projectDir, chatId).map((x) => summarize(x.hook,
         Object.assign({ status: x.status, createdBy: x.createdBy }, lastOf(x.hook.id))));
@@ -206,6 +220,9 @@ const runners = {
     if (chatHooks.remove(projectDir, chatId, id)) return { ok: true, deleted: true, hookId: id };
     if (hooks.getConfig().list.some((h) => h.id === id)) {
       throw err('EAPP_HOOK', 'Hook "' + id + '" applies to every chat; only the user can delete it, in Settings → Hooks.');
+    }
+    if (require('../projectHooks.js').status(projectDir).hooks.some((h) => h.id === id)) {
+      throw err('EPROJECT_HOOK', 'Hook "' + id + '" is a project hook; only the user can delete it, in the project\'s settings file or Settings → Hooks.');
     }
     throw err('ENOTARGET', 'This chat has no hook "' + id + '"');
   }

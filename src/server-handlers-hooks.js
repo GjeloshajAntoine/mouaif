@@ -40,6 +40,40 @@ async function handleHooks(req, res, parsed) {
       if (!body) return;
       return sendJSON(res, 200, view(hooks.setConfig(body)));
     }
+    // Project hooks and their trust (src/projectHooks.js):
+    //   GET    /api/hooks/project?projectDir=        -> status + referenced files (first 8 KB each)
+    //   POST   /api/hooks/project/trust { projectDir, hash } -> status (409 when it changed)
+    //   DELETE /api/hooks/project/trust?projectDir=  -> status
+    if (urlPath === '/api/hooks/project' || urlPath === '/api/hooks/project/trust') {
+      const projectHooks = require('./projectHooks.js');
+      let projectDir = parsed.query && typeof parsed.query.projectDir === 'string' ? parsed.query.projectDir : '';
+      let body = null;
+      if (method === 'POST') {
+        body = await readJsonOr400(req, res);
+        if (!body) return;
+        projectDir = typeof body.projectDir === 'string' ? body.projectDir : '';
+      }
+      if (!projectDir || !require('node:path').isAbsolute(projectDir) || !fs.existsSync(projectDir)) {
+        return sendJSON(res, 400, { error: 'projectDir must be an existing project folder' });
+      }
+      const view = (st) => Object.assign({}, st, {
+        files: st.files.map((f) => {
+          if (f.missing) return f;
+          let text = '';
+          try { text = fs.readFileSync(require('node:path').join(projectDir, f.path), 'utf8').slice(0, 8192); } catch { /* unreadable */ }
+          return Object.assign({}, f, { text, truncated: f.bytes > 8192 });
+        })
+      });
+      if (urlPath === '/api/hooks/project' && method === 'GET') return sendJSON(res, 200, view(projectHooks.status(projectDir)));
+      if (urlPath === '/api/hooks/project/trust' && method === 'POST') {
+        return sendJSON(res, 200, view(projectHooks.trust(projectDir, typeof body.hash === 'string' ? body.hash : '')));
+      }
+      if (urlPath === '/api/hooks/project/trust' && method === 'DELETE') {
+        projectHooks.revoke(projectDir);
+        return sendJSON(res, 200, view(projectHooks.status(projectDir)));
+      }
+      return sendJSON(res, 405, { error: 'method not allowed' });
+    }
     if (urlPath === '/api/hooks/runs' && method === 'GET') {
       const q = parsed.query || {};
       return sendJSON(res, 200, { runs: hooks.listRuns({
@@ -68,7 +102,7 @@ async function handleHooks(req, res, parsed) {
 // POST   /api/chats/:id/hooks { projectDir, entry }       -> { hook }        (added by the user)
 // PUT    /api/chats/:id/hooks/:hookId { projectDir, entry?, status? } -> { hook }
 // DELETE /api/chats/:id/hooks/:hookId?projectDir=         -> { ok }
-// POST   /api/chats/:id/hooks/:hookId/promote { projectDir, scope: 'app' } -> { ok, hook }
+// POST   /api/chats/:id/hooks/:hookId/promote { projectDir, scope: 'app' | 'project' } -> { ok, hook }
 const CHAT_HOOKS_RE = /^\/api\/chats\/([^/]+)\/hooks(?:\/([^/]+))?(\/promote)?$/;
 
 function isChatHooksPath(urlPath) {
@@ -108,8 +142,8 @@ async function handleChatHooks(req, res, parsed) {
       return sendJSON(res, 200, { hook: chatHooks.add(projectDir, chatId, body.entry, 'user') });
     }
     if (hookId && promote && method === 'POST') {
-      if (body.scope !== 'app') return sendJSON(res, 400, { error: 'scope must be "app"' });
-      const hook = chatHooks.promote(projectDir, chatId, hookId);
+      if (body.scope !== 'app' && body.scope !== 'project') return sendJSON(res, 400, { error: 'scope must be "app" or "project"' });
+      const hook = chatHooks.promote(projectDir, chatId, hookId, body.scope);
       if (!hook) return sendJSON(res, 404, { error: 'Hook not found', hookId });
       return sendJSON(res, 200, { ok: true, hook });
     }

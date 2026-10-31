@@ -730,6 +730,11 @@ function runSettings(args, opts) {
     throw typedError('EBADINPUT', 'apiKey is not writable through this tool — connect the provider in Settings \u2192 Providers');
   }
   const shared = require('../server-shared.js');
+  // Hooks run code; they are added through hook_create (with its forced
+  // approval card), never through a settings write.
+  if ((patch && Object.prototype.hasOwnProperty.call(patch, 'hooks')) || unset.includes('hooks')) {
+    throw typedError('EBADINPUT', 'hooks are not written through update_settings — use hook_create');
+  }
   if (scope === 'app') {
     if (unset.length) throw typedError('EBADINPUT', 'unset is only supported for project scope');
     if (!patch) throw typedError('EBADINPUT', 'app scope needs a patch object');

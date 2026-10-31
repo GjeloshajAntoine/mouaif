@@ -25,6 +25,7 @@ function summaryText(notes) {
   let verb = DECISION_TEXT[top.decision] || top.decision;
   if (top.decision === 'continue') {
     if (top.changedArgs) verb = 'changed the arguments';
+    else if (top.redacted) verb = 'redacted for the model';
     else if (top.context) verb = 'added context';
   }
   const more = notes.length > 1 ? ' · +' + (notes.length - 1) : '';
@@ -34,7 +35,7 @@ function summaryText(notes) {
 function tone(notes) {
   if (notes.some((n) => n.decision === 'block')) return 'block';
   if (notes.some((n) => n.decision === 'error')) return 'error';
-  if (notes.some((n) => n.decision === 'ask' || n.changedArgs)) return 'warn';
+  if (notes.some((n) => n.decision === 'ask' || n.changedArgs || n.redacted)) return 'warn';
   return 'info';
 }
 
@@ -93,17 +94,21 @@ export function hookNotesElement(hooks) {
     const li = document.createElement('li');
     li.className = 'hook-notes__item';
     li.dataset.decision = note.decision || '';
-    const head = [noteLabel(note), note.event, DECISION_TEXT[note.decision] || note.decision];
+    const head = [noteLabel(note) + (note.scope === 'chat' ? ' (this chat)' : note.scope === 'project' ? ' (project)' : ''), note.event, DECISION_TEXT[note.decision] || note.decision];
     if (Number.isFinite(note.ms)) head.push(note.ms + ' ms');
     li.appendChild(line(head.filter(Boolean).join(' · '), 'hook-notes__head'));
     if (note.reason) li.appendChild(line(note.reason, 'hook-notes__reason'));
     if (note.error) li.appendChild(line('Error: ' + note.error, 'hook-notes__reason'));
     if (note.notice) li.appendChild(line(note.notice, 'hook-notes__reason'));
     if (note.context) li.appendChild(line('Added context for the model', 'hook-notes__meta'));
+    if (note.redacted) li.appendChild(line('Redacted the result for the model; the card shows the original', 'hook-notes__meta'));
     if (note.changedArgs) li.appendChild(argChangesElement(note));
     list.appendChild(li);
   }
   details.appendChild(list);
+  if (hooks.redacted && hooks.redacted.withheld) {
+    details.appendChild(line('The redaction did not finish in time, so the model got a notice instead of this result.', 'hook-notes__reason'));
+  }
   if (hooks.context) {
     const ctx = document.createElement('details');
     ctx.className = 'hook-notes__context';

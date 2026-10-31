@@ -1,8 +1,9 @@
 # Spec — hooks and MCP-App UI extensions
 
 > Maintainer design proposal. Phases 1 (hooks on prompts and tool calls), 2 (turn hooks,
-> follow-ups, attention, run log) and 3 (per-chat hooks, model hook tools) are implemented; see
-> `docs/features/hooks.md`. The rest is not. Same rules as every track: one feature = one
+> follow-ups, attention, run log), 3 (per-chat hooks, model hook tools) and 4 (http and module
+> handlers, redact, project hooks with hash trust) are implemented; see `docs/features/hooks.md`.
+> The rest is not. Same rules as every track: one feature = one
 > commit, Conventional Commits, mobile-first UI, a `docs/features/<slug>.md` page plus its
 > `docs/README.md` line, and `docs/agent/features/<slug>.md` notes in the same commit.
 
@@ -563,7 +564,7 @@ Each phase is one or more feature commits with docs and tests.
 | 1 | `src/hooks.js`, `command` kind, `tool.before`/`tool.after`/`prompt.submit`, app-scope `hooks` setting, tool-card chips, master switch + `MOUAIF_NO_HOOKS=1` | A shell hook blocks `git push -f` and the model sees why. **Done** — see `docs/features/hooks.md`. `match.family` and the per-key before/after diff are in; `match.chatTags` waits for chat tags, which mouaif does not have yet. Hooks run server-side, so `?safe` (a browser flag) is not their off switch; it stays for UI surfaces. |
 | 2 | `turn.end` + `followUp` queue, `turn.start`/`turn.error`/`attention`, run log in Settings | A hook keeps the agent going until `npm test` passes, max 3 follow-ups. **Done**. A follow-up is dropped, not queued, when the chat is busy by the time the hooks answer (§4.6). `attention` covers approval, ask_user and completion pushes. |
 | 3 | Per-chat hooks (`chat_hook`, hooks bar/sheet, promote) + `hook_create`/`hook_list`/`hook_delete` | "From now on block force pushes here" adds a chat hook after one forced approval card. **Done**, with these differences: the hooks bar opens a panel above the composer like the webhook bar; scope is `chat` or `app` (`project` waits for phase 4 trust); promote goes to the app only; model scripts are capped at 8 KB so the card shows them whole. Not done: the chat list's **Hooks** filter and row icon. |
-| 4 | `http` + `module` kinds, `redact`, project hooks with hash trust | A repo ships its own policy hooks; a fresh clone shows the review banner instead of running them. |
+| 4 | `http` + `module` kinds, `redact`, project hooks with hash trust | A repo ships its own policy hooks; a fresh clone shows the review banner instead of running them. **Done**. Model scope `project` and chat → project promote write the project's settings; the new list is trusted only if the old one was. A redaction that times out withholds the result from the model. |
 | 5 | `.mouaif-extension.json` format, registry, import/export, `mcp` kind, Settings → Extensions | One file installs a server + its hooks. |
 | 6 | Surface mounts (`resourceUri` and inline `html`), `chat.dock` + `chat.sheet`, host theme variables, LRU budget | A CI dock shows red/green above the composer in every theme. |
 | 7 | Host tools (`mouaif/*`) with permissions, host event forwarding | The dock updates live on `turn.end` and can insert a fix-it prompt into the composer. |

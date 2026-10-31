@@ -29,7 +29,7 @@ function setHooks(list, enabled = true) {
 async function testValidation() {
   assert.throws(() => hooks.normalizeHook({ id: 'Bad Id', event: 'tool.before', handler: { kind: 'command', command: 'true' } }), /id/);
   assert.throws(() => hooks.normalizeHook({ id: 'a', event: 'chat.created', handler: { kind: 'command', command: 'true' } }), /event/);
-  assert.throws(() => hooks.normalizeHook({ id: 'a', event: 'tool.before', handler: { kind: 'http' } }), /kind/);
+  assert.throws(() => hooks.normalizeHook({ id: 'a', event: 'tool.before', handler: { kind: 'shell' } }), /kind/);
   assert.throws(() => hooks.normalizeHook({ id: 'a', event: 'tool.before', handler: { kind: 'command' } }), /command or a script/);
   assert.throws(() => hooks.normalizeHook({ id: 'a', event: 'tool.before', handler: { kind: 'command', command: 'x', script: 'y' } }), /not both/);
   assert.throws(() => hooks.normalizeHook({ id: 'a', event: 'tool.before', handler: { kind: 'command', script: 'y', shell: 'zsh' } }), /shell/);
@@ -591,8 +591,8 @@ async function testChatHookRoutes() {
   r = await call((req, res, parsed) => handleChats(req, res, parsed, null, {}), 'GET', '/api/chats' + q + '&limit=50');
   assert.equal(r.body.chats.find((c) => c.id === other.id).hooks, undefined);
 
-  // Promote: only to the app.
-  assert.equal((await call(handleChatHooks, 'POST', base + '/mine/promote', { projectDir, scope: 'project' })).status, 400);
+  // Promote: to the app or the project, nothing else.
+  assert.equal((await call(handleChatHooks, 'POST', base + '/mine/promote', { projectDir, scope: 'nowhere' })).status, 400);
   r = await call(handleChatHooks, 'POST', base + '/mine/promote', { projectDir, scope: 'app' });
   assert.equal(r.body.hook.enabled, false, 'a paused chat hook arrives switched off');
   assert.ok(hooks.getConfig().list.some((h) => h.id === 'mine'));
@@ -605,6 +605,197 @@ async function testChatHookRoutes() {
   r = await call((req, res, parsed) => handleChats(req, res, parsed, null, {}), 'DELETE', '/api/chats/' + chat.id + q);
   assert.equal(r.status, 200);
   assert.deepEqual(chatHooks.list(projectDir, chat.id), []);
+}
+
+// Phase 4: http and module handlers.
+async function testHttpAndModule() {
+  const http = require('node:http');
+  const crypto = require('node:crypto');
+  const ctx = { projectDir, chatId: 'c-h', cwd: projectDir };
+  const got = [];
+  let reply = { status: 200, body: '' };
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (d) => { body += d; });
+    req.on('end', () => {
+      got.push({ headers: req.headers, body });
+      if (reply.hang) return;
+      res.writeHead(reply.status, { 'Content-Type': 'application/json' });
+      res.end(reply.body);
+    });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const url = 'http://127.0.0.1:' + server.address().port + '/hook';
+
+  // Validation.
+  assert.throws(() => hooks.normalizeHook({ id: 'h', event: 'tool.before', handler: { kind: 'http', url: 'ftp://x' } }), /http or https/);
+  assert.throws(() => hooks.normalizeHook({ id: 'h', event: 'tool.before', handler: { kind: 'http', url, send: ['secrets'] } }), /send/);
+  assert.throws(() => hooks.normalizeHook({ id: 'm', event: 'tool.before', handler: { kind: 'module', source: 'const x = 1;' } }), /export default/);
+  assert.throws(() => hooks.normalizeHook({ id: 'm', event: 'tool.before', handler: { kind: 'module', source: 'import fs from "fs"; export default () => 1' } }), /import/);
+  assert.throws(() => hooks.normalizeHook({ id: 'm', event: 'tool.before', handler: { kind: 'module', source: 'export default (e => {' } }), /source/);
+
+  // http: block via JSON; args and results left out unless `send` lists them; signed.
+  reply = { status: 200, body: JSON.stringify({ decision: 'block', reason: 'remote says no' }) };
+  setHooks([{ id: 'remote', event: 'tool.before', handler: { kind: 'http', url, secret: 's3cret' } }]);
+  let out = await hooks.runHooks('tool.before', { tool: 'shell', args: { cmd: 'ls', apiKey: 'k' } }, ctx);
+  assert.equal(out.decision, 'block');
+  assert.equal(out.reason, 'remote says no');
+  let sent = JSON.parse(got[0].body);
+  assert.equal(sent.tool, 'shell');
+  assert.equal(sent.args, undefined, 'args stay home by default');
+  assert.equal(got[0].headers['x-mouaif-hook'], 'tool.before');
+  assert.equal(got[0].headers['x-mouaif-signature'], 'sha256=' + crypto.createHmac('sha256', 's3cret').update(got[0].body).digest('hex'));
+  setHooks([{ id: 'remote', event: 'tool.after', handler: { kind: 'http', url, send: ['args'] } }]);
+  reply = { status: 200, body: '' };
+  got.length = 0;
+  await hooks.runHooks('tool.after', { tool: 'shell', args: { cmd: 'ls', apiKey: 'k' }, ok: true, result: { stdout: 'secret file' } }, ctx);
+  sent = JSON.parse(got[0].body);
+  assert.equal(sent.args.cmd, 'ls');
+  assert.equal(sent.args.apiKey, '[redacted]');
+  assert.equal(sent.result, undefined);
+  assert.equal(got[0].headers['x-mouaif-signature'], undefined);
+  // Non-2xx and timeouts are hook errors; failClosed turns them into a block.
+  reply = { status: 500, body: 'oops' };
+  setHooks([{ id: 'remote', event: 'tool.before', failClosed: true, handler: { kind: 'http', url } }]);
+  out = await hooks.runHooks('tool.before', { tool: 'shell', args: {} }, ctx);
+  assert.equal(out.decision, 'block');
+  assert.match(out.notes[0].error, /HTTP 500/);
+  reply = { hang: true };
+  setHooks([{ id: 'remote', event: 'tool.before', timeoutMs: 500, handler: { kind: 'http', url } }]);
+  out = await hooks.runHooks('tool.before', { tool: 'shell', args: {} }, ctx);
+  assert.equal(out.notes[0].decision, 'error');
+  assert.equal(out.notes[0].error, 'timed out');
+  server.closeAllConnections();
+  server.close();
+
+  // module: a decision object, a string as context, logs, errors and timeouts.
+  setHooks([
+    { id: 'mod', event: 'tool.before', handler: { kind: 'module', source:
+      'export default async (event, ctx) => {\n  ctx.log("saw", event.tool);\n  if (ctx.match("push\\\\s+-f", event.args.cmd)) return { decision: "block", reason: "no force" };\n  return "seen " + event.tool;\n}' } }
+  ]);
+  out = await hooks.runHooks('tool.before', { tool: 'shell', args: { cmd: 'git push -f' } }, ctx);
+  assert.equal(out.decision, 'block');
+  assert.equal(out.reason, 'no force');
+  out = await hooks.runHooks('tool.before', { tool: 'shell', args: { cmd: 'ls' } }, ctx);
+  assert.match(out.context, /seen shell/);
+  setHooks([{ id: 'nope', event: 'tool.before', handler: { kind: 'module', source: 'export default () => { return require("fs").readFileSync("/etc/passwd", "utf8"); }' } }]);
+  out = await hooks.runHooks('tool.before', { tool: 'shell', args: {} }, ctx);
+  assert.equal(out.notes[0].decision, 'error');
+  assert.match(out.notes[0].error, /require is not defined/);
+  setHooks([{ id: 'spin', event: 'tool.before', timeoutMs: 500, handler: { kind: 'module', source: 'export default () => { for (;;) {} }' } }]);
+  out = await hooks.runHooks('tool.before', { tool: 'shell', args: {} }, ctx);
+  assert.equal(out.notes[0].error, 'timed out');
+  // The worker came back after being recycled.
+  setHooks([{ id: 'after', event: 'tool.before', handler: { kind: 'module', source: 'export default () => ({ context: "fresh worker" })' } }]);
+  out = await hooks.runHooks('tool.before', { tool: 'shell', args: {} }, ctx);
+  assert.match(out.context, /fresh worker/);
+  setHooks([]);
+}
+
+// Phase 4: tool.after redaction — the model sees the redacted text, live and
+// on replay; the stored result and the card keep the original.
+async function testRedact() {
+  authz.setAuthorization(projectDir, { tools: { shell: { mode: 'allow', allowlist: [] } } });
+  assert.deepEqual(hooks.parseOutput({ code: 0, stdout: '{"redact":[{"pattern":"AKIA[0-9A-Z]{4}","with":"[aws]"}]}' }).redact, [{ pattern: 'AKIA[0-9A-Z]{4}', with: '[aws]' }]);
+  assert.equal(hooks.parseOutput({ code: 0, stdout: '{"redact":[{"pattern":"("}]}' }).decision, 'error');
+  setHooks([{ id: 'keys', event: 'tool.after', handler: { kind: 'command', command: say({ redact: [{ pattern: 'AKIA[0-9A-Z]{4}', with: '[aws key]' }, { pattern: '\\$\\d', with: '[money]' }] }) } }]);
+  const dispatched = []; const events = []; const convo = [];
+  const cx = Object.assign(makeCx('c-red', dispatched, events, convo), {
+    dispatchTool: async () => ({ ok: true, result: { stdout: 'key AKIAABCD and $5' }, content: JSON.stringify({ stdout: 'key AKIAABCD and $5' }) })
+  });
+  await runSingleToolCall({ id: 'r1', name: 'shell', arguments: JSON.stringify({ cmd: 'cat .env' }) }, cx);
+  assert.match(convo[0].content, /key \[aws key\] and \[money\]/);
+  assert.ok(!convo[0].content.includes('AKIAABCD'));
+  const ev = events.find(([n]) => n === 'tool_result')[1];
+  assert.equal(ev.result.stdout, 'key AKIAABCD and $5', 'the card keeps the original');
+  assert.deepEqual(ev.hooks.redacted, { by: ['keys'], withheld: false });
+  assert.equal(ev.hooks.notes[0].redacted, true);
+  // Replay sends the redacted copy.
+  const row = messages.normalizeMessage({ role: 'tool', phase: 'result', toolCallId: 'r1', name: 'shell', ok: true, content: JSON.stringify(ev.result), hooks: ev.hooks });
+  const call = messages.normalizeMessage({ role: 'tool', phase: 'call', toolCallId: 'r1', name: 'shell', args: { cmd: 'cat .env' }, content: '' });
+  const replay = messages.reconstructUpstreamHistory([call, row]);
+  const toolMsg = replay.find((m) => m.role === 'tool');
+  assert.ok(toolMsg && !String(toolMsg.content).includes('AKIAABCD'), 'replay is redacted');
+  assert.equal((await hooks.redactForModel('pay $5', [{ pattern: '\\$\\d', with: '$&!' }])).content, 'pay $&!', 'replacement text is literal');
+  assert.deepEqual((await hooks.redactForModel([{ type: 'text', text: 'AKIAABCD' }, { type: 'image_url' }], [{ pattern: 'AKIA\\w+', with: 'x' }])).content,
+    [{ type: 'text', text: 'x' }, { type: 'image_url' }]);
+  // A pattern that does not finish withholds the result from the model.
+  const slow = await hooks.redactForModel('a'.repeat(40) + '!', [{ pattern: '(a+)+$', with: 'x' }]);
+  assert.equal(slow.withheld, true);
+  assert.match(slow.content, /withheld/);
+  setHooks([]);
+}
+
+// Phase 4: project hooks stay off until their hash is trusted; any change
+// (the list or a script it runs) turns them off again.
+async function testProjectHooks() {
+  const settings = require('../src/settings.js');
+  const projectHooks = require('../src/projectHooks.js');
+  const proj = path.join(root, 'proj-hooks');
+  fs.mkdirSync(path.join(proj, 'scripts'), { recursive: true });
+  fs.writeFileSync(path.join(proj, 'scripts', 'deny.sh'), 'echo no >&2\nexit 2\n');
+  fs.writeFileSync(path.join(proj, '.mouaif.json'), JSON.stringify({ hooks: [
+    { id: 'deny', event: 'tool.before', handler: { kind: 'command', command: 'sh ./scripts/deny.sh' } }
+  ] }));
+  projectHooks._clearCache();
+  const ctx = { projectDir: proj, chatId: 'c-p', cwd: proj };
+  let st = projectHooks.status(proj);
+  assert.equal(st.hooks.length, 1);
+  assert.deepEqual(st.files.map((f) => f.path), ['scripts/deny.sh']);
+  assert.equal(st.trusted, false);
+  let out = await hooks.runHooks('tool.before', { tool: 'shell', args: {} }, ctx);
+  assert.equal(out.notes.length, 0, 'untrusted project hooks are inert');
+  assert.throws(() => projectHooks.trust(proj, 'wrong'), /changed/);
+  st = projectHooks.trust(proj, st.hash);
+  assert.equal(st.trusted, true);
+  out = await hooks.runHooks('tool.before', { tool: 'shell', args: {} }, ctx);
+  assert.equal(out.decision, 'block');
+  assert.equal(out.notes[0].scope, 'project');
+  // Editing the script it runs turns it off again.
+  await new Promise((r) => setTimeout(r, 20));
+  fs.writeFileSync(path.join(proj, 'scripts', 'deny.sh'), 'exit 0\n');
+  st = projectHooks.status(proj);
+  assert.equal(st.trusted, false);
+  assert.equal(st.changed, true);
+  assert.equal((await hooks.runHooks('tool.before', { tool: 'shell', args: {} }, ctx)).notes.length, 0);
+  st = projectHooks.trust(proj, st.hash);
+  // Reformatting the file keeps the hash; editing the list changes it.
+  const raw = JSON.parse(fs.readFileSync(path.join(proj, '.mouaif.json'), 'utf8'));
+  fs.writeFileSync(path.join(proj, '.mouaif.json'), JSON.stringify(raw, null, 4));
+  projectHooks._clearCache();
+  assert.equal(projectHooks.status(proj).trusted, true);
+  // append: trusted list stays trusted with the new hook...
+  const added = projectHooks.append(proj, { id: 'deny', event: 'turn.end', handler: { kind: 'command', command: 'true' } });
+  assert.equal(added.hook.id, 'deny-2');
+  assert.equal(added.trusted, true);
+  assert.equal(projectHooks.status(proj).trusted, true);
+  // ...but not when it held unreviewed hooks.
+  fs.writeFileSync(path.join(proj, '.mouaif.json'), JSON.stringify({ hooks: settings.getProject(proj).hooks.concat({ id: 'sneaky', event: 'turn.start', handler: { kind: 'command', command: 'true' } }) }));
+  projectHooks._clearCache();
+  assert.equal(projectHooks.status(proj).trusted, false);
+  assert.equal(projectHooks.append(proj, { id: 'mine', event: 'turn.end', handler: { kind: 'command', command: 'true' } }).trusted, false);
+  assert.equal(projectHooks.status(proj).trusted, false);
+  // Revoke.
+  projectHooks.trust(proj, projectHooks.status(proj).hash);
+  projectHooks.revoke(proj);
+  assert.equal(projectHooks.status(proj).trusted, false);
+  // The model's hook_create narrowed to the project on the card: saved in the
+  // project's settings, and off while the project holds unreviewed hooks.
+  const hookTools = require('../src/tools/hooks.js');
+  const made = await hookTools.runHookTool('hook_create', { event: 'turn.end', name: 'Proj hook', command: 'true', scope: 'app' }, { projectDir: proj, chatId: 'x', hookScope: 'project' });
+  assert.equal(made.result.scope, 'project');
+  assert.equal(made.result.status, 'needs review');
+  assert.ok(settings.getProject(proj).hooks.some((h) => h.id === 'proj-hook' && h.createdBy === 'model'));
+  const listed = await hookTools.runHookTool('hook_list', { scope: 'project' }, { projectDir: proj, chatId: 'x' });
+  assert.ok(listed.result.project.some((h) => h.id === 'proj-hook' && h.trusted === false));
+  assert.equal((await hookTools.runHookTool('hook_delete', { hookId: 'proj-hook' }, { projectDir: proj, chatId: 'x' })).result.code, 'EPROJECT_HOOK');
+  // Generic settings writes cannot touch hooks.
+  const { handleSettings } = require('../src/server-handlers-settings.js');
+  const res = { status: 0, body: '', writeHead(c) { this.status = c; }, setHeader() {}, getHeader() {}, write(c) { this.body += c; }, end(c) { if (c) this.body += c; } };
+  const req = { method: 'PUT', headers: { 'content-type': 'application/json' },
+    on(ev, cb) { if (ev === 'data') process.nextTick(() => cb(Buffer.from(JSON.stringify({ projectDir: proj, hooks: [] })))); if (ev === 'end') process.nextTick(cb); } };
+  await handleSettings(req, res, { pathname: '/api/settings/project', query: {} });
+  assert.equal(res.status, 400);
 }
 
 // A promise that never settles empties the event loop and Node exits 0 with
@@ -625,6 +816,9 @@ async function main() {
   await testChatHooks();
   await testHookTools();
   await testChatHookRoutes();
+  await testHttpAndModule();
+  await testRedact();
+  await testProjectHooks();
   finished = true;
   console.log('test-hooks: ok');
 }

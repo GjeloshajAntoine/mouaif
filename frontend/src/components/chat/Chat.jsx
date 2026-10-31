@@ -26,6 +26,7 @@ import { AgentNetworkDock } from './AgentNetworkDock.jsx';
 import { RunDock } from './RunDock.jsx';
 import { WebhookDock } from './WebhookDock.jsx';
 import { HooksDock } from './HooksDock.jsx';
+import { ProjectHooksBar } from './ProjectHooksBar.jsx';
 import { PreviewUrlPrompt } from './PreviewUrlPrompt.jsx';
 import { authorizationCard } from './cards.js';
 import { requestWebpreview, setStatus } from '../../api.js';
@@ -702,6 +703,8 @@ h(RunDock, { projectDir, chatId, onJumpToSeq: jumpToSeq }),
 h(WebhookDock, { projectDir, chatId, onJumpToSeq: jumpToSeq }),
 // The chat's own hooks (docs/features/hooks.md); absent until it has one.
 h(HooksDock, { projectDir, chatId }),
+// The project's hooks while they wait for a review (docs/features/hooks.md).
+h(ProjectHooksBar, { projectDir }),
 h('div', { class: 'chat-view__composer-row' },
 h('div', { class: 'chat-view__composer-tool' },
 h(FileToolbar, {

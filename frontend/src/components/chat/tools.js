@@ -230,7 +230,7 @@ export function formatToolArgs(args, toolName) {
   if (name === 'schedule_wake') return [args.in ? 'in ' + args.in : args.at ? 'at ' + args.at : '', args.every ? 'every ' + args.every : '', args.time ? 'daily at ' + args.time : '', args.message].filter(Boolean).join(' · ');
   if (name === 'schedule_cancel') return args.id || '';
   if (name === 'webhook_create') return [String(args.method || 'POST').toUpperCase(), args.prompt].filter(Boolean).join(' · ');
-  if (name === 'hook_create') return [args.event, args.name, args.command || (args.script ? (args.shell || 'bash') + ' script' : ''), args.scope === 'app' ? 'every chat' : ''].filter(Boolean).join(' · ');
+  if (name === 'hook_create') return [args.event, args.name, args.command || (args.script ? (args.shell || 'bash') + ' script' : ''), args.scope === 'app' ? 'every chat' : args.scope === 'project' ? 'this project' : ''].filter(Boolean).join(' · ');
   if (name === 'hook_delete') return args.hookId || '';
   if (name === 'hook_list') return args.scope && args.scope !== 'all' ? args.scope + ' hooks' : 'hooks';
   if (name === 'run_start') return [args.goal, args.maxTurns ? args.maxTurns + ' turns' : '', args.maxCostUsd ? '$' + args.maxCostUsd : '', args.maxHours ? args.maxHours + 'h' : ''].filter(Boolean).join(' · ');
@@ -486,7 +486,7 @@ export function formatResultSummary(name, r) {
   if (n === 'webhook_create') return r.method ? r.method + (r.created ? ' · link ready' : ' · updated') : null;
   if (n === 'webhook_status') return r.webhook ? r.webhook.status + ' · ' + r.webhook.callCount + ' calls' : 'none';
   if (n === 'webhook_delete') return r.deleted ? 'deleted' : null;
-  if (n === 'hook_create') return r.hookId ? r.hookId + ' · ' + (r.scope === 'app' ? 'every chat' : 'this chat') : null;
+  if (n === 'hook_create') return r.hookId ? r.hookId + ' · ' + (r.scope === 'app' ? 'every chat' : r.scope === 'project' ? 'this project' + (r.status === 'needs review' ? ' · needs review' : '') : 'this chat') : null;
   if (n === 'hook_list') return (Array.isArray(r.chat) ? r.chat.length + ' in this chat' : '') + (Array.isArray(r.app) ? (Array.isArray(r.chat) ? ' · ' : '') + r.app.length + ' app-wide' : '') || null;
   if (n === 'hook_delete') return r.deleted ? 'deleted' : null;
   if (n === 'run_start' || n === 'run_status' || n === 'run_end') {

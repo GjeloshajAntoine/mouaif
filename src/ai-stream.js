@@ -214,6 +214,9 @@ async function runSingleToolCall(c, cx) {
   // or rewrite the arguments; the gate then judges the rewritten call.
   const hookNotes = [];
   let hookContext = '';
+  // tool.after `redact` rules: applied to what the model sees, never to the
+  // stored result or the card (src/hooks.js redactForModel).
+  let hookRedact = null;
   let hookAsk = null;
   const hooksApply = !opts?.hooksDisabled && !HOOKLESS_TOOLS.has(c.name)
     && !(promptProfilesMod && c.name === promptProfilesMod.DISCOVER_TOOL_NAME);
@@ -672,15 +675,29 @@ async function runSingleToolCall(c, cx) {
         tool: c.name, args, ok: !!exec.ok, result: exec.result, callId: c.id || null, origin: opts && opts.hookOrigin
       }, hookCtx);
       hookNotes.push(...after.notes);
+      if (after.redact && after.redact.length) hookRedact = after.redact;
       if (after.context) hookContext = hookContext ? hookContext + '\n' + after.context : after.context;
     } catch (e) {
       hookNotes.push({ hook: '?', event: 'tool.after', decision: 'error', error: e.message });
     }
   }
+  let modelContent = modelContentForTool(c.name, exec);
+  let redactedFor = null;
+  if (hookRedact) {
+    const red = await hooksMod.redactForModel(modelContent, hookRedact);
+    modelContent = red.content;
+    redactedFor = { by: [...new Set(hookRedact.map((r) => r.hook))], withheld: red.withheld };
+  }
   const resultHooks = hooksMeta(hookNotes, hookContext);
+  // The stored row keeps the original result for the card; the redacted copy
+  // rides along so a later turn replays exactly what the model saw.
+  if (resultHooks && redactedFor) {
+    resultHooks.redacted = redactedFor;
+    resultHooks.modelContent = typeof modelContent === 'string' ? modelContent : JSON.stringify(modelContent);
+  }
   if (!exec.backgroundPending) onEvent('tool_result', { id: c.id || null, name: c.name, ok: exec.ok, result: exec.result, hooks: resultHooks });
 
-  pushToolMessage(c.name, withHookContext(modelContentForTool(c.name, exec), resultHooks));
+  pushToolMessage(c.name, withHookContext(modelContent, resultHooks));
   // webpreview screenshots are rendered for the user in the preview dock. The
   // model only receives the compact JSON result and can call the tool again to
   // reload the page; it does not receive or inspect the image bytes.

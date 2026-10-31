@@ -11,7 +11,7 @@ Hooks are commands mouaif runs at fixed points of a chat turn: when you send a p
 - **start one more turn** when a turn finishes, for example until the tests pass,
 - **silence a notification**.
 
-Hooks live in **Settings → Hooks** (every chat) or on one chat. You add them yourself, or the model adds them when you allow its approval card.
+Hooks live in **Settings → Hooks** (every chat), in a project's settings (every chat of that project, once you have reviewed them) or on one chat. You add them yourself, or the model adds them when you allow its approval card.
 
 Hooks only add checks. A hook cannot approve a call, skip the approval card or run a tool that is Off. The tool permissions in **Settings → Project** stay the only place that grants anything.
 
@@ -28,7 +28,7 @@ Open **Settings → App defaults → Hooks** (`#/settings/hooks`).
 - **Recent runs** lists the last 50 hook runs, newest first: the hook, its event, what it decided, how long it took and any error. A follow-up turn that was not started shows here as *skipped* with the reason. mouaif keeps the last 200 runs.
 - **Edit as JSON** shows every hook as JSON to copy, paste or change; **Apply** replaces the whole list. **Download** saves `mouaif-hooks.json`, which **Edit as JSON** accepts back.
 
-The hooks in Settings are app-wide: they apply to every project and every chat. A chat can also have its own hooks (see [Hooks for one chat](#hooks-for-one-chat)). A project's `.mouaif.json` cannot define hooks, so opening a cloned repository never runs its code. A hook the model added carries an *added by the model* chip and the reason it gave.
+The hooks in Settings are app-wide: they apply to every project and every chat. A project can ship its own (see [Project hooks](#project-hooks)), which stay off until you review them, so opening a cloned repository never runs its code. A chat can also have its own hooks (see [Hooks for one chat](#hooks-for-one-chat)). Hooks run app first, then project, then chat. A hook the model added carries an *added by the model* chip and the reason it gave.
 
 ### Events
 
@@ -57,7 +57,14 @@ Tools, **Tool groups** and **Arguments match** only apply to `tool.before` and `
 
 ### Writing a hook
 
-A hook is either a **command** (run by the system shell) or a **script** (bash, sh, node or python3; saved to a temporary file and run). It starts in the chat's working folder and receives the event as JSON on stdin:
+A hook runs one of four ways (**Runs** in the editor):
+
+- **Command**: a command line run by the system shell.
+- **Script**: bash, sh, node or python3, saved to a temporary file and run. A node script can use `require` or `import`.
+- **URL** (`http`): mouaif POSTs the event as JSON to the URL and reads the decision from the reply body. Tool arguments, tool results, prompts and answers are left out unless you tick them under **Also send**; secret-looking keys in sent arguments are replaced by `[redacted]`. The request carries `X-Mouaif-Hook: <event>` and, with a signing secret, `X-Mouaif-Signature: sha256=<HMAC of the body>`. A reply that is not 2xx, or no reply before the timeout, is a hook error.
+- **Module**: JavaScript that runs inside mouaif, in a worker, without starting a process: cheap enough for a check on every tool call. It is `export default async (event, ctx) => …` and gets only the event, `ctx.log(...)` and `ctx.match(regex, text)`: no `require`, `import`, files or network. It returns nothing (carry on), a string (context), or the same object a command prints. A module past its timeout is stopped and the worker restarted. This keeps a module small, not sandboxed: it has the trust of a command you wrote.
+
+A command or script starts in the chat's working folder and receives the event as JSON on stdin:
 
 ```json
 {
@@ -112,10 +119,11 @@ The other events send their own fields instead of `tool`, `args` and `content`:
 
 `decision` is `continue` (the default), `block` or `ask`. `ask` and `updatedArgs` only count in `tool.before`; `prompt.submit` can only block; `tool.after` can only add context. `updatedArgs` is merged into the call's arguments, and the approval gate, the card and the tool all see the new ones.
 
-Two fields belong to the newer events:
+Three fields belong to particular events:
 
 - `followUp` (`turn.end`): a prompt for one more turn in the same chat (up to 4000 characters). See [Follow-up turns](#follow-up-turns).
 - `suppress: true` (`attention`): no notification for this event.
+- `redact` (`tool.after`): up to 8 `{ "pattern": "<regex>", "with": "[text]" }` entries. Every match in the result **the model sees** is replaced (the `with` text is literal; default `[redacted]`). The stored result and the tool card keep the original, marked *redacted for the model*, and a later turn replays the redacted copy. A hook cannot replace a result wholesale. If the patterns do not finish within a second, the model gets a notice instead of the result, so a slow pattern never lets a secret through.
 
 Examples:
 
@@ -164,6 +172,25 @@ When several hooks match, they run one after another in the list's order. A bloc
 
 To turn every hook off without the Settings page, start mouaif with `MOUAIF_NO_HOOKS=1`.
 
+### Project hooks
+
+A project can define hooks under `hooks` in its `.mouaif.json` (or its settings stored in mouaif), as a list with the same entries as Settings, so a repository can ship its own policy:
+
+```json
+{
+  "hooks": [
+    { "id": "no-force-push", "event": "tool.before", "match": { "tool": ["shell"], "argText": "push.*--force" },
+      "handler": { "kind": "command", "command": "./scripts/deny.sh" } }
+  ]
+}
+```
+
+They stay **off** until you review them. While a project has hooks you have not trusted, its chats show a **Project hooks off** bar above the composer. **Review** lists every hook as written: command, script, URL or module source, plus the project files a command runs (`./scripts/deny.sh` above). **Trust and turn on** enables exactly what you saw. **Not now** hides the bar until the page reloads. **Settings → Hooks → This project** shows the same review and a **Turn off** button.
+
+Trust is tied to a fingerprint (a sha256 hash) of the hook list and every project file a command hook runs by relative path. Any change turns the hooks off again and brings the bar back: a `git pull` that edits a hook, or a change to one of those scripts. Reformatting the file does not count. The trust record stays in mouaif, never in the repository.
+
+Project hooks are not written through the settings screens or `update_settings`. Edit the file, or add one through the model's `hook_create` or the chat hooks panel's **Project** button. A hook added that way is trusted along with the others only if the project's hooks were already trusted. Otherwise all of them wait for your review.
+
 ### Hooks for one chat
 
 A chat can carry up to 20 hooks of its own, with the same shape as the ones in Settings. They run only in that chat, after the app's hooks, and for its subagents' tool calls when the hook includes subagents. **Run hooks** in Settings pauses them too.
@@ -173,6 +200,7 @@ While a chat has hooks, a **Hooks · N in this chat** bar sits above the compose
 - **Pause** / **Resume**,
 - **Edit**, which opens the same editor as Settings,
 - **All chats** (tap twice), which moves the hook into **Settings → Hooks** so it runs in every chat,
+- **Project** (tap twice), which moves it into the project's settings (see [Project hooks](#project-hooks)),
 - **Delete** (tap twice).
 
 **New hook for this chat** adds another one. The panel also lists the latest hook runs in this chat.
@@ -185,19 +213,19 @@ You can ask in the chat ("from now on, block force pushes here", "keep going unt
 
 | Tool | Does |
 | --- | --- |
-| `hook_create` | Adds a command or script hook, to this chat by default. |
+| `hook_create` | Adds a command or script hook, to this chat by default, or to the project or every chat. |
 | `hook_list` | Lists the hooks that apply to this chat, with their last decision. |
-| `hook_delete` | Deletes one of this chat's hooks. Hooks in Settings can only be deleted by you, in Settings. |
+| `hook_delete` | Deletes one of this chat's hooks. Project and app hooks can only be deleted by you. |
 
 - `hook_create` **always shows the approval card**, even when the mouaif tools are set to Allow and after **Session**. The card says the hook keeps running on later turns and shows its event, its match and its command or script in full.
-- The model may ask for **every chat**. The card then offers **Every chat** or **Only this chat**, and you can lower the scope, never raise it. An approval without the card's choice (for example from a notification) adds the hook to this chat only.
-- The model can only make command or script hooks, with scripts up to 8 KB. A request with something else is refused before any card appears.
+- The model may ask for **every chat** or **this project**. The card then offers that and every narrower choice (**Every chat**, **Every chat of this project**, **Only this chat**); you can narrow the scope, never widen it. An approval without the card's choice (for example from a notification) adds the hook to this chat only.
+- The model can only make command or script hooks, with scripts up to 8 KB: no URL or module hooks, which stay yours to set up. A request with something else is refused before any card appears.
 - Hooks never run on the hook tools themselves, so no hook can stop you from listing or deleting hooks.
 - Subagents get none of these tools.
 
 ### What you see in the chat
 
-- **Tool cards**: a line under the head, such as *Hook · no-force-push · blocked* (red), *Hook · rewrite · changed the arguments* (amber) or *Hook · git-branch · added context*. Tap it for each hook's decision, reason, time and the context the model saw. A hook that changed the arguments shows each changed one with its value before and after.
+- **Tool cards**: a line under the head (a project or chat hook is marked so), such as *Hook · no-force-push · blocked* (red), *Hook · rewrite · changed the arguments* (amber) or *Hook · git-branch · added context*. Tap it for each hook's decision, reason, time and the context the model saw. *Redacted for the model* means the model saw a redacted copy of the result shown below. A hook that changed the arguments shows each changed one with its value before and after.
 - **Blocked calls**: the card's body says *Not run: blocked by hook `<id>`* with the reason, instead of output.
 - **Approval cards**: when a hook asked, the card shows which hook and why, opened. When a hook changed the arguments, the card shows the new ones, with the before/after list under it.
 - **Prompts**: context a hook added sits under the prompt in a collapsed **Added by hooks** block. A prompt a hook sent carries *Hook · `<id>` · follow-up N/3*.

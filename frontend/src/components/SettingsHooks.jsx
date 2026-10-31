@@ -10,6 +10,7 @@ import { h, Fragment } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { fetchJson, activeProject } from '../api.js';
 import './settings/hooks.css';
+import { ProjectHooksReview, useProjectHooks, trustLabel } from './settings/ProjectHooksReview.jsx';
 import { EVENT_LABELS, TOOL_EVENTS, BLOCKING_EVENTS, ORIGIN_LABELS, FAMILY_LABELS, matchSummary, handlerSummary, RunRow } from './settings/hookText.js';
 
 
@@ -62,6 +63,8 @@ const EXAMPLES = [
 ];
 
 const BLANK = { id: '', name: '', event: 'tool.before', handler: { kind: 'command', command: '' } };
+const MODULE_TEMPLATE = 'export default async (event, ctx) => {\n  // ctx.log(...) and ctx.match(regex, text) are available; nothing else.\n  // Return nothing to carry on, a string to add context,\n  // or { decision: "block", reason: "…" }.\n};\n';
+const SEND_LABELS = { args: 'Tool arguments', result: 'Tool results', content: 'Prompts', text: 'Answers' };
 
 function uniqueId(base, list) {
   const ids = new Set(list.map((x) => x.id));
@@ -82,10 +85,14 @@ function toForm(hook) {
     family: m.family || [],
     argText: m.argText || '',
     origin: m.origin || [],
-    mode: handler.script ? 'script' : 'command',
+    mode: handler.kind === 'http' ? 'http' : handler.kind === 'module' ? 'module' : handler.script ? 'script' : 'command',
     command: handler.command || '',
     shell: handler.shell || 'bash',
     script: handler.script || '',
+    url: handler.url || '',
+    secret: handler.secret || '',
+    send: handler.send || [],
+    source: handler.source || MODULE_TEMPLATE,
     timeoutMs: String(hook.timeoutMs || 5000),
     failClosed: !!hook.failClosed,
     subagents: !!hook.subagents,
@@ -107,9 +114,17 @@ function fromForm(f) {
   }
   if (f.origin.length) match.origin = f.origin;
   if (Object.keys(match).length) hook.match = match;
-  hook.handler = f.mode === 'script'
-    ? { kind: 'command', shell: f.shell, script: f.script }
-    : { kind: 'command', command: f.command };
+  if (f.mode === 'http') {
+    hook.handler = { kind: 'http', url: f.url.trim() };
+    if (f.secret) hook.handler.secret = f.secret;
+    if (f.send.length) hook.handler.send = f.send;
+  } else if (f.mode === 'module') {
+    hook.handler = { kind: 'module', source: f.source };
+  } else {
+    hook.handler = f.mode === 'script'
+      ? { kind: 'command', shell: f.shell, script: f.script }
+      : { kind: 'command', command: f.command };
+  }
   const timeout = Number(f.timeoutMs);
   if (Number.isFinite(timeout) && timeout > 0) hook.timeoutMs = timeout;
   if (f.failClosed && BLOCKING_EVENTS.includes(f.event)) hook.failClosed = true;
@@ -221,11 +236,27 @@ export function HookEditor({ initial, isNew, onSave, onCancel, onDelete, project
     h('div', { class: 'row' },
       h('span', { class: 'label' }, 'Runs'),
       h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Handler' },
-        [['command', 'Command'], ['script', 'Script']].map(([key, text]) => h('label', { key, class: 'seg__item' + (f.mode === key ? ' seg__item--on' : '') },
+        [['command', 'Command'], ['script', 'Script'], ['http', 'URL'], ['module', 'Module']].map(([key, text]) => h('label', { key, class: 'seg__item' + (f.mode === key ? ' seg__item--on' : '') },
           h('input', { type: 'radio', name: idBase + '-mode', value: key, checked: f.mode === key, onChange: () => set({ mode: key }) }),
           h('span', { class: 'seg__pill' }, text))))
     ),
-    f.mode === 'command'
+    f.mode === 'http'
+      ? h('div', { class: 'row' },
+          h('input', { class: 'input hook-mono', 'aria-label': 'URL', type: 'url', value: f.url, autocapitalize: 'off', spellcheck: false, placeholder: 'https://example.com/mouaif-hook', onInput: (e) => set({ url: e.currentTarget.value }) }),
+          h('input', { class: 'input hook-mono', 'aria-label': 'Signing secret (optional)', type: 'password', autocomplete: 'off', value: f.secret, placeholder: 'Signing secret (optional)', onInput: (e) => set({ secret: e.currentTarget.value }) }),
+          h('span', { class: 'label' }, 'Also send'),
+          h('div', { class: 'hook-checks' },
+            Object.entries(SEND_LABELS).map(([key, text]) => h('label', { key, class: 'hook-check' },
+              h('input', { type: 'checkbox', checked: f.send.includes(key), onChange: (e) => set({ send: e.currentTarget.checked ? f.send.concat(key) : f.send.filter((x) => x !== key) }) }),
+              h('span', null, text)))),
+          h('p', { class: 'hint hint--compact' }, 'mouaif POSTs the event as JSON and reads the decision from the reply. Arguments, results, prompts and answers stay on this computer unless ticked. With a secret, the body is signed in X-Mouaif-Signature (sha256 HMAC).')
+        )
+      : f.mode === 'module'
+      ? h('div', { class: 'row' },
+          h('textarea', { class: 'input hook-mono hook-script', rows: 10, 'aria-label': 'Module source', value: f.source, spellcheck: false, autocapitalize: 'off', onInput: (e) => set({ source: e.currentTarget.value }) }),
+          h('p', { class: 'hint hint--compact' }, 'Runs inside mouaif in a worker, without starting a process: good for a check on every tool call. It gets the event and ctx.log / ctx.match only (no require, files or network).')
+        )
+      : f.mode === 'command'
       ? h('div', { class: 'row' },
           h('input', { class: 'input hook-mono', 'aria-label': 'Command', value: f.command, autocapitalize: 'off', spellcheck: false, placeholder: './scripts/check-tool.sh', onInput: (e) => set({ command: e.currentTarget.value }) }),
           h('p', { class: 'hint hint--compact' }, 'Runs in the chat\'s working folder with the event as JSON on stdin.')
@@ -278,6 +309,8 @@ export function SettingsHooksView() {
   const [json, setJson] = useState(null);
   const [runs, setRuns] = useState(null);
   const projectDir = (activeProject.value && activeProject.value.dir) || '';
+  const projectName = (activeProject.value && activeProject.value.name) || '';
+  const [projectHooks, setProjectHooks] = useProjectHooks(projectDir);
 
   useEffect(() => {
     api('GET', '/api/hooks').then(setConfig, (e) => setStatus({ text: 'Could not load hooks: ' + e.message, kind: 'error' }));
@@ -425,6 +458,11 @@ export function SettingsHooksView() {
 
       h('p', { class: 'status', 'data-state': status.kind, 'aria-live': 'polite' }, status.text),
 
+      projectDir ? h('div', { class: 'group' },
+        h('div', { class: 'group__title' }, 'This project', h('span', { class: 'group__title-note' },
+          (projectName || projectDir) + (projectHooks && projectHooks.hash ? ' · ' + trustLabel(projectHooks) : ''))),
+        h(ProjectHooksReview, { projectDir, state: projectHooks, onState: setProjectHooks })) : null,
+
       h('div', { class: 'group' },
         h('div', { class: 'group__title' }, 'Recent runs', h('span', { class: 'group__title-note' }, 'last 50, newest first')),
         runs === null ? h('p', { class: 'hint hint--compact' }, 'Loading…') : null,
@@ -444,6 +482,8 @@ export function SettingsHooksView() {
           h('li', null, h('strong', null, 'Exit 0, JSON'), ': ', h('code', null, '{"decision":"block"|"ask"|"continue","reason","updatedArgs","context"}'), '.'),
           h('li', null, h('strong', null, 'Turn finished'), ': ', h('code', null, '{"followUp":"…"}'), ' starts one more turn with that prompt, at most 3 in a row.'),
           h('li', null, h('strong', null, 'Before a notification'), ': ', h('code', null, '{"suppress":true}'), ' sends no notification.'),
+          h('li', null, h('strong', null, 'After a tool ran'), ': ', h('code', null, '{"redact":[{"pattern":"AKIA[0-9A-Z]{16}","with":"[aws key]"}]}'), ' hides matches from the model; the card keeps the original.'),
+          h('li', null, h('strong', null, 'URL hooks'), ' answer with the same JSON in the reply body; ', h('strong', null, 'module hooks'), ' return it (or a string for context).'),
           h('li', null, h('strong', null, 'Anything else'), ': an error. The turn goes on unless the hook blocks on failure.')
         )
       )

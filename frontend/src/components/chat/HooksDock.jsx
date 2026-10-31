@@ -14,6 +14,7 @@ import { h, Fragment } from 'preact';
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
 import { EVENT_LABELS, matchSummary, RunRow } from '../settings/hookText.js';
+import { handlerText } from '../settings/ProjectHooksReview.jsx';
 import '../settings/hooks.css';
 import { CHAT_HOOKS_CHANGED, HOOK_ICON_PATH } from './hookEvents.js';
 
@@ -29,10 +30,6 @@ export function HookIcon({ size = 16 }) {
   h('path', { d: HOOK_ICON_PATH }));
 }
 
-function handlerText(hook) {
-  const handler = hook.handler || {};
-  return handler.command ? handler.command : '# ' + handler.shell + '\n' + (handler.script || '');
-}
 
 export function HooksDock({ projectDir, chatId }) {
   const [list, setList] = useState([]);
@@ -154,6 +151,10 @@ export function HooksDock({ projectDir, chatId }) {
             onClick: twoTap('promote-' + id, () => act('POST', hookPath(id) + '/promote', { scope: 'app' })),
             'aria-label': armed === 'promote-' + id ? 'Tap again: this hook will run in every chat' : 'Make this hook app-wide' },
           armed === 'promote-' + id ? 'Tap: all chats' : 'All chats'),
+          h('button', { class: 'run-dock__btn' + (armed === 'project-' + id ? ' run-dock__btn--primary is-armed' : ''), type: 'button', disabled: busy,
+            onClick: twoTap('project-' + id, () => act('POST', hookPath(id) + '/promote', { scope: 'project' })),
+            'aria-label': armed === 'project-' + id ? 'Tap again: this hook will run in every chat of this project' : 'Move this hook to the project' },
+          armed === 'project-' + id ? 'Tap: project' : 'Project'),
           h('button', { class: 'run-dock__btn run-dock__btn--danger' + (armed === 'delete-' + id ? ' is-armed' : ''), type: 'button', disabled: busy,
             onClick: twoTap('delete-' + id, () => act('DELETE', hookPath(id))),
             'aria-label': armed === 'delete-' + id ? 'Tap again to delete the hook' : 'Delete the hook' },

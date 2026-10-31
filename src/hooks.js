@@ -24,8 +24,13 @@
 //
 //   { enabled: true, list: [Hook, ...] }
 //   Hook = { id, name?, enabled, event, match?: { tool?, family?, argText?, origin? },
-//            handler: { kind: 'command', command } | { kind: 'command', shell, script },
-//            timeoutMs, failClosed, subagents }
+//            handler: { kind: 'command', command } | { kind: 'command', shell, script }
+//                   | { kind: 'http', url, secret?, send? } | { kind: 'module', source },
+//            timeoutMs, failClosed, subagents, createdBy?, note? }
+//
+// Project hooks (`hooks` in .mouaif.json) run only once the user trusted
+// their content hash (src/projectHooks.js); chat hooks live in
+// src/chatHooks.js. Order: app, then project, then chat.
 //
 // `hooks` is not in CLIENT_SETTINGS_KEYS; the UI reads it through /api/hooks.
 
@@ -82,6 +87,13 @@ const MAX_CHANGE_TEXT = 2000;
 const MAX_FOLLOW_UP = 4000;
 const KEEP_RUNS = 200;
 const MAX_PER_EVENT = 4;
+const MAX_MODULE = 64 * 1024;
+const MAX_URL = 2048;
+const MAX_REDACT = 8;
+// Fields an http hook leaves out unless its `send` lists them: they can
+// carry file contents, prompts and secrets to another machine.
+const HTTP_SEND = Object.freeze(['args', 'result', 'content', 'text']);
+const HANDLER_KINDS = Object.freeze(['command', 'http', 'module']);
 const MAX_CONCURRENT = 8;
 const REGEX_BUDGET_MS = 250;
 
@@ -117,7 +129,29 @@ function list(value, field, max) {
 
 function normalizeHandler(raw, at) {
   if (!isObject(raw)) throw new HookError(at + '.handler must be an object');
-  if (raw.kind !== 'command') throw new HookError(at + '.handler.kind must be "command"');
+  if (raw.kind === 'http') {
+    const url = str(raw.url, at + '.handler.url', MAX_URL, { required: true }).trim();
+    let parsedUrl;
+    try { parsedUrl = new URL(url); } catch { throw new HookError(at + '.handler.url is not a valid URL'); }
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') throw new HookError(at + '.handler.url must be http or https');
+    const out = { kind: 'http', url };
+    const secret = str(raw.secret, at + '.handler.secret', 256);
+    if (secret) out.secret = secret;
+    const send = list(raw.send, at + '.handler.send', HTTP_SEND.length);
+    for (const field of send) {
+      if (!HTTP_SEND.includes(field)) throw new HookError(at + '.handler.send must be among ' + HTTP_SEND.join(', '));
+    }
+    if (send.length) out.send = send;
+    return out;
+  }
+  if (raw.kind === 'module') {
+    const source = str(raw.source, at + '.handler.source', MAX_MODULE, { required: true });
+    // Compile-check at save time (nothing runs): a typo fails here, not on every call.
+    try { new (require('node:vm').Script)(require('./hooks-worker.js').transform(source), { filename: 'hook-module.js' }); }
+    catch (e) { throw new HookError(at + '.handler.source: ' + e.message); }
+    return { kind: 'module', source };
+  }
+  if (raw.kind !== 'command') throw new HookError(at + '.handler.kind must be one of ' + HANDLER_KINDS.join(', '));
   const command = str(raw.command, at + '.handler.command', MAX_COMMAND);
   const script = str(raw.script, at + '.handler.script', MAX_SCRIPT);
   if (!command.trim() && !script.trim()) throw new HookError(at + '.handler needs a command or a script');
@@ -398,6 +432,126 @@ async function runCommand(hook, input, ctx) {
   }
 }
 
+// ---- Running an http hook ----------------------------------------------------
+
+async function readCapped(response, max) {
+  if (!response.body || typeof response.body.getReader !== 'function') return (await response.text()).slice(0, max);
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(Buffer.from(value));
+    size += value.length;
+    if (size >= max) { try { await reader.cancel(); } catch { /* closed */ } break; }
+  }
+  return Buffer.concat(chunks).toString('utf8').slice(0, max);
+}
+
+// runHttp(hook, input, ctx) -> run — POST the event as JSON. Arguments,
+// results, prompts and answers are left out unless `send` lists them;
+// secret-looking keys in sent arguments are redacted. With a secret, the body
+// is signed: X-Mouaif-Signature: sha256=<hex HMAC>.
+async function runHttp(hook, input, ctx) {
+  await acquire();
+  const started = Date.now();
+  const ac = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; ac.abort(); }, hook.timeoutMs);
+  const onAbort = () => ac.abort();
+  if (ctx.signal) ctx.signal.addEventListener('abort', onAbort, { once: true });
+  try {
+    const handler = hook.handler;
+    const send = new Set(handler.send || []);
+    const body = Object.assign({}, input);
+    if (!send.has('args')) delete body.args;
+    else if (body.args !== undefined) body.args = require('./toolApproval.js').safeValue(body.args);
+    if (!send.has('result')) { delete body.result; delete body.resultText; delete body.truncated; }
+    if (!send.has('content')) delete body.content;
+    if (!send.has('text')) delete body.text;
+    const text = JSON.stringify(body);
+    const headers = { 'Content-Type': 'application/json', 'X-Mouaif-Hook': String(input.event || ''), 'User-Agent': 'mouaif-hooks' };
+    if (handler.secret) headers['X-Mouaif-Signature'] = 'sha256=' + crypto.createHmac('sha256', handler.secret).update(text).digest('hex');
+    const response = await fetch(handler.url, { method: 'POST', headers, body: text, signal: ac.signal, redirect: 'error' });
+    const out = await readCapped(response, MAX_STDOUT);
+    if (!response.ok) return { code: -1, stdout: '', stderr: '', failure: 'HTTP ' + response.status + (out.trim() ? ': ' + clip(out.trim(), 200) : ''), timedOut: false, ms: Date.now() - started };
+    return { code: 0, stdout: out, stderr: '', timedOut: false, ms: Date.now() - started };
+  } catch (e) {
+    return { code: -1, stdout: '', stderr: '', failure: timedOut ? null : (e && e.message) || String(e), timedOut, ms: Date.now() - started };
+  } finally {
+    clearTimeout(timer);
+    if (ctx.signal) ctx.signal.removeEventListener('abort', onAbort);
+    release();
+  }
+}
+
+// ---- Running a module hook ---------------------------------------------------
+//
+// One shared worker (src/hooks-worker.js) runs one module hook at a time.
+// A hook past its timeout gets the worker terminated; the next call starts a
+// fresh one.
+
+let moduleWorker = null;
+let moduleQueue = Promise.resolve();
+let moduleSeq = 0;
+
+function getModuleWorker() {
+  if (moduleWorker) return moduleWorker;
+  const w = new Worker(path.join(__dirname, 'hooks-worker.js'), { resourceLimits: { maxOldGenerationSizeMb: 64 } });
+  w.unref();
+  w.on('error', () => { if (moduleWorker === w) moduleWorker = null; });
+  w.on('exit', () => { if (moduleWorker === w) moduleWorker = null; });
+  moduleWorker = w;
+  return w;
+}
+
+function runModule(hook, input) {
+  const job = moduleQueue.then(() => new Promise((resolve) => {
+    const started = Date.now();
+    const id = ++moduleSeq;
+    let settled = false;
+    let w;
+    try { w = getModuleWorker(); }
+    catch (e) { resolve({ code: -1, stdout: '', stderr: '', failure: 'could not start the module worker: ' + e.message, timedOut: false, ms: 0 }); return; }
+    let timer = null;
+    const finish = (res) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      w.off('message', onMessage);
+      w.off('exit', onExit);
+      resolve(Object.assign({ code: 0, stdout: '', stderr: '', timedOut: false, ms: Date.now() - started }, res));
+    };
+    const onMessage = (m) => {
+      if (!m || m.id !== id) return;
+      const logs = Array.isArray(m.logs) ? m.logs.join('\n') : '';
+      if (!m.ok) { finish({ code: -1, stderr: logs, failure: m.error || 'the module failed' }); return; }
+      const result = m.result;
+      finish({ stdout: result == null ? '' : (typeof result === 'string' ? result : JSON.stringify(result)), stderr: logs });
+    };
+    const onExit = () => finish({ code: -1, failure: 'the module worker stopped' });
+    timer = setTimeout(() => {
+      if (moduleWorker === w) moduleWorker = null;
+      w.terminate().catch(() => {});
+      finish({ code: -1, timedOut: true });
+    }, hook.timeoutMs);
+    w.on('message', onMessage);
+    w.on('exit', onExit);
+    w.postMessage({ id, source: hook.handler.source, event: input });
+  }));
+  moduleQueue = job.catch(() => {});
+  return job;
+}
+
+// runHandler(hook, input, ctx) -> { code, stdout, stderr, timedOut, ms, failure? }
+function runHandler(hook, input, ctx) {
+  const kind = hook.handler && hook.handler.kind;
+  if (kind === 'http') return runHttp(hook, input, ctx);
+  if (kind === 'module') return runModule(hook, input, ctx);
+  return runCommand(hook, input, ctx);
+}
+
 // ---- Decisions -------------------------------------------------------------
 
 function clip(text, max) {
@@ -408,6 +562,7 @@ function clip(text, max) {
 // parseOutput(run) -> { decision, reason?, updatedArgs?, context?, notice?, followUp?, suppress?, error? }
 function parseOutput(run) {
   if (run.timedOut) return { decision: 'error', error: 'timed out' };
+  if (run.failure) return { decision: 'error', error: clip(run.failure, 500) };
   if (run.code === 2) {
     return { decision: 'block', reason: clip((run.stderr || run.stdout || '').trim() || 'blocked by hook', MAX_REASON) };
   }
@@ -431,6 +586,18 @@ function parseOutput(run) {
   if (typeof out.notice === 'string' && out.notice.trim()) parsed.notice = clip(out.notice.trim(), 300);
   if (typeof out.followUp === 'string' && out.followUp.trim()) parsed.followUp = clip(out.followUp.trim(), MAX_FOLLOW_UP);
   if (out.suppress === true) parsed.suppress = true;
+  if (out.redact !== undefined) {
+    if (!Array.isArray(out.redact)) return { decision: 'error', error: 'redact must be a list of { pattern, with }' };
+    const rules = [];
+    for (const r of out.redact.slice(0, MAX_REDACT)) {
+      if (!isObject(r) || typeof r.pattern !== 'string' || !r.pattern || r.pattern.length > MAX_ARG_TEXT) {
+        return { decision: 'error', error: 'each redact entry needs a pattern (max ' + MAX_ARG_TEXT + ' characters)' };
+      }
+      try { new RegExp(r.pattern, 'g'); } catch (e) { return { decision: 'error', error: 'redact pattern: ' + e.message }; }
+      rules.push({ pattern: r.pattern, with: typeof r.with === 'string' ? r.with.slice(0, 100) : '[redacted]' });
+    }
+    if (rules.length) parsed.redact = rules;
+  }
   if (out.updatedArgs !== undefined) {
     if (!isObject(out.updatedArgs)) return { decision: 'error', error: 'updatedArgs must be an object' };
     parsed.updatedArgs = out.updatedArgs;
@@ -453,6 +620,7 @@ function resultForPayload(result) {
 //   contextBy[]  (hook ids that added context)
 //   followUps[]  (turn.end: [{ hook, text }])
 //   suppress?    (attention: true when a hook asked for no push)
+//   redact?      (tool.after: [{ hook, pattern, with }], max 8 — see redactForModel)
 //   notes[]      one per hook that ran, for the transcript chip
 // }
 //
@@ -465,8 +633,8 @@ async function runHooks(event, payload, ctx = {}) {
   let config;
   try { config = getConfig(); } catch { return outcome; }
   if (!config.enabled) return outcome;
-  // App hooks first, then the chat's own (src/chatHooks.js).
-  const all = config.list.concat(chatHooksFor(ctx));
+  // App hooks first, then the project's (only when trusted), then the chat's.
+  const all = config.list.concat(projectHooksFor(ctx), chatHooksFor(ctx));
   if (!all.length) return outcome;
 
   const matching = [];
@@ -515,7 +683,7 @@ async function runHooks(event, payload, ctx = {}) {
         Object.assign(input, resultForPayload(payload.result));
       }
     }
-    const run = await runCommand(hook, input, ctx);
+    const run = await runHandler(hook, input, ctx);
     let parsed = parseOutput(run);
     if (parsed.decision === 'error' && hook.failClosed && BLOCKING_EVENTS.includes(event)) {
       parsed = { decision: 'block', reason: 'Hook "' + (hook.name || hook.id) + '" failed (' + parsed.error + ') and is set to block on failure.', error: parsed.error };
@@ -529,10 +697,11 @@ async function runHooks(event, payload, ctx = {}) {
     if (!CONTEXT_EVENTS.includes(event)) delete parsed.context;
     if (event !== 'turn.end') delete parsed.followUp;
     if (event !== 'attention') delete parsed.suppress;
+    if (event !== 'tool.after') delete parsed.redact;
 
     const note = { hook: hook.id, event, decision: parsed.decision, ms: run.ms };
     if (hook.name) note.name = hook.name;
-    if (hook.scope === 'chat') note.scope = 'chat';
+    if (hook.scope === 'chat' || hook.scope === 'project') note.scope = hook.scope;
     if (parsed.reason) note.reason = parsed.reason;
     if (parsed.error) note.error = parsed.error;
     if (parsed.notice) note.notice = parsed.notice;
@@ -558,6 +727,10 @@ async function runHooks(event, payload, ctx = {}) {
       outcome.suppress = true;
       note.suppress = true;
     }
+    if (parsed.redact) {
+      outcome.redact = (outcome.redact || []).concat(parsed.redact.map((r) => Object.assign({ hook: hook.id }, r))).slice(0, MAX_REDACT);
+      note.redacted = true;
+    }
     outcome.notes.push(note);
     logRun(note, ctx);
     if (parsed.decision === 'block') {
@@ -577,12 +750,81 @@ async function runHooks(event, payload, ctx = {}) {
   return outcome;
 }
 
+// The project's hooks from .mouaif.json, only when the user trusted their
+// current content hash (src/projectHooks.js); marked so notes say so.
+function projectHooksFor(ctx) {
+  if (!ctx || !ctx.projectDir) return [];
+  try {
+    return require('./projectHooks.js').active(ctx.projectDir).map((h) => Object.assign({}, h, { scope: 'project' }));
+  } catch { return []; }
+}
+
 // The chat's active hooks, marked so notes can say "chat hook".
 function chatHooksFor(ctx) {
   if (!ctx || !ctx.projectDir || !ctx.chatId) return [];
   try {
     return require('./chatHooks.js').active(ctx.projectDir, ctx.chatId).map((h) => Object.assign(h, { scope: 'chat' }));
   } catch { return []; }
+}
+
+// regexReplaceAll(text, rules, budgetMs) -> Promise<string | null>
+// Every rule's pattern replaced (global) in a worker with a time budget;
+// null when it did not finish. `with` is literal text (no $1 references).
+function regexReplaceAll(text, rules, budgetMs = 1000) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer = null;
+    let worker;
+    try {
+      worker = new Worker(
+        "const { parentPort } = require('node:worker_threads');" +
+        "parentPort.once('message', (d) => { try { let t = d.t; for (const r of d.r) t = t.replace(new RegExp(r.pattern, 'g'), () => r.with);" +
+        ' parentPort.postMessage(t); } catch { parentPort.postMessage(null); } });',
+        { eval: true, resourceLimits: { maxOldGenerationSizeMb: 128 } }
+      );
+    } catch { resolve(null); return; }
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      worker.terminate().catch(() => {});
+      resolve(typeof result === 'string' ? result : null);
+    };
+    worker.once('online', () => {
+      timer = setTimeout(() => finish(null), budgetMs);
+      worker.postMessage({ t: String(text), r: rules.map((r) => ({ pattern: r.pattern, with: r.with })) });
+    });
+    worker.once('message', finish);
+    worker.once('error', () => finish(null));
+    worker.once('exit', () => finish(null));
+  });
+}
+
+const WITHHELD = '[This tool result was withheld from the model: a hook asked to redact it and the redaction did not finish in time. The user can see the result.]';
+
+// redactForModel(content, rules) -> Promise<{ content, withheld }>
+// Applies tool.after `redact` rules to what the MODEL sees. A string stays a
+// string; an array of content parts gets its text parts redacted. When the
+// redaction does not finish, the model gets a notice instead of the result:
+// a secret must not slip through because a pattern was slow.
+async function redactForModel(content, rules) {
+  if (!rules || !rules.length) return { content, withheld: false };
+  if (typeof content === 'string') {
+    const out = await regexReplaceAll(content, rules);
+    return out === null ? { content: WITHHELD, withheld: true } : { content: out, withheld: false };
+  }
+  if (Array.isArray(content)) {
+    const parts = [];
+    for (const part of content) {
+      if (part && part.type === 'text' && typeof part.text === 'string') {
+        const out = await regexReplaceAll(part.text, rules);
+        if (out === null) return { content: WITHHELD, withheld: true };
+        parts.push(Object.assign({}, part, { text: out }));
+      } else parts.push(part);
+    }
+    return { content: parts, withheld: false };
+  }
+  return { content, withheld: false };
 }
 
 // hasHooks(event, ctx?) -> boolean — any enabled hook for this event (app
@@ -593,7 +835,7 @@ function hasHooks(event, ctx) {
   try {
     const config = getConfig();
     if (!config.enabled) return false;
-    return config.list.concat(chatHooksFor(ctx)).some((h) => h.enabled && h.event === event);
+    return config.list.concat(projectHooksFor(ctx), chatHooksFor(ctx)).some((h) => h.enabled && h.event === event);
   } catch { return false; }
 }
 
@@ -704,7 +946,7 @@ async function testHook(rawHook, payload, ctx = {}) {
   const hook = normalizeHook(rawHook);
   const input = Object.assign({ mouaifHook: 1, event: hook.event, hookId: hook.id, test: true,
     projectDir: ctx.projectDir || '', chatId: '', origin: { kind: 'user' } }, payload || {});
-  const run = await runCommand(hook, input, ctx);
+  const run = await runHandler(hook, input, ctx);
   return {
     parsed: parseOutput(run),
     code: run.code,
@@ -733,6 +975,9 @@ module.exports = {
   setConfig,
   runHooks,
   hasHooks,
+  redactForModel,
+  HTTP_SEND,
+  HANDLER_KINDS,
   logRun,
   listRuns,
   contextBlock,

@@ -134,12 +134,18 @@ function removeChat(projectDir, chatId) {
   return store().prepare('DELETE FROM chat_hook WHERE project_dir = ? AND chat_id = ?').run(projectDir, chatId).changes;
 }
 
-// promote(projectDir, chatId, hookId) -> app hook — moves a chat hook into the
-// app's hook list (every chat), at the end, with a free id. The chat copy is
-// removed only after the app list saved.
-function promote(projectDir, chatId, hookId) {
+// promote(projectDir, chatId, hookId, scope) -> the moved hook — moves a chat
+// hook into the app's list (scope 'app', every chat) or the project's
+// settings (scope 'project', see projectHooks.append for its trust), at the
+// end, with a free id. The chat copy is removed only after the move saved.
+function promote(projectDir, chatId, hookId, scope = 'app') {
   const current = get(projectDir, chatId, hookId);
   if (!current) return null;
+  if (scope === 'project') {
+    const added = require('./projectHooks.js').append(projectDir, Object.assign({}, current.hook, { enabled: current.status === 'active' }));
+    remove(projectDir, chatId, hookId);
+    return Object.assign({}, added.hook, { trusted: added.trusted });
+  }
   const hooks = hooksMod();
   const config = hooks.getConfig();
   const ids = new Set(config.list.map((h) => h.id));

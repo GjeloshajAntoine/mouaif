@@ -751,16 +751,17 @@ return host;
 function buildHookScopePicker(request) {
   if (!request || request.tool !== 'hook_create') return null;
   const args = (request.details && request.details.args) || request.args || {};
-  const requested = args.scope === 'app' ? 'app' : 'chat';
+  const requested = args.scope === 'app' || args.scope === 'project' ? args.scope : 'chat';
   let selected = requested;
   const host = document.createElement('fieldset');
   host.className = 'tool-card__hook-scope';
   const legend = document.createElement('legend');
   legend.textContent = 'Where the hook runs';
   host.appendChild(legend);
-  const options = requested === 'app'
-    ? [['app', 'Every chat, in every project (as asked)'], ['chat', 'Only this chat']]
-    : [['chat', 'Only this chat']];
+  // Widest first; only scopes up to the request are offered.
+  const all = [['app', 'Every chat, in every project'], ['project', 'Every chat of this project (saved in its settings)'], ['chat', 'Only this chat']];
+  const options = all.slice(all.findIndex(([v]) => v === requested))
+    .map(([v, text]) => [v, v === requested && requested !== 'chat' ? text + ' (as asked)' : text]);
   const name = 'hook-scope-' + String(request.callId || Math.random()).replace(/[^A-Za-z0-9_-]/g, '');
   for (const [value, text] of options) {
     const label = document.createElement('label');

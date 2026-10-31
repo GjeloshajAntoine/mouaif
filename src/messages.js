@@ -125,11 +125,19 @@ return change;
 } else if (n.before && typeof n.before === 'object') note.before = n.before;
 }
 if (n.context === true) note.context = true;
+if (n.redacted === true) note.redacted = true;
+if (n.scope === 'chat' || n.scope === 'project') note.scope = n.scope;
 notes.push(note);
 }
 if (notes.length) out.notes = notes;
 }
 if (typeof h.context === 'string' && h.context) out.context = h.context.slice(0, 16 * 1024);
+// tool.after redaction: which hooks redacted the result for the model, and
+// the text the model saw, which replay sends instead of the stored result.
+if (h.redacted && typeof h.redacted === 'object' && Array.isArray(h.redacted.by)) {
+out.redacted = { by: h.redacted.by.filter((x) => typeof x === 'string').slice(0, 8).map((x) => x.slice(0, 40)), withheld: h.redacted.withheld === true };
+if (typeof h.modelContent === 'string') out.modelContent = h.modelContent.slice(0, 4 * 1024 * 1024);
+}
 return Object.keys(out).length ? out : null;
 }
 function normalizeMessage(m) {
@@ -326,11 +334,13 @@ name, content: storedContent, result: storedResult, maxBytes: toolFeedbackMaxByt
 imageRefs: name === 'subagent' && Number.isSafeInteger(result.seq)
 ? require('./chatImages.js').generatedImageRefs(result.seq, storedResult) : undefined
 });
+// A result a tool.after hook redacted replays as the model saw it.
+const seen = result.hooks && result.hooks.redacted && typeof result.hooks.modelContent === 'string' ? result.hooks.modelContent : feedback;
 out.push({
 role: 'tool', tool_call_id: wireId, name,
 // Context a hook added to this result rides after it, exactly as the
 // model saw it live (src/ai-stream.js), so a resumed chat keeps it.
-content: withHookContext(feedback, result.hooks)
+content: withHookContext(seen, result.hooks)
 });
 if (resultIndex === i + 1) i++;
 continue;

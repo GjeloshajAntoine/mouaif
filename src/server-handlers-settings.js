@@ -90,6 +90,11 @@ async function handleSettings(req, res, parsed) {
     if (!projectDir || typeof projectDir !== 'string') {
       return sendJSON(res, 400, { error: 'projectDir is required' });
     }
+    // Project hooks run only after a trust review (src/projectHooks.js); they
+    // are edited in the file itself or added through /api/hooks routes.
+    if (Object.prototype.hasOwnProperty.call(patch, 'hooks') || (Array.isArray(unset) && unset.includes('hooks'))) {
+      return sendJSON(res, 400, { error: 'project hooks are not written through settings; edit .mouaif.json or use Settings → Hooks' });
+    }
     try {
       // Same redaction contract as the app store: a round-tripped project
       // snapshot must not persist the response-only `hasApiKey` marker,

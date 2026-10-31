@@ -34,6 +34,8 @@ export function matchSummary(hook) {
 
 export function handlerSummary(hook) {
   const handler = hook.handler || {};
+  if (handler.kind === 'http') return 'POST ' + handler.url;
+  if (handler.kind === 'module') return 'module · ' + ((handler.source || '').split('\n').find((l) => l.trim() && !l.trim().startsWith('//')) || '').trim();
   if (handler.command) return handler.command;
   const first = (handler.script || '').split('\n').find((line) => line.trim() && !line.startsWith('#!')) || '';
   return handler.shell + ' script · ' + first.trim();
