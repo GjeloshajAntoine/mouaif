@@ -10,6 +10,7 @@ import { PromptIcon } from './PromptIcon.jsx';
 import { pinnedProfiles } from './settings/profileLaunchers.js';
 import { WEBHOOK_ICON_PATH } from './chat/webhookDock.js';
 import { HOOK_ICON_PATH } from './chat/hookEvents.js';
+import { ProjectCardExtensions } from './ProjectCardExtensions.jsx';
 const CHAT_PAGE_SIZE = 30;
 // A card's search is a peek, not a page: the card holds about three rows and
 // the server caps the list at its own maximum anyway.
@@ -714,7 +715,9 @@ export function ProjectsView() {
               h(ProjectFilter, { project: p, value: filters[p.id] || 'all', onChange: (f) => setFilters((prev) => Object.assign({}, prev, { [p.id]: f })) }),
               h(ProjectMenu, { project: p, onRename: renameProject, onUnregister: unregisterProject, onMove: moveProject, canMoveUp: index > 0, canMoveDown: index < projects.length - 1 })
             ),
-            h(ChatList, { project: p, filter: filters[p.id] || 'all' })
+            h(ChatList, { project: p, filter: filters[p.id] || 'all' }),
+            // Extension views for this project (slot project.card).
+            h(ProjectCardExtensions, { projectDir: p.path })
           );
       })
     )

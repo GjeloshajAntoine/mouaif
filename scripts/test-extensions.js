@@ -379,6 +379,53 @@ async function testHostToolsAndEvents() {
   }
 }
 
+// Phase 8: tool renderers mount on a persisted call that matches them;
+// settings pages and project-card views mount without a chat.
+async function testRenderersAndPages() {
+  const chats = require('../src/chats.js');
+  const messages = require('../src/messages.js');
+  const { createServer } = require('../src/index.js');
+  const app = createServer(0);
+  await new Promise((r) => app.listen(0, '127.0.0.1', r));
+  const base = 'http://127.0.0.1:' + app.address().port;
+  const post = async (route, body = {}) => {
+    const res = await fetch(base + route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    return { status: res.status, body: await res.json() };
+  };
+  try {
+    extensions.importApp(manifest({ id: 'shell-view', hooks: [], permissions: [],
+      ui: [
+        { id: 'out', slot: 'tool.renderer', title: 'Shell output', html: '<p>r</p>', match: { tool: ['shell', 'mcp__gh__*'] } },
+        { id: 'card', slot: 'project.card', title: 'Board', html: '<p>c</p>' }
+      ] }));
+    extensions.setAppEnabled('shell-view', true);
+    const chat = chats.createChat(projectDir, { title: 'renderers' });
+    messages.appendMessage(projectDir, chat.id, { role: 'tool', phase: 'call', toolCallId: 'c1', name: 'shell', args: { cmd: 'ls' }, content: '{}' });
+    messages.appendMessage(projectDir, chat.id, { role: 'tool', phase: 'result', toolCallId: 'c1', name: 'shell', ok: true, content: JSON.stringify({ stdout: 'a\nb\n', exitCode: 0 }) });
+    messages.appendMessage(projectDir, chat.id, { role: 'tool', phase: 'call', toolCallId: 'c2', name: 'read_file', args: { path: 'x' }, content: '{}' });
+    messages.appendMessage(projectDir, chat.id, { role: 'tool', phase: 'result', toolCallId: 'c2', name: 'read_file', ok: true, content: '{"content":"secret"}' });
+    const listed = (await (await fetch(base + '/api/extensions/surfaces?projectDir=' + encodeURIComponent(projectDir) + '&slot=tool.renderer')).json()).surfaces;
+    assert.deepEqual(listed[0].match, { tool: ['shell', 'mcp__gh__*'] });
+    let r = await post('/api/mcp/apps/mount', { projectDir, chatId: chat.id, extensionId: 'shell-view', surfaceId: 'out', callId: 'c1' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body.arguments, { cmd: 'ls' });
+    assert.deepEqual(r.body.result.structuredContent, { stdout: 'a\nb\n', exitCode: 0 }, 'a native result becomes structuredContent');
+    assert.equal(r.body.result.content[0].type, 'text');
+    assert.equal((await post('/api/mcp/apps/mount', { projectDir, chatId: chat.id, extensionId: 'shell-view', surfaceId: 'out', callId: 'c2' })).status, 403,
+      'a renderer only sees the tools it matches');
+    assert.equal((await post('/api/mcp/apps/mount', { projectDir, chatId: chat.id, extensionId: 'shell-view', surfaceId: 'out' })).status, 400);
+    assert.equal((await post('/api/mcp/apps/mount', { projectDir, chatId: chat.id, extensionId: 'shell-view', surfaceId: 'out', callId: 'forged' })).status, 404);
+    assert.equal((await post('/api/mcp/apps/mount', { projectDir, extensionId: 'shell-view', surfaceId: 'out', callId: 'c1' })).status, 400, 'a renderer lives in a chat');
+    r = await post('/api/mcp/apps/mount', { projectDir, extensionId: 'shell-view', surfaceId: 'card' });
+    assert.equal(r.status, 200, 'a project-card view needs no chat');
+    assert.equal(r.body.surface.slot, 'project.card');
+    extensions.removeApp('shell-view');
+  } finally {
+    await new Promise((r) => app.close(r));
+    await mcp.stopAll();
+  }
+}
+
 let finished = false;
 process.on('exit', (code) => {
   if (code === 0 && !finished) { console.error('test-extensions: stopped before the end (a promise never settled)'); process.exitCode = 1; }
@@ -392,6 +439,7 @@ async function main() {
   await testRoutes();
   await testSurfaces();
   await testHostToolsAndEvents();
+  await testRenderersAndPages();
   finished = true;
   console.log('test-extensions: ok');
 }

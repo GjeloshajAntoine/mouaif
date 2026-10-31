@@ -9,6 +9,7 @@
 
 import { renderMarkdown } from '../../markdown.js';
 import { mountMcpApp, deliverMcpAppMessage, reloadMcpApp } from './McpAppFrame.jsx';
+import { findToolRenderer, mountToolRenderer } from './extensionRenderer.js';
 import { authorizationCard } from './cards.js';
 import { afterTranscriptAppend, scrollToolBodyToBottomSoon, cancelToolBodyScroll, pinTranscriptAfterSettle } from './scroll.js';
 import {
@@ -1920,7 +1921,16 @@ if (!card) {
     const nestedRows = isSubagent ? snapshotNestedRowState(card) : null;
     renderToolResultBody(body, callArgs ? Object.assign({}, toolResult, { args: callArgs }) : toolResult, isSubagentTool);
     if (card._shellReview) applyReviewToCard(card, card._shellReview);
-    if ((toolResult.name?.startsWith('mcp__') || isMcpAppCreate) && id && refs.mcpAppContext) {
+    // An extension's renderer for this tool (docs/features/extensions.md)
+    // takes the body's place; the ordinary result stays under "Raw result".
+    const extRenderer = id && refs.mcpAppContext && !isMcpAppCreate && !isSubagent
+      ? findToolRenderer(refs.mcpAppContext.projectDir, toolResult.name) : null;
+    if (extRenderer) {
+      const context = refs.mcpAppContext;
+      card.classList.add('tool-card--ext-renderer');
+      mountToolRenderer(body, { projectDir: context.projectDir, chatId: context.chatId, callId: id, renderer: extRenderer,
+        onAuthorize: (request, signal) => authorizationCard({ ...request, signal }, context.projectDir, context.chatId, refs) });
+    } else if ((toolResult.name?.startsWith('mcp__') || isMcpAppCreate) && id && refs.mcpAppContext) {
     const context = refs.mcpAppContext;
     const app = document.createElement('div');
     body.prepend(app);

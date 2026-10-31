@@ -30,6 +30,7 @@ import { ProjectHooksBar } from './ProjectHooksBar.jsx';
 import { ExtensionDocks, useExtensionSurfaces } from './ExtensionDocks.jsx';
 import { ExtensionSheet } from './ExtensionSheet.jsx';
 import { registerSheetOpener, COMPOSER_INSERT } from './extensionEvents.js';
+import { setToolRenderers } from './extensionRenderer.js';
 import { PreviewUrlPrompt } from './PreviewUrlPrompt.jsx';
 import { authorizationCard } from './cards.js';
 import { requestWebpreview, setStatus } from '../../api.js';
@@ -86,6 +87,9 @@ const [screenCaptureOpen, setScreenCaptureOpen] = useState(false);
 // Extension sheets (docs/features/extensions.md): listed in the file menu,
 // one open at a time; a view can ask to open one of its own.
 const extensionSheets = useExtensionSurfaces(projectDir, 'chat.sheet');
+// Extension tool renderers, read by the transcript when a card builds its body.
+const extensionRenderers = useExtensionSurfaces(projectDir, 'tool.renderer');
+useEffect(() => { setToolRenderers(projectDir, extensionRenderers); }, [projectDir, extensionRenderers]);
 const [openSheet, setOpenSheet] = useState(null);
 useEffect(() => registerSheetOpener(({ extensionId, surfaceId }) => {
   const found = extensionSheets.find((s) => s.extensionId === extensionId && s.surfaceId === surfaceId);

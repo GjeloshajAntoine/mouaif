@@ -114,6 +114,28 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
     if (!found) throw err('EMCP_NOTFOUND', 'This extension view is not available here (off, not trusted or removed)');
     if (extensions.CHAT_SLOTS.includes(found.ui.slot) && !chatId) throw err('EBADINPUT', 'This view lives in a chat; chatId is required');
     if (chatId && !chats.getChat(projectDir, chatId)) throw err('EMCP_NOTFOUND', 'Chat not found');
+    // A tool renderer shows one persisted call: its arguments and result come
+    // from the transcript, and the call's tool must match the renderer.
+    let callArgs = {};
+    let callResult = { content: [], structuredContent: { mouaif: { type: 'mounted', slot: found.ui.slot } } };
+    let callId = null;
+    if (found.ui.slot === 'tool.renderer') {
+      if (typeof body.callId !== 'string' || !body.callId) throw err('EBADINPUT', 'callId is required for a tool renderer');
+      const rows = messages.listMessages(projectDir, chatId);
+      const call = rows.find(r => r.role === 'tool' && r.phase === 'call' && r.toolCallId === body.callId);
+      const result = rows.find(r => r.role === 'tool' && r.phase === 'result' && r.toolCallId === body.callId);
+      if (!call || !result) throw err('EMCP_NOTFOUND', 'Completed tool call not found');
+      if (!require('./hooks.js')._toolMatches(found.ui.match.tool, String(call.name || ''))) {
+        throw err('EMCP_VISIBILITY', 'This renderer does not handle ' + call.name);
+      }
+      callId = body.callId;
+      callArgs = call.args && typeof call.args === 'object' ? call.args : {};
+      let parsed;
+      try { parsed = JSON.parse(result.content); } catch { parsed = undefined; }
+      // MCP results pass through; a native tool's JSON becomes structuredContent.
+      callResult = parsed && Array.isArray(parsed.content) ? parsed
+        : { content: [{ type: 'text', text: String(result.content || '') }], ...(parsed && typeof parsed === 'object' ? { structuredContent: parsed } : {}) };
+    }
     let html;
     let policy;
     let server = null;
@@ -151,14 +173,14 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
       extensionId, surfaceId, slot: found.ui.slot, scope: found.scope,
       permissions: found.ext.permissions.slice(), events: (found.ui.events || []).slice(),
       serverId: server ? server.id : null, serverSlug: server ? server.slug : null, session, uri: found.ui.resourceUri || null,
-      html: found.ui.html || null, epoch,
+      html: found.ui.html || null, epoch, callId,
       title: found.ext.name + ' · ' + found.ui.title, ticket,
       expires: Date.now() + 30 * 60 * 1000, lease: Date.now() + 20000, requests: new Map() };
     mounts.set(id, mount);
     validate(mount);
     sandbox.bind(ticket.token, () => { validate(mount); });
     return { enabled: true, id, url: ticket.url, origin: ticket.origin, title: mount.title, html, csp: policy.csp, permissions: {},
-      arguments: {}, result: { content: [], structuredContent: { mouaif: { type: 'mounted', slot: mount.slot } } },
+      arguments: callArgs, result: callResult,
       surface: { extensionId, surfaceId, slot: mount.slot, title: found.ui.title, extensionName: found.ext.name,
         permissions: mount.permissions, events: mount.events, hasServer: !!server } };
   }

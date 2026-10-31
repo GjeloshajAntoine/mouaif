@@ -12,8 +12,8 @@ export const SLOT_LABELS = {
   'chat.dock': 'A bar above the message box',
   'chat.sheet': 'A sheet opened from the chat’s file menu',
   'settings.page': 'A page in Settings → Extensions',
-  'tool.renderer': 'A view inside matching tool cards',
-  'project.card': 'A row on the project card'
+  'tool.renderer': 'A view inside matching tool cards (it sees those calls’ arguments and results)',
+  'project.card': 'A chip on the project card that opens it'
 };
 
 export function ExtensionSummary({ summary }) {

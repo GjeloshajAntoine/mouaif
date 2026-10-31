@@ -10,6 +10,7 @@ import { h, Fragment } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson, activeProject } from '../api.js';
 import { ExtensionSummary } from './settings/ExtensionSummary.jsx';
+import { McpAppFrame } from './chat/McpAppFrame.jsx';
 import './settings/hooks.css';
 
 async function api(method, url, body) {
@@ -24,6 +25,15 @@ function Switch({ id, checked, onChange, label, disabled }) {
   return h('label', { class: 'switch', title: label },
     h('input', { id, type: 'checkbox', role: 'switch', 'aria-checked': String(checked), 'aria-label': label, checked, disabled, onChange: (e) => onChange(e.currentTarget.checked) }),
     h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' })));
+}
+
+// Links to an extension's settings pages (slot settings.page).
+function PageLinks({ ext }) {
+  const pages = ext.summary && ext.active !== false && ext.enabled !== false
+    ? ext.summary.ui.filter((u) => u.slot === 'settings.page') : [];
+  if (!pages.length) return null;
+  return h('div', { class: 'ext-card__pages' }, pages.map((u) => h('a', { key: u.id, class: 'btn',
+    href: '#/settings/extensions/' + encodeURIComponent(ext.id) + '/' + encodeURIComponent(u.id) }, u.title + ' →')));
 }
 
 function AppExtension({ ext, projectDir, onChanged, setStatus }) {
@@ -50,6 +60,7 @@ function AppExtension({ ext, projectDir, onChanged, setStatus }) {
       h(Switch, { id: 'ext-on-' + ext.id, label: (ext.enabled ? 'Turn off ' : 'Turn on ') + ext.name, checked: ext.enabled, disabled: busy || !!ext.error,
         onChange: (on) => run(() => api('PUT', '/api/extensions/' + ext.id, { enabled: on }), on ? ext.name + ' is on' : ext.name + ' is off') })),
     open ? h(ExtensionSummary, { summary: ext.summary }) : null,
+    h(PageLinks, { ext }),
     h('div', { class: 'hook-card__actions' },
       h('button', { type: 'button', class: 'btn', 'aria-expanded': open ? 'true' : 'false', onClick: () => setOpen((v) => !v) }, open ? 'Hide details' : 'Details'),
       projectDir ? h('button', { type: 'button', class: 'btn', disabled: busy,
@@ -80,6 +91,7 @@ function ProjectExtension({ ext, projectDir, onChanged, setStatus }) {
     ext.description ? h('div', { class: 'hook-card__note' }, ext.description) : null,
     ext.error ? h('div', { class: 'hook-run__detail hook-run__detail--error' }, ext.error) : null,
     open && ext.summary ? h(ExtensionSummary, { summary: ext.summary }) : null,
+    ext.trusted ? h(PageLinks, { ext }) : null,
     open && ext.files && ext.files.length ? h('p', { class: 'hint hint--compact' }, 'Its hooks run these project files: ', ext.files.join(', '), '. Changing them turns it off again.') : null,
     h('div', { class: 'hook-card__actions' },
       ext.summary ? h('button', { type: 'button', class: 'btn', onClick: () => setOpen((v) => !v) }, open ? 'Hide details' : 'Details') : null,
@@ -172,4 +184,30 @@ export function SettingsExtensionsView() {
         project.length ? h('ul', { class: 'hook-list' }, project.map((ext) => h(ProjectExtension, { key: ext.id, ext, projectDir, onChanged: reload, setStatus }))) : null) : null,
 
       h('p', { class: 'status', 'data-state': status.kind, 'aria-live': 'polite' }, status.text)));
+}
+
+// #/settings/extensions/<id>/<surface> — an extension's settings page
+// (slot settings.page): its view, full width, with no chat. It runs in the
+// active project (its server and project switch apply).
+export function SettingsExtensionPageView({ extensionId, surfaceId }) {
+  const [surface, setSurface] = useState(undefined);
+  const projectDir = (activeProject.value && activeProject.value.dir) || '';
+  useEffect(() => {
+    if (!projectDir) { setSurface(null); return; }
+    api('GET', '/api/extensions/surfaces?projectDir=' + encodeURIComponent(projectDir) + '&slot=settings.page')
+      .then((r) => setSurface((r.surfaces || []).find((s) => s.extensionId === extensionId && s.surfaceId === surfaceId) || null),
+        () => setSurface(null));
+  }, [projectDir, extensionId, surfaceId]);
+  return h(Fragment, null,
+    h('div', { class: 'view-head' },
+      h('a', { href: '#/settings/extensions', class: 'view-back', 'aria-label': 'Back to extensions' }, '←'),
+      h('h2', { class: 'view-title' }, surface ? surface.title : 'Extension')),
+    h('section', { class: 'settings-hooks ext-page' },
+      surface === undefined ? h('p', { class: 'hint hint--compact' }, 'Loading…')
+        : !projectDir ? h('p', { class: 'hint hint--compact' }, 'Open a project first: an extension page runs in a project.')
+          : !surface ? h('p', { class: 'hint hint--compact' }, 'This page is not available: the extension is off, not trusted here, or has no such page.')
+            : h(Fragment, null,
+              h('p', { class: 'hint settings-hooks__intro' }, surface.extensionName + ' · runs sandboxed; it can only do what you allowed when you turned it on.'),
+              h(McpAppFrame, { projectDir, callId: 'page:' + extensionId + '/' + surfaceId,
+                surface: { extensionId, surfaceId, slot: 'settings.page', projectName: (activeProject.value && activeProject.value.name) || '' } }))));
 }

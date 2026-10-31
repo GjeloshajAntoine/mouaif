@@ -81,3 +81,17 @@
 
 /* File menu entries for sheets (FileToolbar.jsx). */
 .file-toolbar__menu-item--extension .file-toolbar__menu-icon { color: var(--accent); }
+
+/* Tool renderers (extensionRenderer.js): the view above, the ordinary
+   result folded under "Raw result". */
+.ext-renderer .mcp-app { margin: 0 0 6px; }
+.ext-renderer__show { min-height: var(--tap); margin: 4px 0 8px; }
+.ext-renderer__raw > summary {
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}

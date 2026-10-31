@@ -751,3 +751,31 @@ border-left: 1px solid var(--border);
   .project-card:only-child > :not(.project-card__chats) { flex-shrink: 0; }
   .project-card:only-child .project-card__chats { flex: 0 1 auto; max-height: none; min-height: 0; }
 }
+
+/* Extension views on a project card (ProjectCardExtensions.jsx, slot
+   project.card): a wrapping row of 44 px chips; each opens a sheet. */
+.project-card__extensions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 12px 10px;
+}
+.project-card__extension {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--tap);
+  max-width: 100%;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-card__extension-icon { flex: 0 0 auto; }

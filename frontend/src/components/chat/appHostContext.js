@@ -104,10 +104,12 @@ export function surfaceHostContext(surface) {
 export const MAX_LIVE = 2;
 const live = new Map(); // key -> { at, evict }
 
-// claimSurface(key, evict) — a dock or renderer is about to mount its frame.
-// The least recently used others are evicted (their `evict` closes them).
-export function claimSurface(key, evict) {
-  live.set(key, { at: Date.now(), evict });
+// claimSurface(key, evict, alive?) — a dock or renderer is about to mount its
+// frame. Views whose `alive()` says they left the page are dropped first; then
+// the least recently used others are evicted (their `evict` closes them).
+export function claimSurface(key, evict, alive) {
+  for (const [k, v] of live) if (v.alive && !v.alive()) live.delete(k);
+  live.set(key, { at: Date.now(), evict, alive });
   while (live.size > MAX_LIVE) {
     let oldest = null;
     for (const [k, v] of live) if (k !== key && (!oldest || v.at < oldest[1].at)) oldest = [k, v];

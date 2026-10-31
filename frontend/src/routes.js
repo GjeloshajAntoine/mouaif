@@ -126,6 +126,13 @@ const ROUTES = [
 
   // ---- Extensions (docs/features/extensions.md) -----------------------
   exact('settings/extensions', () => ({ name: 'settingsExtensions' })),
+  // An extension's settings page: settings/extensions/<id>/<surface>.
+  prefix('settings/extensions/', (m) => {
+    const [ext, surface] = String(m.id || '').split('/');
+    if (!ext || !surface) return null;
+    try { return { name: 'settingsExtensionPage', extensionId: decodeURIComponent(ext), surfaceId: decodeURIComponent(surface) }; }
+    catch { return null; }
+  }),
 
   // ---- Themes --------------------------------------------------------
   // The picker, then the editor: `new` (optionally `?from=<theme id>` to

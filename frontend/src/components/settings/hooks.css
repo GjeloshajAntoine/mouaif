@@ -230,3 +230,6 @@
 .ext-summary__list code { font-size: 0.72rem; color: var(--muted); }
 .ext-summary__hooks { padding: 0; }
 .hook-card__actions a.btn { display: inline-flex; align-items: center; min-height: var(--tap); text-decoration: none; }
+.ext-card__pages { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.ext-card__pages .btn { display: inline-flex; align-items: center; min-height: var(--tap); text-decoration: none; }
+.ext-page .mcp-app { margin: 0 10px; }
