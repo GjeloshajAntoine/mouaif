@@ -326,6 +326,22 @@ async function testTurnE2E() {
     req.on('end', () => {
       if (body.includes('FAIL')) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end('{"error":{"message":"boom"}}'); return; }
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      // TOOLS: text, a shell call, then (TOOLS-TEXT only) more text after it.
+      if (body.includes('TOOLS')) {
+        if (!body.includes('"role":"tool"')) {
+          res.write('data: {"choices":[{"delta":{"content":"Part one."},"index":0}]}\n\n');
+          res.write('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_t1","function":{"name":"shell","arguments":"{\\"cmd\\":\\"echo one\\"}"}}]},"index":0}]}\n\n');
+          res.write('data: {"choices":[{"finish_reason":"tool_calls","index":0}]}\n\n');
+        } else if (body.includes('TOOLS-TEXT')) {
+          res.write('data: {"choices":[{"delta":{"content":"Part two."},"index":0}]}\n\n');
+          res.write('data: {"choices":[{"finish_reason":"stop","index":0}]}\n\n');
+        } else {
+          res.write('data: {"choices":[{"finish_reason":"stop","index":0}]}\n\n');
+        }
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
       res.write('data: {"choices":[{"delta":{"content":"Done."},"index":0}]}\n\n');
       res.write('data: {"choices":[{"finish_reason":"stop","index":0}]}\n\n');
       res.write('data: [DONE]\n\n');
@@ -378,6 +394,21 @@ async function testTurnE2E() {
   assert.ok(err.code);
   await new Promise((r) => setTimeout(r, 300));
   assert.ok(!read().some((e) => e.event === 'turn.end' && e.chatId === failChat.id));
+
+  // turn.end gets the whole answer, across tool rounds, not just the text
+  // after the last tool call.
+  settings.setProject(projectDir, { models: [{ id: 'mock', provider: 'openai-compatible', label: 'Mock' }], tools: { shell: { enabled: true, mode: 'allow' } } });
+  setHooks([{ id: 'answer', event: 'turn.end', handler: { kind: 'command', shell: 'node', script: record + '});' } }]);
+  for (const [prompt, expected] of [['TOOLS-TEXT go', 'Part one.\n\nPart two.'], ['TOOLS go', /^Part one\.\n\nTool execution finished, but the model did not provide a final response/]]) {
+    const c = chats.createChat(projectDir, { title: prompt });
+    const r = mockRes();
+    await handleChatStream(mockReq({ projectDir, modelId: 'mock', content: prompt }), r, c.id, null);
+    assert.equal(r.statusCode, 200);
+    assert.ok(await waitFor(() => read().some((e) => e.event === 'turn.end' && e.chatId === c.id)), 'turn.end fired for ' + prompt);
+    const end = read().find((e) => e.event === 'turn.end' && e.chatId === c.id);
+    if (expected instanceof RegExp) assert.match(end.text, expected); else assert.equal(end.text, expected);
+    assert.equal(end.toolCount, 1);
+  }
   server.close();
   setHooks([]);
 }

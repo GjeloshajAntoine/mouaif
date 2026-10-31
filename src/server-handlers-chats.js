@@ -1966,10 +1966,24 @@ promptSize: resolvedProfileId,
   liveChat.finishLiveChat(runKey);
   // `turn.end` after the turn is saved and the chat is free; a hook may
   // start one follow-up turn (src/hookTurns.js).
+  // The whole answer: `assistantContent` only holds the text after the last
+  // tool call, so read every assistant row this turn saved. A long answer
+  // keeps its end, where the model sums up.
+  function turnAnswerText() {
+    let text = assistantContent;
+    try {
+      const after = userMsg && typeof userMsg.seq === 'number' ? userMsg.seq : null;
+      const rows = messages.listMessages(projectDir, chatId)
+        .filter((m) => m && m.role === 'assistant' && (after === null || (typeof m.seq === 'number' && m.seq > after)) && m.content && m.content.trim());
+      if (rows.length) text = rows.map((m) => m.content.trim()).join('\n\n');
+    } catch { /* fall back to the last segment */ }
+    const max = 16 * 1024;
+    return text.length > max ? '…' + text.slice(text.length - max + 1) : text;
+  }
   if (result && result.ok) {
     hookTurns.fireTurnEnd(Object.assign({
       modelId, providerId, sessionToken, lifecycle,
-      text: assistantContent,
+      text: turnAnswerText(),
       usage: lastEnrichment && lastEnrichment.usage ? lastEnrichment.usage : null,
       cost: turnCostKnown ? { total: turnCost + (delegatedCost || 0), currency: 'USD' } : null,
       toolCount: turnToolCount

@@ -104,7 +104,7 @@ The other events send their own fields instead of `tool`, `args` and `content`:
 | Event | Fields |
 | --- | --- |
 | `turn.start` | `model`, `provider`, `thinkingLevel` |
-| `turn.end` | `text` (the final answer, up to 16 KB), `usage`, `cost`, `toolCount`, `followUpDepth` (0 for a turn you started) |
+| `turn.end` | `text` (the whole answer as the chat shows it, every part of a turn with tool calls joined by blank lines; past 16 KB its end is kept), `usage`, `cost`, `toolCount`, `followUpDepth` (0 for a turn you started) |
 | `turn.error` | `code`, `message`, `stopped` (true when you pressed Stop) |
 | `attention` | `kind` (`tool_authorization`, `ask_user` or `completion`), `tool` |
 
