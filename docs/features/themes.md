@@ -4,7 +4,7 @@
 
 Themes change how the whole app looks: colours, corners, type, and anything CSS can reach. A custom theme can also run its own JavaScript for animations and effects such as a pointer glow, a starfield, or page transitions.
 
-mouaif ships five built-in themes:
+mouaif ships seven built-in themes:
 
 | Theme | Base | Look |
 | --- | --- | --- |
@@ -12,7 +12,11 @@ mouaif ships five built-in themes:
 | OLED | dark | true black surfaces |
 | Aurora | dark | teal and violet, with a slow drifting glow behind the app |
 | Paper | light | warm paper with a terracotta accent |
+| Parchment | light | yellowed paper: grain and fibres over the page, cards that sit like separate sheets, serif type, fountain-pen blue ink |
 | Mono | dark | terminal green, monospace type, sharp corners, scanlines |
+| CRT | dark | a phosphor tube: glowing text, heavy scanlines, an RGB sub-pixel mask, a dark vignette, a faint flicker and a bright band rolling down the screen |
+
+With reduced motion turned on, Aurora's drift and CRT's flicker and rolling band stop.
 
 The active theme is an app-wide setting, so every device signed in to the same mouaif uses it. Other open tabs in the same browser switch at once. Other devices pick it up on their next load.
 

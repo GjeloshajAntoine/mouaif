@@ -31,6 +31,18 @@ export const COLOR_TOKENS = [
 
 const FLAT_BACKGROUND = 'html, body { background: var(--bg); }';
 
+// Paper grain + long horizontal fibres as a tileable SVG noise texture.
+// `data:` images are allowed by the page CSP (`img-src 'self' data:`).
+const PAPER_GRAIN = 'url("data:image/svg+xml,' + encodeURIComponent(
+  "<svg xmlns='http://www.w3.org/2000/svg' width='260' height='260'>"
+  + "<filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/>"
+  + "<feColorMatrix values='0 0 0 0 0.33 0 0 0 0 0.22 0 0 0 0 0.07 0 0 0 1.3 -0.58'/></filter>"
+  + "<filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.018 0.55' numOctaves='2' seed='7' stitchTiles='stitch'/>"
+  + "<feColorMatrix values='0 0 0 0 0.45 0 0 0 0 0.32 0 0 0 0 0.1 0 0 0 0.7 -0.33'/></filter>"
+  + "<rect width='100%' height='100%' filter='url(#g)'/>"
+  + "<rect width='100%' height='100%' filter='url(#f)'/></svg>"
+) + '")';
+
 const REDUCED_MOTION_OFF = (selector) =>
   `@media (prefers-reduced-motion: reduce) { ${selector} { animation: none !important; } }`;
 
@@ -138,6 +150,67 @@ ${REDUCED_MOTION_OFF('body::before')}
     css: FLAT_BACKGROUND
   },
   {
+    id: 'parchment',
+    name: 'Parchment',
+    note: 'yellowed paper · fountain-pen ink',
+    base: 'light',
+    vars: {
+      '--bg': '#ecdcab',
+      '--surface': '#f7ecc8',
+      '--surface-2': '#efe0b3',
+      '--surface-3': '#e5d29d',
+      '--border': 'rgba(110, 78, 18, 0.18)',
+      '--border-strong': '#c9ae6e',
+      '--fg': '#2f2414',
+      '--fg-soft': '#4f3f24',
+      '--muted': '#7a6640',
+      '--muted-2': '#9e8a5f',
+      '--accent': '#284a80',
+      '--accent-soft': 'rgba(40, 74, 128, 0.12)',
+      '--accent-press': '#1e3a66',
+      '--accent-hi': '#3a5f9c',
+      '--accent-hi-2': '#587bb6',
+      '--on-accent': '#fbf3d8',
+      '--success': '#3b6a28',
+      '--success-soft': 'rgba(59, 106, 40, 0.13)',
+      '--warning': '#8a5800',
+      '--warning-soft': 'rgba(138, 88, 0, 0.13)',
+      '--danger': '#9e2f1f',
+      '--danger-soft': '#efcfb6',
+      '--font-sans': 'ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif',
+      '--r-sm': '2px',
+      '--r-md': '3px',
+      '--r-lg': '5px',
+      '--shadow-sm': '0 1px 1px rgba(90, 60, 10, 0.14), 0 3px 8px -3px rgba(90, 60, 10, 0.22)',
+      '--shadow-md': '0 2px 3px rgba(90, 60, 10, 0.12), 0 8px 18px -6px rgba(90, 60, 10, 0.28)',
+      '--shadow-lg': '0 4px 6px rgba(90, 60, 10, 0.12), 0 16px 32px -10px rgba(90, 60, 10, 0.32)'
+    },
+    css: `
+${FLAT_BACKGROUND}
+/* Grain, fibres and aged edges over the whole page: one static fixed layer. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  pointer-events: none;
+  background:
+    radial-gradient(130% 95% at 50% 42%, transparent 58%, rgba(130, 85, 15, 0.22) 100%),
+    ${PAPER_GRAIN} 0 0 / 260px 260px;
+}
+/* Cards read as separate sheets lying on the page. */
+.group__list, .project-card, .theme-card, .chat-msg__body, .dictation__card, .settings-themes__notice {
+  background-image: linear-gradient(172deg, rgba(255, 252, 238, 0.55), rgba(255, 252, 238, 0) 42%, rgba(140, 100, 30, 0.06));
+  border: 1px solid rgba(120, 88, 25, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), var(--shadow-sm);
+}
+.chat-msg--user .chat-msg__body {
+  background-image: linear-gradient(172deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 50%);
+}
+::selection { background: rgba(40, 74, 128, 0.2); }
+`
+  },
+  {
     id: 'mono',
     name: 'Mono',
     note: 'terminal green · scanlines',
@@ -177,6 +250,85 @@ body::after {
   pointer-events: none;
   background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px);
   opacity: 0.35;
+}
+`
+  },
+  {
+    id: 'crt',
+    name: 'CRT',
+    note: 'phosphor glow · heavy scanlines',
+    base: 'dark',
+    vars: {
+      '--bg': '#020602',
+      '--surface': '#061006',
+      '--surface-2': '#0b180b',
+      '--surface-3': '#112311',
+      '--border': 'rgba(92, 255, 122, 0.16)',
+      '--border-strong': '#1f4d26',
+      '--fg': '#b8ffb4',
+      '--fg-soft': '#8fe38c',
+      '--muted': '#72c46f',
+      '--muted-2': '#4a824a',
+      '--accent': '#5cff7a',
+      '--accent-soft': 'rgba(92, 255, 122, 0.16)',
+      '--accent-press': '#45e061',
+      '--accent-hi': '#9dffad',
+      '--accent-hi-2': '#c6ffd0',
+      '--on-accent': '#021a06',
+      '--success': '#5cff7a',
+      '--warning': '#ffcf4d',
+      '--danger': '#ff5c5c',
+      '--font-sans': 'var(--font-mono)',
+      '--r-sm': '0px',
+      '--r-md': '1px',
+      '--r-lg': '2px'
+    },
+    css: `
+html, body { background: radial-gradient(120% 90% at 50% 45%, #072207 0%, var(--bg) 70%); }
+.app__shell, .app__main--flush { background: transparent; }
+/* Phosphor bloom on every glyph. */
+body { text-shadow: 0 0 2px rgba(92, 255, 122, 0.6), 0 0 10px rgba(92, 255, 122, 0.28); }
+.btn--primary, .app__tab.is-active .app__tab-icon, .seg__item--on .seg__pill, .theme-card.is-selected {
+  box-shadow: 0 0 6px rgba(92, 255, 122, 0.55), 0 0 18px rgba(92, 255, 122, 0.25);
+}
+/* Heavy scanlines, RGB sub-pixel mask and tube vignette, with a faint flicker. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  pointer-events: none;
+  background:
+    radial-gradient(125% 100% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.7) 100%),
+    repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.62) 0 2px, rgba(0, 0, 0, 0) 2px 4px),
+    repeating-linear-gradient(to right, rgba(255, 0, 0, 0.05) 0 1px, rgba(0, 255, 0, 0.03) 1px 2px, rgba(0, 0, 255, 0.05) 2px 3px);
+  animation: mouaif-crt-flicker 0.16s steps(2) infinite;
+}
+/* A bright band rolling down the tube. */
+body::before {
+  content: '';
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 28vh;
+  z-index: 2147483001;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(92, 255, 122, 0), rgba(92, 255, 122, 0.09) 55%, rgba(180, 255, 190, 0.16) 60%, rgba(92, 255, 122, 0));
+  will-change: transform;
+  animation: mouaif-crt-roll 6.5s linear infinite;
+}
+@keyframes mouaif-crt-roll {
+  from { transform: translate3d(0, -30vh, 0); }
+  to   { transform: translate3d(0, 105vh, 0); }
+}
+@keyframes mouaif-crt-flicker {
+  from { opacity: 1; }
+  to   { opacity: 0.88; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body::after { animation: none !important; }
+  body::before { display: none; }
 }
 `
   }
