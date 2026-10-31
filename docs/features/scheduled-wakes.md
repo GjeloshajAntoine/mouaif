@@ -31,6 +31,16 @@ A wake is a saved prompt plus a time, stored in the app database. It survives a 
 
 A repeat goes on until it is cancelled. `maxRuns` and `until` (an ISO time) end it sooner, and **Stop** on the [run bar](long-running-runs.md) cancels it at any time. When the last run is delivered, the task and its run bar finish and you get a notification. Each run's turn also notifies you when it completes, with the message the run wrote as the notification text (markdown removed, cut at 300 characters). Nobody's browser started it, so the notification goes to every subscribed device, as do a tool waiting for approval, a question for you and an error.
 
+### Runs with nothing to report
+
+A run that found nothing relevant can finish without notifying you. Each run of a recurring task is offered one more tool, `skip_notification`. When the run calls it, that run sends no completion notification. The run still stays in the chat, and the next run notifies as usual unless it skips too. A run that doesn't call it notifies, so a run can't hide a result by forgetting the tool. Errors, questions and tools waiting for approval always notify.
+
+The tool needs no approval, since an approval card would itself notify you. The chat's tool filter doesn't hide it, and it isn't offered in ordinary turns, one-off wakes or subagents. To decide what counts as relevant, say so in the task's prompt, for example "…and skip the notification when there are no new P1 alerts".
+
+```json
+{ "reason": "no new alerts" }
+```
+
 ### One recurring task per chat
 
 A chat has one recurring task: setting a new one replaces the old one (the result says `replacedPrevious`). One-off wakes — "check the build in 20 minutes" — can sit beside it.

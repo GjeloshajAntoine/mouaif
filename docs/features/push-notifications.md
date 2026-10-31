@@ -35,7 +35,7 @@ mouaif serve --host 127.0.0.1 --public-origin https://mouaif.example.com
 |-------|------|---------|
 | `ask_user_required` | The model pauses for a structured answer | Chat title + question; exactly two single-choice answers can be tapped directly |
 | `authorization_required` | A tool is waiting for approval | Chat title + tool name with **Allow once** and **Deny** actions |
-| `done` | A chat turn completes successfully | Chat title + "Response complete" |
+| `done` | A chat turn completes successfully (a recurring task's run that called `skip_notification` sends none; see [scheduled wakes](scheduled-wakes.md)) | Chat title + "Response complete" |
 | `error` | A chat turn fails (stream error, upstream error) | Chat title + error message |
 | `login` | A password, setup, or passkey sign-in issues a new session | "New sign-in as `<user>` from `<platform>`" |
 
