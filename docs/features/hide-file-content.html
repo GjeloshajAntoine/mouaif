@@ -4,11 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Hide file content — mouaif docs</title>
-  <meta name="description" content="Per-project settings page that marks specific lines or character ranges of a source file as hidden from the agent file tools. When the model calls `read_file`…" />
+  <meta name="description" content="Hide chosen lines, or chosen text inside a line, from the agent&#39;s file tools. The agent sees `[hidden]` in their place, and the file on disk is never changed." />
   <meta property="og:site_name" content="mouaif docs" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Hide file content — mouaif docs" />
-  <meta property="og:description" content="Per-project settings page that marks specific lines or character ranges of a source file as hidden from the agent file tools. When the model calls `read_file`…" />
+  <meta property="og:description" content="Hide chosen lines, or chosen text inside a line, from the agent&#39;s file tools. The agent sees `[hidden]` in their place, and the file on disk is never changed." />
   <meta property="og:url" content="https://gjeloshajantoine.github.io/mouaif/features/hide-file-content.html" />
   <link rel="stylesheet" href="../assets/site.css" />
 </head>
@@ -41,55 +41,32 @@
     <main class="main">
       <h1 id="hide-file-content">Hide file content</h1>
 <h2 id="overview">Overview</h2>
-<p>Per-project settings page that marks specific lines or character ranges of a source file as hidden from the agent file tools. When the model calls <code>read_file</code> the hidden lines or characters come back as <code>[hidden]</code>, and <code>search_files</code> silently skips any match that lands inside a hidden range or character span. The on-disk file is never modified, so the redaction stays purely on the model-facing side.</p>
+<p>Hide chosen lines, or chosen text inside a line, from the agent&#39;s file tools. The agent sees <code>[hidden]</code> in their place, and the file on disk is never changed.</p>
+<p>This is <strong>not a security boundary</strong>: shell commands and MCP servers can still read the original file. See <a href="#limits">Limits</a>.</p>
 <h2 id="usage">Usage</h2>
-<p>Open <strong>Settings → This project → More settings → Hide file content</strong>, or navigate directly to <code>#/settings/project/hide</code>.</p>
-<ol><li><p>Tap <strong>+ Add file</strong>, or tap a saved file row to edit it.</p></li><li><p>The file opens in the real CodeMirror text editor (dark theme, line numbers, syntax highlighting) with the original content. It is <strong>read-only</strong> — the text cannot be edited, only marked. The header shows the <strong>file name as the title</strong> and the containing directory beneath it, so the page title names the file instead of the screen.</p></li><li><p><strong>Whole-line hiding</strong> — tap a line number in the gutter (the column left of the text) to hide that line; tap it again to show it. Hidden lines get a highlighted, struck-through background and their <strong>line number is painted as a filled accent pill</strong> — the gutter has no separate toggle column and no ✓ / + glyph, so the state never depends on a character few fonts render identically. Each gutter cell spans its whole (possibly wrapped) line and is at least 44 × 44 px, so a tap always lands on the line you aimed at.</p></li><li><p><strong>Character-range hiding</strong> — drag to select text inside the editor. The status bar updates with the column range, and the leading footer button becomes enabled. It reads <strong>Hide selection</strong>, or <strong>Show selection</strong> when the current selection exactly matches a saved span (tap it again to clear that span). A span on a single line hides the exact columns; a span that crosses line breaks hides the full middle lines plus the boundary columns.</p></li><li><p>For larger whole-line selections, tap <strong>Ranges</strong> in the footer status row to open the <strong>Line ranges</strong> panel and enter inclusive <strong>From</strong> / <strong>To</strong> numbers. Invalid values are explained rather than silently changed. Adjacent and overlapping ranges are merged on save; the same is done for character spans.</p></li><li><p>Tap <strong>Save</strong>. Every action (hide selection, ranges, cancel, save) lives in the sticky footer, so it stays reachable and tappable no matter how far the editor or the ranges panel scroll. The editor returns to the file list only after saving succeeds. A failed save keeps the selection available for retry, and controls are disabled while a save is in progress.</p></li></ol>
-<h3 id="removing-a-hiding">Removing a hiding</h3>
-<p>Every file row on the list carries its own <strong>Remove</strong> action, so a file can be un-hidden without opening the editor:</p>
-<div class="table-wrap"><table><thead><tr><th>Goal</th><th>Action</th></tr></thead><tbody><tr><td>Un-hide one saved line</td><td>Tap the line number again in the editor gutter, then <strong>Save</strong>.</td></tr><tr><td>Un-hide one saved manual range</td><td><strong>Ranges</strong> → <strong>×</strong> on that row → <strong>Save</strong>.</td></tr><tr><td>Un-hide selected text</td><td>Re-select the same span and tap <strong>Show selection</strong> again (an exact match removes it).</td></tr><tr><td>Un-hide a whole file</td><td>Tap <strong>Remove</strong> on its row and confirm <strong>Stop hiding content in <code>&lt;path&gt;</code>?</strong></td></tr><tr><td>Un-hide everything</td><td>Remove each row, or clear the selection in every editor.</td></tr></tbody></table></div>
-<ul><li><p><strong>Remove</strong> writes the whole rule set back without that file&#39;s entry; the row disappears and a status line reports <code>`&lt;path&gt;` is no longer hidden.</code> Nothing is written until the confirmation is accepted, and a declined confirmation leaves the list untouched.</p></li><li><p>A failed write keeps every row, re-enables the controls, and says so: <em>&quot;Nothing changed; the file is still hidden.&quot;</em> The action can be retried immediately.</p></li><li><p>One write at a time: while a removal is in flight the row shows <strong>Removing…</strong> and all remove controls are disabled, so a double tap cannot queue a second write.</p></li><li><p>Removal is available to whoever can open project settings; it is the same endpoint the editor uses. The on-disk file is never touched, so un-hidden content is visible to the agent file tools on the very next call.</p></li><li><p>Keyboard focus moves to the next row&#39;s <strong>Remove</strong> (or <strong>+ Add file</strong> when the list empties) after a successful removal, so the tapped control disappearing never drops focus on the page body.</p></li></ul>
-<h3 id="button-layout">Button layout</h3>
-<p>The footer is the only interactive band: it is <code>position: sticky; bottom: 0</code> and owns every control of this view. The editor and its help line scroll underneath it, and the footer — not the content — wins taps in that band.</p>
-<pre><code class="language-text">┌─────────────────────────────┐
-│ file.js            ← header │
-│ Tap a number / Select text  │
-│ editor (read-only, scrolls) │
-├─────────────────────────────┤  ← sticky footer starts here
-│ 2 lines · Lines 1–2 · Unsaved   Ranges │
-│ [Hide selection]  Cancel Save │
-└─────────────────────────────┘</code></pre>
-<p>Do not move an action back into the editor body: a control rendered outside the footer can overlap the footer band and swallow taps meant for Cancel/Save.<br>The preview fills the flush main column and only the editor (or the ranges panel) scrolls, so the footer never moves; on a very short screen the page itself scrolls instead.<br>The preview uses the existing 1 MiB file-editor read limit; if a file cannot be previewed, the line-ranges panel opens automatically.</p>
-<p><strong>Back</strong> retains an unsaved selection in memory for a return visit to the same file and project. <strong>Cancel</strong> asks before discarding changes. Drafts contain only paths and ranges, not file content; they do not survive a reload, which warns while an editor has unsaved changes. To stop hiding a file, remove its ranges and save; removing all saved ranges and characters requires confirmation.</p>
-<h3 id="protection-limits">Protection limits</h3>
-<p>This is <strong>not a security boundary</strong>. Only <code>read_file</code>, <code>search_files</code>, and files attached to a chat by a tag or an <code>@</code> mention are filtered. Shell, MCP, and other access can still read the original content. These limits are visible on the list and editor, not hidden in a help popup. Rules track line numbers and column positions, not text, so review them after editing or moving file content.</p>
-<pre><code class="language-text"># Settings → Project → More settings → Hide file content
-src/secrets.js  →  Lines 3 · Text on line 1, cols 18–25</code></pre>
-<p>After saving, a <code>read_file</code> call on that file returns the hidden content replaced by a marker:</p>
+<p>Open <strong>Settings → This project → More settings → Hide file content</strong>. The <strong>?</strong> next to <strong>Hidden files</strong> has a short version of these steps.</p>
+<ol><li><p>Tap <strong>+ Add file</strong> and choose a file, or tap a file already on the list.</p></li><li><p>The file opens read-only in a CodeMirror editor with line numbers and syntax highlighting. The header shows the file name and its folder.</p></li><li><p><strong>Hide a whole line:</strong> tap its line number. A hidden line&#39;s number turns into a filled pill and the line is highlighted. Tap the number again to show the line.</p></li><li><p><strong>Hide part of a line:</strong> select the text, then tap <strong>Hide selection</strong> in the footer. To undo, select exactly the same text again; the button then reads <strong>Show selection</strong>. A selection that spans several lines hides everything from its start to its end.</p></li><li><p><strong>Type line numbers instead:</strong> tap <strong>Ranges</strong> in the footer, then enter <strong>From</strong> / <strong>To</strong> line numbers (both included). Use this for long blocks, or when the file can&#39;t be previewed (for example, files over 1 MiB).</p></li><li><p>Tap <strong>Save</strong>. The footer shows what will be hidden, for example <code>Lines 3–5 · Text on line 8, cols 4–9</code>, with an <strong>Unsaved</strong> badge until you save.</p>
+<p><strong>Back</strong> keeps your unsaved changes until you return to the same file, but they are lost on a page reload. <strong>Cancel</strong> asks before discarding them.</p></li></ol>
+<h3 id="showing-content-again">Showing content again</h3>
+<div class="table-wrap"><table><thead><tr><th>To show again</th><th>Do this</th></tr></thead><tbody><tr><td>One line</td><td>Tap its line number in the editor, then <strong>Save</strong>.</td></tr><tr><td>A typed line range</td><td><strong>Ranges</strong> → <strong>×</strong> on that row → <strong>Save</strong>.</td></tr><tr><td>Hidden text</td><td>Select the same text, tap <strong>Show selection</strong>, then <strong>Save</strong>.</td></tr><tr><td>A whole file</td><td>Tap <strong>Remove</strong> on its row in the list, then confirm.</td></tr></tbody></table></div>
+<p>The agent can read the content again on its next file-tool call.</p>
+<h2 id="what-the-agent-sees">What the agent sees</h2>
+<p>Say <code>src/secrets.js</code> contains:</p>
+<pre><code class="language-js">const apiKey = &quot;sk-live-1234&quot;;
+const normal = 1;
+const token = &quot;abc&quot;;</code></pre>
+<p>With the text inside the first string hidden and line 3 hidden, the list shows <code>Lines 3 · Text on line 1, cols 17–28</code>. A <code>read_file</code> call returns:</p>
 <pre><code class="language-text"># File: src/secrets.js
-# Lines: 1-4
+# Lines: 1-3
+
 const apiKey = &quot;[hidden]&quot;;
 const normal = 1;
 [hidden]</code></pre>
-<p>And a <code>search_files</code> call for text that falls only inside a hidden range or character span returns no match for that line, even when the rest of the line is visible.</p>
-<h3 id="labels">Labels</h3>
-<p>Every summary label comes from one helper, <code>describeHidden({ ranges, chars })</code>, so the list and the editor can never disagree about what is hidden:</p>
-<div class="table-wrap"><table><thead><tr><th>Hidden content</th><th>Label</th></tr></thead><tbody><tr><td>lines only</td><td><code>Lines 3–5</code></td></tr><tr><td>selected text only</td><td><code>Text on line 8, cols 4–9</code></td></tr><tr><td>selected text across lines</td><td><code>Text on lines 4–7</code></td></tr><tr><td>lines and text</td><td><code>Lines 3–5 · Text on line 8, cols 4–9</code></td></tr><tr><td>nothing</td><td>file list: <code>Nothing hidden yet…</code>; editor: <code>Tap a line number, or select text.</code></td></tr></tbody></table></div>
-<ul><li><p>A rule that hides only characters is labelled as text, never as lines, so no row ever reads &quot;No lines selected&quot;.</p></li><li><p>Overlapping spans on the same line are merged before they are labelled, and several spans are separated with <code>;</code>.</p></li><li><p>The editor footer repeats the label under the count line (<code>1 line, 1 text span</code>) and keeps showing <code>Fix the range values to continue.</code> while a manual range is invalid.</p></li></ul>
-<h3 id="behavior">Behavior</h3>
-<ul><li><p>Rules are stored per project under <code>hideFileContent</code> in <code>.mouaif.json</code> (or the DB-backed project row). Shape:</p></li></ul>
-<pre><code class="language-json">{
-  &quot;hideFileContent&quot;: [
-    {
-      &quot;path&quot;: &quot;src/secrets.js&quot;,
-      &quot;ranges&quot;: [ { &quot;start&quot;: 3, &quot;end&quot;: 3 } ],
-      &quot;chars&quot;:  [ { &quot;startLine&quot;: 1, &quot;endLine&quot;: 1, &quot;startCol&quot;: 18, &quot;endCol&quot;: 25 } ]
-    }
-  ]
-}</code></pre>
-<ul><li><p><code>ranges</code> is the existing 1-indexed inclusive whole-line set. <code>chars</code> is the new 1-indexed inclusive character-span set; it is optional and only present when at least one character span is stored. Older saved data without <code>chars</code> keeps working unchanged.</p></li><li><p>A malformed range (start below 1, or end below start) is dropped on save; a malformed span (start below 1, end before start on a single line, non-integers) is dropped on save. An entry with no valid ranges and no valid spans is dropped entirely.</p></li><li><p>Only <code>read_file</code> and <code>search_files</code> are redacted. <code>list_files</code> returns paths (no content), and <code>write_file</code> / <code>edit_file</code> modify the on-disk file rather than expose it, so they are unchanged.</p></li><li><p>The redaction applies to whole-file reads <strong>and</strong> to <code>startLine</code> / <code>endLine</code> slices. Slices retain their original line offset when checking rules, so a hidden range cannot be recovered by requesting a sub-window. In-process regression coverage: <code>node scripts/test-hide-file-slices.js</code>.</p></li><li><p><code>search_files</code> skips a match when its column range overlaps any hidden character span on that line (or when the whole line is hidden by a <code>range</code>). In-process regression coverage: <code>node scripts/test-hide-file-char-spans.js</code>.</p></li><li><p>The replacement keeps the newline structure intact, so line numbers and the total line count are identical to the real file. Character spans are replaced in place; the marker does not extend the line.</p></li><li><p>The on-disk file is untouched; removing a rule restores full visibility immediately.</p></li></ul>
+<p>A <code>search_files</code> match that falls inside hidden content is left out of the results. Line numbers stay the same as in the real file.</p>
+<h2 id="limits">Limits</h2>
+<ul><li><p>Hiding applies to <code>read_file</code>, <code>search_files</code>, and files attached to a chat with a tag or an <code>@</code> mention, including reads of part of a file.</p></li><li><p>Shell commands, MCP servers, and any other access still see the original file.</p></li><li><p>Rules follow line and column numbers, not the text. If you edit the file, open it here and check what is hidden.</p></li><li><p>Rules are saved per project in the project&#39;s settings, under <code>hideFileContent</code>.</p></li></ul>
 <h2 id="related">Related</h2>
-<ul><li><p>Native file tools: <a href="file-tools.html">docs/features/file-tools.md</a>.</p></li><li><p>Tool authorization: <a href="tool-authorization.html">docs/features/tool-authorization.md</a>.</p></li><li><p>Project settings storage: <a href="project-settings-storage.html">docs/features/project-settings-storage.md</a>.</p></li></ul>
+<ul><li><p><a href="file-tools.html">File tools</a></p></li><li><p><a href="tool-authorization.html">Tool authorization</a></p></li><li><p><a href="project-settings-storage.html">Project settings storage</a></p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>
