@@ -633,14 +633,21 @@ transform: rotate(45deg); }
 }
 .mcps-search__input::-webkit-search-cancel-button { display: none; }
 .mcps-search__clear { position: absolute; right: 4px; font-size: 1.2rem; }
+/* Filters scroll sideways; the sort menu stays pinned at the right so it is
+   never pushed off a narrow screen. */
+.mcps-filterbar { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .mcps-chips {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   gap: 6px;
   overflow-x: auto;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
-  margin: 0 -10px;
-  padding: 0 10px;
+  margin-left: -10px;
+  padding: 0 2px 0 10px;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 14px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 14px), transparent);
 }
 .mcps-chips::-webkit-scrollbar { display: none; }
 .mcps-chip {
@@ -659,56 +666,74 @@ transform: rotate(45deg); }
 .mcps-chip--on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .mcps-sort {
   flex: 0 0 auto;
-  margin-left: auto;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg-soft);
+}
+.mcps-sort__icon { position: absolute; left: 9px; pointer-events: none; }
+.mcps-sort__select {
   font: inherit;
   font-size: 0.78rem;
+  font-weight: 600;
   min-height: var(--tap-sm);
-  padding: 0 10px;
+  max-width: 8rem;
+  padding: 0 6px 0 27px;
   border-radius: var(--r-pill);
   border: 1px solid var(--border);
   background: var(--surface);
-  color: var(--fg-soft);
+  color: inherit;
+  text-overflow: ellipsis;
+}
+@media (pointer: coarse) {
+  .mcps-chip, .mcps-sort__select { min-height: var(--tap); }
 }
 
+/* Card: header row (avatar, name + publisher, one CTA), then the
+   description and a quiet fact row at full width. The name button's
+   ::after covers the whole card, so a tap anywhere opens the details; the
+   CTA sits above that layer. */
 .mcps-list { list-style: none; margin: 0; padding: 0 10px; display: flex; flex-direction: column; gap: 8px; }
 .mcps-card {
+  position: relative;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  padding: 4px 10px 4px 0;
+  padding: 10px 10px 10px 12px;
 }
-.mcps-card__main {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 8px 0 8px 10px;
-  min-height: var(--tap);
+.mcps-card:has(.mcps-card__hit:active) { background: var(--surface-2); }
+.mcps-card--installed { border-color: color-mix(in srgb, var(--success) 35%, var(--border)); }
+.mcps-card__head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mcps-card__titles { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.mcps-card__hit {
   font: inherit;
   color: inherit;
   text-align: left;
   background: transparent;
   border: 0;
+  padding: 0;
+  min-width: 0;
   cursor: pointer;
 }
-.mcps-card__main:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-md); }
-.mcps-card__body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.mcps-card__title { font-weight: 650; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mcps-card__hit::after { content: ''; position: absolute; inset: 0; border-radius: var(--r-md); }
+.mcps-card__hit:focus-visible { outline: none; }
+.mcps-card__hit:focus-visible::after { outline: 2px solid var(--accent); outline-offset: -2px; }
+.mcps-card__title { display: block; font-weight: 650; font-size: 0.92rem; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mcps-card__pub { font-size: 0.7rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mcps-card__desc {
-  font-size: 0.77rem;
-  line-height: 1.35;
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
   color: var(--fg-soft);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.mcps-card__cta { flex: 0 0 auto; min-width: 56px; border-radius: var(--r-pill); }
+.mcps-card__cta { position: relative; z-index: 1; flex: 0 0 auto; min-width: 60px; border-radius: var(--r-pill); }
 a.mcps-card__cta,
 .mcps-sheet__foot a.btn { text-decoration: none; }
 .mcps-card--manual .mcps-card__title { color: var(--fg-soft); }
@@ -727,23 +752,43 @@ a.mcps-card__cta,
   background: var(--surface-3);
 }
 
-.mcps-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
-.mcps-badge {
-  font-size: 0.64rem;
-  font-weight: 600;
-  padding: 1px 7px;
-  border-radius: var(--r-pill);
-  background: var(--surface-3);
-  color: var(--fg-soft);
-  white-space: nowrap;
+.mcps-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  font-size: 0.7rem;
+  color: var(--muted);
 }
-.mcps-badge--ok     { background: var(--success-soft); color: var(--success); }
-.mcps-badge--accent { background: var(--accent-soft); color: var(--accent); }
-.mcps-badge--warn   { background: var(--warning-soft); color: var(--warning); }
-.mcps-badge--muted  { color: var(--muted); }
+.mcps-fact { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.mcps-fact__icon { flex: 0 0 auto; opacity: 0.85; }
+.mcps-fact--ok { color: var(--success); font-weight: 650; }
+.mcps-fact--warn { color: var(--warning); font-weight: 600; }
+.mcps-fact--muted { font-style: italic; }
+
+/* Usage meter: four rising bars, filled on a log scale of weekly
+   downloads (<1k, 1k, 10k, 100k), then the compact count. The two top
+   tiers use the accent so the busiest servers stand out in a scroll. */
+.mcps-pop { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; color: var(--fg-soft); font-weight: 650; font-variant-numeric: tabular-nums; }
+.mcps-pop--l3, .mcps-pop--l4 { color: var(--accent); }
+.mcps-pop__bars { display: inline-flex; align-items: flex-end; gap: 1.5px; height: 11px; }
+.mcps-pop__bar { width: 3px; border-radius: 1px; background: currentColor; opacity: 0.22; }
+.mcps-pop__bar:nth-child(1) { height: 4px; }
+.mcps-pop__bar:nth-child(2) { height: 6px; }
+.mcps-pop__bar:nth-child(3) { height: 8.5px; }
+.mcps-pop__bar:nth-child(4) { height: 11px; }
+.mcps-pop__bar--on { opacity: 1; }
+.mcps-pop--detail { font-size: 0.8rem; gap: 7px; }
+.mcps-pop--detail .mcps-pop__bars { height: 14px; gap: 2px; }
+.mcps-pop--detail .mcps-pop__bar { width: 4px; }
+.mcps-pop--detail .mcps-pop__bar:nth-child(1) { height: 5px; }
+.mcps-pop--detail .mcps-pop__bar:nth-child(2) { height: 8px; }
+.mcps-pop--detail .mcps-pop__bar:nth-child(3) { height: 11px; }
+.mcps-pop--detail .mcps-pop__bar:nth-child(4) { height: 14px; }
 
 /* Loading skeleton — same box as a card so nothing jumps on arrival. */
-.mcps-card--skeleton { padding: 12px 10px; align-items: flex-start; gap: 10px; }
+.mcps-card--skeleton { gap: 4px; }
+.mcps-card--skeleton .mcps-card__titles { gap: 0; }
 .mcps-skel {
   display: block;
   height: 9px;
@@ -754,6 +799,7 @@ a.mcps-card__cta,
 }
 .mcps-skel--title { width: 45%; height: 12px; }
 .mcps-skel--short { width: 30%; }
+.mcps-skel--meta { width: 55%; height: 8px; }
 .mcps-card--skeleton .mcps-avatar { animation: mcps-pulse 1.2s ease-in-out infinite; }
 @keyframes mcps-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .mcps-skel, .mcps-card--skeleton .mcps-avatar { animation: none; } }
@@ -789,6 +835,17 @@ a.mcps-card__cta,
   gap: 14px;
 }
 .mcps-sheet__desc { margin: 0 12px; font-size: 0.88rem; line-height: 1.45; color: var(--fg); }
+.mcps-sheet__pop {
+  align-self: flex-start;
+  margin: -4px 12px 0;
+  min-height: var(--tap-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-decoration: none;
+}
 .mcps-sheet__facts { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: -6px 12px 0; font-size: 0.74rem; color: var(--muted); }
 .mcps-sheet__facts a { color: var(--accent); text-decoration: none; min-height: 24px; display: inline-flex; align-items: center; }
 .mcps-sheet__section { display: flex; flex-direction: column; gap: 6px; }

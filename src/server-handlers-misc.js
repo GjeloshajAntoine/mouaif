@@ -23,6 +23,7 @@ safeDecode
 const { requestRestart } = require('./restart.js');
 const push = require('./push.js');
 const { notifyAttention } = require('./attention-push.js');
+const { weeklyDownloads } = require('./mcpDownloads.js');
 
 
 // ---- MCP API ------------------------------------------------------------
@@ -207,37 +208,11 @@ async function handleMcp(req, res, parsed, sessionToken = '') {
         return sendJSON(res, registryRes.status, { error: 'Registry API error: HTTP ' + registryRes.status });
       }
       const registryBody = await registryRes.json();
-      // Enrich with a computed popularity score (0-100) based on
-      // recency of updates and the number of packages.
-      const now = Date.now();
-      const enrich = (entry) => {
-        const meta = entry && entry._meta && entry._meta['io.modelcontextprotocol.registry/official'];
-        const server = entry && entry.server || {};
-        const updatedAt = meta && meta.updatedAt ? new Date(meta.updatedAt).getTime() : null;
-        const publishedAt = meta && meta.publishedAt ? new Date(meta.publishedAt).getTime() : null;
-        const packages = Array.isArray(server.packages) ? server.packages : [];
-        // Score: 0-50 from update recency (within 30 days = max)
-        let recencyScore = 0;
-        if (updatedAt) {
-          const daysSinceUpdate = (now - updatedAt) / 86400000;
-          recencyScore = Math.max(0, Math.round(50 * (1 - Math.min(daysSinceUpdate / 90, 1))));
-        } else if (publishedAt) {
-          const daysSincePub = (now - publishedAt) / 86400000;
-          recencyScore = Math.max(0, Math.round(30 * (1 - Math.min(daysSincePub / 365, 1))));
-        }
-        // Score: 0-30 from number of packages (3+ packages = max)
-        const pkgScore = Math.min(30, packages.length * 10);
-        // Score: 0-20 from version count proxy (multiple versions = active)
-        let versionScore = 10; // baseline
-        if (meta && meta.isLatest !== undefined) versionScore += 10;
-        const score = Math.min(100, recencyScore + pkgScore + versionScore);
-        return Object.assign({}, entry, {
-          popularity: { score, recencyScore, pkgScore, versionScore }
-        });
-      };
-      const servers = Array.isArray(registryBody.servers)
-        ? registryBody.servers.map(enrich)
-        : [];
+      // Popularity: weekly downloads from npm / PyPI (src/mcpDownloads.js).
+      // The Registry itself publishes no download counts or ratings.
+      const servers = Array.isArray(registryBody.servers) ? registryBody.servers : [];
+      const counts = await weeklyDownloads(servers);
+      servers.forEach((entry, i) => { entry.downloads = counts[i]; });
 
       // The Registry API does not expose sorting, so sort only this response
       // in memory. No registry result is written to app or project storage.
@@ -245,7 +220,7 @@ async function handleMcp(req, res, parsed, sessionToken = '') {
       const text = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
       servers.sort((a, b) => {
         if (sortField === 'popularity') {
-          return direction * ((a.popularity && a.popularity.score || 0) - (b.popularity && b.popularity.score || 0));
+          return direction * (((a.downloads && a.downloads.weekly) || 0) - ((b.downloads && b.downloads.weekly) || 0));
         }
         if (sortField === 'updatedAt') {
           const metaA = a._meta && a._meta['io.modelcontextprotocol.registry/official'];

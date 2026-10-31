@@ -10,10 +10,11 @@ import { h } from 'preact';
 import { useMemo, useState } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
 import { useModal } from '../../hooks/useModal.js';
+import { McpPopularity } from './McpPopularity.jsx';
 import { settingsLink } from './projectNavigation.js';
 import {
   friendlyName, publisher, installOptions, summary, missingRequired, buildServerBody,
-  registryMeta, relativeDate
+  registryMeta, relativeDate, weeklyDownloads
 } from './mcpRegistryInstall.js';
 
 const RUNTIME_NEED = {
@@ -29,6 +30,13 @@ function safeHttpUrl(value) {
 export function editorHref(server, projectDir, from, chatId = '') {
   const scope = server.scope === 'app' ? 'app' : 'project';
   return settingsLink('settings/mcp/' + encodeURIComponent(server.id), { projectDir, chatId, from }, { scope });
+}
+
+// Where a download count comes from, so the number can be checked.
+function packagePage(d) {
+  return d.source === 'pypi'
+    ? 'https://pypistats.org/packages/' + encodeURIComponent(d.package)
+    : 'https://www.npmjs.com/package/' + d.package;
 }
 
 export function McpStoreSheet(props) {
@@ -58,6 +66,7 @@ export function McpStoreSheet(props) {
   const website = safeHttpUrl(server.websiteUrl);
   const repo = safeHttpUrl(server.repository && server.repository.url);
   const updated = relativeDate(meta.updatedAt || meta.publishedAt);
+  const downloads = weeklyDownloads(entry);
   const oauth = !!option && (option.transport === 'http' || option.transport === 'sse') && auth === 'oauth';
   const visibleFields = option ? option.fields.filter((f) => !(oauth && f.kind === 'header' && f.name.toLowerCase() === 'authorization')) : [];
   const required = visibleFields.filter((f) => f.required);
@@ -179,6 +188,10 @@ export function McpStoreSheet(props) {
       )
     : h('div', { class: 'mcps-sheet__body' },
         server.description ? h('p', { class: 'mcps-sheet__desc' }, server.description) : null,
+        downloads
+          ? h('a', { class: 'mcps-sheet__pop', href: packagePage(downloads), target: '_blank', rel: 'noopener noreferrer' },
+              h(McpPopularity, { downloads, detail: true }), ' ↗')
+          : null,
         h('div', { class: 'mcps-sheet__facts' },
           server.version ? h('span', null, 'v' + server.version) : null,
           updated ? h('span', null, 'Updated ' + updated) : null,

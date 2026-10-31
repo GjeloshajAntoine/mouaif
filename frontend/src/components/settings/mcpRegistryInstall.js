@@ -278,3 +278,39 @@ export function relativeDate(iso, now) {
   const years = Math.floor(days / 365);
   return years <= 1 ? 'a year ago' : years + ' years ago';
 }
+
+// ---- Popularity -------------------------------------------------------
+// The proxy attaches `entry.downloads = { weekly, source, package }` from npm
+// or PyPI (src/mcpDownloads.js); hosted-only servers have none.
+
+export function weeklyDownloads(entry) {
+  const d = entry && entry.downloads;
+  return d && Number.isFinite(d.weekly) ? d : null;
+}
+
+// compactCount(n) -> "940" | "12k" | "1.2k" | "3.4M"
+export function compactCount(n) {
+  const v = Math.max(0, Math.round(Number(n) || 0));
+  const fmt = (x, unit) => (x >= 10 ? String(Math.round(x)) : String(Math.round(x * 10) / 10).replace(/\.0$/, '')) + unit;
+  if (v >= 999500) return fmt(v / 1e6, 'M');
+  if (v >= 1000) return fmt(v / 1e3, 'k');
+  return String(v);
+}
+
+// popularityLevel(weekly) -> 0..4 on a log scale, for the four-bar meter:
+// 1 bar under 1k a week, 2 from 1k, 3 from 10k, 4 from 100k.
+export function popularityLevel(weekly) {
+  const v = Number(weekly) || 0;
+  if (v <= 0) return 0;
+  if (v >= 100000) return 4;
+  if (v >= 10000) return 3;
+  if (v >= 1000) return 2;
+  return 1;
+}
+
+// downloadsLabel(d) -> "204,887 npm downloads last week"
+export function downloadsLabel(d) {
+  if (!d) return '';
+  const n = Math.round(d.weekly).toLocaleString('en-US');
+  return n + ' ' + (d.source === 'pypi' ? 'PyPI' : 'npm') + ' download' + (d.weekly === 1 ? '' : 's') + ' last week';
+}

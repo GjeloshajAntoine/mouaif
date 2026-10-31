@@ -4,8 +4,9 @@
 
 ## Implementation
 
-- **Backend proxy**: `GET /api/mcp/registry?search=...&cursor=...&limit=...` in `src/index.js` → `handleMcp()` proxies requests to `registry.modelcontextprotocol.io/v0.1/servers`, enriches each entry with a `popularity` object, and returns the paginated response.
-- **Store list**: `frontend/src/components/SettingsMcpRegistry.jsx` — debounced search-as-you-type (350 ms, stale responses dropped by a request sequence), client-side filter chips (Hosted / Local / No key) and sort (Recommended / Newest / Name), cards with Installed / Hosted / runtime / key / Popularity badges, and "Load more" cursor paging that appends and de-duplicates.
+- **Backend proxy**: `GET /api/mcp/registry?search=...&cursor=...&limit=...` in `src/index.js` → `handleMcp()` proxies requests to `registry.modelcontextprotocol.io/v0.1/servers`, attaches each entry's weekly package downloads as `downloads` (`src/mcpDownloads.js`), and returns the paginated response.
+- **Store list**: `frontend/src/components/SettingsMcpRegistry.jsx` — debounced search-as-you-type (350 ms, stale responses dropped by a request sequence), client-side filter chips (Hosted / Local / No key) and a sort menu pinned beside them (Popular / Updated / A–Z), cards with a header row (avatar, name + publisher, one CTA), a full-width description, and a fact row (Installed, usage meter, Hosted / runtime, key, updated), and "Load more" cursor paging that appends and de-duplicates.
+- **Usage meter**: `frontend/src/components/settings/McpPopularity.jsx` — four log-scale bars plus `205k/wk` on cards, the spelled-out count in the sheet (`detail`); renders nothing without a count. Helpers `weeklyDownloads`, `compactCount`, `popularityLevel`, `downloadsLabel` live in `mcpRegistryInstall.js`.
 - **Install sheet**: `frontend/src/components/settings/McpStoreSheet.jsx` — install option picker, API key vs OAuth for hosted servers, required fields first with optional ones folded under "More options", scope segment, then an installed state with **Start now** (`POST /api/mcp/servers/:id/start`).
 - **Pure helpers**: `frontend/src/components/settings/mcpRegistryInstall.js` — `installOptions`, `summary`, `buildServerBody`, `findInstalled`, `missingRequired`, `friendlyName`, `relativeDate`, and the placeholder resolution `isTemplate` / `fieldValue`. Tested by `scripts/test-mcp-registry-install.mjs`; `scripts/test-mcp-store-ui.mjs` is a manual browser fixture.
 - **Request wiring**: `scripts/test-mcp-registry-search.js` loads `SettingsMcpRegistry.jsx` through a faithful module loader (each file runs in its own scope, imports become real bindings) and asserts the view fetches both `/api/mcp/registry` and the project-scoped `/api/mcp/servers?projectDir=…`, including a typed search. A local helper the view calls without importing it is not in scope, so the test reproduces the browser's `ReferenceError` instead of a green build hiding it.
@@ -18,6 +19,9 @@
 | File | Role |
 |---|---|
 | `frontend/src/components/SettingsMcpRegistry.jsx` | The store list: search, filters, sort, cards, and paging. |
+| `src/mcpDownloads.js` | Weekly npm / PyPI download lookups with an in-memory cache. |
+| `frontend/src/components/settings/McpPopularity.jsx` | The usage meter on cards and in the sheet. |
+| `scripts/test-mcp-downloads.js` | Unit tests for the lookups (fake fetch) and the count formatting. |
 | `frontend/src/components/settings/McpStoreSheet.jsx` | The install sheet (shared sheet idiom in `sheets.css`). |
 | `frontend/src/components/settings/mcpRegistryInstall.js` | Pure helpers that turn a Registry entry into install options and a `POST /api/mcp/servers` body. |
 | `scripts/test-mcp-registry-install.mjs` | Unit tests for the helpers. |
@@ -44,17 +48,22 @@ When OAuth is selected, the `Authorization` header field is hidden and not sent,
 
 `GET /api/mcp/registry?search=…&cursor=…&limit=…` proxies `registry.modelcontextprotocol.io/v0.1/servers` with `version=latest`. The store waits 350 ms after the last keystroke before it sends a search. Only the newest request may update the list, so a slow response for an earlier query cannot overwrite the current results. Filters and sorting run on the loaded results in the browser.
 
-## Popularity score
+## Popularity (weekly downloads)
 
-The Registry does not publish download counts or ratings, so the proxy computes a score from 0 to 100. The **Recommended** sort uses it after placing installable servers first, and each card shows it as a `Popularity <n>` badge whose `title` carries the component breakdown (`popularityTitle()` in `SettingsMcpRegistry.jsx`). The badge is a tooltip, not a tap target, so the store still works without hover.
+The Registry publishes no download counts or ratings. The previous computed "popularity score" (recency + package count + a near-constant version term) was dropped: it ranked by freshness while its label implied usage. `src/mcpDownloads.js` `weeklyDownloads(entries)` now looks up real counts:
 
-| Component | Max | Source |
+| Source | Request | Notes |
 |---|---|---|
-| Update recency | 50 | Days since `updatedAt` (full score for today, falling to 0 at 90 days) |
-| Package count | 30 | 10 points per package (3 or more packages = max) |
-| Version activity | 20 | 10 baseline + 10 when the `isLatest` flag is present |
+| npm, unscoped | `api.npmjs.org/downloads/point/last-week/a,b,…` | Bulk, ≤100 names per call. A single name uses the per-package form, because npm answers a one-name bulk call in the single-package shape. |
+| npm, scoped | `api.npmjs.org/downloads/point/last-week/@scope%2Fname` | One call each; npm has no scoped bulk form. |
+| PyPI | `pypistats.org/api/packages/<name>/recent?period=week` → `data.last_week` | Names normalised per PEP 503 (lowercase, runs of `-_.` → `-`). |
 
-The score ranks within a loaded page only. The Registry API offers no sort or totals, and after the store filters *and* sorts exactly one page, that page's scores are all equal — so the badge is honest about what it is rather than implying an install count.
+- At most 6 requests in flight, 2.5 s timeout each; a lookup that fails gives `downloads: null`, never a 502 for the page.
+- In-memory cache keyed `npm:<name>` / `pypi:<name>`: 6 h for answers (including "no such package"), 5 min for failures, 3000 keys max (oldest evicted). Nothing is written to disk, and Registry responses themselves are still not cached.
+- An entry with several countable packages reports its most downloaded one.
+- OCI, NuGet, MCPB, Cargo and hosted-only entries get `null`.
+
+Client sort **Popular** (`compare('popularity')` in `SettingsMcpRegistry.jsx`): weekly downloads desc; entries without a count after, installable first, then `updatedAt` desc. Like the other sorts it ranks the loaded pages only — the Registry API offers no server-side sort.
 
 ## Placeholder values (`{token}`)
 
@@ -85,7 +94,7 @@ Proxies the official registry's `GET /v0.1/servers` endpoint.
 |---|---|---|---|
 | `search` | string | `""` | Substring search by server name |
 | `cursor` | string | `""` | Pagination cursor from a previous response |
-| `sort` | string | `"popularity"` | Field to sort by (`popularity`, `updatedAt`, `name`) |
+| `sort` | string | `"popularity"` | Field to sort by (`popularity` = weekly downloads, `updatedAt`, `name`) |
 | `dir` | string | `"desc"` | Sort direction (`asc`, `desc`) |
 | `limit` | integer | 30 | Items per page, 1–100 |
 
@@ -99,7 +108,7 @@ Proxies the official registry's `GET /v0.1/servers` endpoint.
     {
       "_meta": { "io.modelcontextprotocol.registry/official": { "isLatest": true, "status": "active", "updatedAt": "..." } },
       "server": { "name": "io.github.user/weather", "description": "...", "packages": [...] },
-      "popularity": { "score": 78, "recencyScore": 45, "pkgScore": 20, "versionScore": 20 }
+      "downloads": { "weekly": 204887, "source": "npm", "package": "@modelcontextprotocol/server-github" }
     }
   ],
   "metadata": { "count": 30, "nextCursor": "..." }
