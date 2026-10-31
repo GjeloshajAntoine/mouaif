@@ -45,6 +45,35 @@ function line(text, cls) {
   return el;
 }
 
+function pre(text, cls) {
+  const el = document.createElement('pre');
+  el.className = 'hook-notes__pre' + (cls ? ' ' + cls : '');
+  el.textContent = text;
+  return el;
+}
+
+// "Changed by hook" with a before/after pair per changed argument. Rows saved
+// before per-key changes were recorded carry the whole earlier `before` only.
+function argChangesElement(note) {
+  const box = document.createElement('div');
+  box.className = 'hook-notes__changes';
+  box.appendChild(line('Changed by hook ' + noteLabel(note), 'hook-notes__meta'));
+  if (!Array.isArray(note.changes)) {
+    let text;
+    try { text = JSON.stringify(note.before, null, 2); } catch { text = String(note.before); }
+    box.append(line('Before', 'hook-notes__side'), pre(text, 'hook-notes__pre--before'));
+    return box;
+  }
+  for (const c of note.changes) {
+    box.appendChild(line(c.key, 'hook-notes__key'));
+    box.append(line('Before', 'hook-notes__side'),
+      c.before === undefined ? line('(not set)', 'hook-notes__meta') : pre(c.before, 'hook-notes__pre--before'));
+    box.append(line('After', 'hook-notes__side'),
+      c.after === undefined ? line('(removed)', 'hook-notes__meta') : pre(c.after, 'hook-notes__pre--after'));
+  }
+  return box;
+}
+
 // hookNotesElement(hooks) -> <details> | null
 export function hookNotesElement(hooks) {
   const notes = hooks && Array.isArray(hooks.notes) ? hooks.notes : [];
@@ -71,13 +100,7 @@ export function hookNotesElement(hooks) {
     if (note.error) li.appendChild(line('Error: ' + note.error, 'hook-notes__reason'));
     if (note.notice) li.appendChild(line(note.notice, 'hook-notes__reason'));
     if (note.context) li.appendChild(line('Added context for the model', 'hook-notes__meta'));
-    if (note.changedArgs) {
-      li.appendChild(line('Changed the arguments. Before:', 'hook-notes__meta'));
-      const pre = document.createElement('pre');
-      pre.className = 'hook-notes__pre';
-      try { pre.textContent = JSON.stringify(note.before, null, 2); } catch { pre.textContent = String(note.before); }
-      li.appendChild(pre);
-    }
+    if (note.changedArgs) li.appendChild(argChangesElement(note));
     list.appendChild(li);
   }
   details.appendChild(list);

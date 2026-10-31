@@ -1196,6 +1196,10 @@ padding-right: 10px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.hook-notes__key { margin-top: 6px; font-family: var(--font-mono); font-size: 0.78rem; font-weight: 600; overflow-wrap: anywhere; }
+.hook-notes__side { margin-top: 4px; color: var(--muted); font-size: 0.72rem; }
+.hook-notes__pre--before { border-left: 3px solid var(--danger); }
+.hook-notes__pre--after { border-left: 3px solid var(--success); }
 .hook-notes__context { margin: 8px 8px 0; }
 .hook-notes__context > summary { min-height: var(--tap); display: flex; align-items: center; cursor: pointer; font-weight: 600; }
 

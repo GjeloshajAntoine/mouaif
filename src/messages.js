@@ -104,7 +104,19 @@ if (typeof n.reason === 'string') note.reason = n.reason.slice(0, 2000);
 if (typeof n.error === 'string') note.error = n.error.slice(0, 600);
 if (typeof n.notice === 'string') note.notice = n.notice.slice(0, 300);
 if (Number.isFinite(n.ms)) note.ms = Math.round(n.ms);
-if (n.changedArgs === true) { note.changedArgs = true; if (n.before && typeof n.before === 'object') note.before = n.before; }
+if (n.changedArgs === true) {
+note.changedArgs = true;
+// Per-key before/after text (src/hooks.js argChanges); `before` is the
+// whole earlier argument object kept by rows saved before the diff.
+if (Array.isArray(n.changes)) {
+note.changes = n.changes.slice(0, 40).filter((c) => c && typeof c.key === 'string').map((c) => {
+const change = { key: c.key.slice(0, 128) };
+if (typeof c.before === 'string') change.before = c.before.slice(0, 2001);
+if (typeof c.after === 'string') change.after = c.after.slice(0, 2001);
+return change;
+});
+} else if (n.before && typeof n.before === 'object') note.before = n.before;
+}
 if (n.context === true) note.context = true;
 notes.push(note);
 }

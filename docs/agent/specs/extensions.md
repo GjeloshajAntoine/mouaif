@@ -558,7 +558,7 @@ Each phase is one or more feature commits with docs and tests.
 
 | # | Work | Outcome |
 | --- | --- | --- |
-| 1 | `src/hooks.js`, `command` kind, `tool.before`/`tool.after`/`prompt.submit`, app-scope `hooks` setting, tool-card chips, master switch + `MOUAIF_NO_HOOKS=1` | A shell hook blocks `git push -f` and the model sees why. **Done** — see `docs/features/hooks.md`. Hooks run server-side, so `?safe` (a browser flag) is not their off switch; it stays for UI surfaces. |
+| 1 | `src/hooks.js`, `command` kind, `tool.before`/`tool.after`/`prompt.submit`, app-scope `hooks` setting, tool-card chips, master switch + `MOUAIF_NO_HOOKS=1` | A shell hook blocks `git push -f` and the model sees why. **Done** — see `docs/features/hooks.md`. `match.family` and the per-key before/after diff are in; `match.chatTags` waits for chat tags, which mouaif does not have yet. Hooks run server-side, so `?safe` (a browser flag) is not their off switch; it stays for UI surfaces. |
 | 2 | `turn.end` + `followUp` queue, `turn.start`/`turn.error`/`attention`, run log in Settings | A hook keeps the agent going until `npm test` passes, max 3 follow-ups. |
 | 3 | Per-chat hooks (`chat_hook`, hooks bar/sheet, promote) + `hook_create`/`hook_list`/`hook_delete` | "From now on block force pushes here" adds a chat hook after one forced approval card. |
 | 4 | `http` + `module` kinds, `redact`, project hooks with hash trust | A repo ships its own policy hooks; a fresh clone shows the review banner instead of running them. |

@@ -15,6 +15,8 @@ const EVENT_LABELS = {
   'tool.after': 'After a tool ran'
 };
 const ORIGIN_LABELS = { user: 'You', webhook: 'Webhook', schedule: 'Recurring task', app: 'MCP App' };
+// Tool families, as the authorization gates group them (src/hooks.js FAMILIES).
+const FAMILY_LABELS = { shell: 'Shell', file: 'Files', subagent: 'Subagents', chats: 'Chat tools', mouaif: 'mouaif app', mcp: 'MCP servers' };
 
 // Starting points for "New hook". Each is a complete, working hook.
 const EXAMPLES = [
@@ -68,6 +70,7 @@ function toForm(hook) {
     event: hook.event || 'tool.before',
     enabled: hook.enabled !== false,
     tools: (m.tool || []).join(', '),
+    family: m.family || [],
     argText: m.argText || '',
     origin: m.origin || [],
     mode: handler.script ? 'script' : 'command',
@@ -87,6 +90,7 @@ function fromForm(f) {
   const tools = f.tools.split(/[\s,]+/).map((t) => t.trim()).filter(Boolean);
   if (f.event !== 'prompt.submit') {
     if (tools.length) match.tool = tools;
+    if (f.family.length) match.family = f.family;
     if (f.argText.trim()) match.argText = f.argText.trim();
   }
   if (f.origin.length) match.origin = f.origin;
@@ -105,6 +109,7 @@ function matchSummary(hook) {
   const m = hook.match || {};
   const bits = [];
   if (m.tool) bits.push(m.tool.join(', '));
+  if (m.family) bits.push(m.family.map((x) => FAMILY_LABELS[x] || x).join(', ') + ' tools');
   if (m.argText) bits.push('/' + m.argText + '/');
   if (m.origin) bits.push('from ' + m.origin.map((o) => ORIGIN_LABELS[o] || o).join(', '));
   return bits.length ? bits.join(' · ') : (hook.event === 'prompt.submit' ? 'every prompt' : 'every tool');
@@ -181,6 +186,14 @@ function HookEditor({ initial, isNew, onSave, onCancel, onDelete, projectDir }) 
         h('label', { class: 'label', for: idBase + '-tools' }, 'Tools'),
         h('input', { id: idBase + '-tools', class: 'input', value: f.tools, autocapitalize: 'off', spellcheck: false, placeholder: 'shell, group_cli, mcp__github__*', onInput: (e) => set({ tools: e.currentTarget.value }) }),
         h('p', { class: 'hint hint--compact' }, 'Comma-separated; * matches anything. Empty = every tool.')
+      ),
+      h('div', { class: 'row' },
+        h('span', { class: 'label' }, 'Tool groups'),
+        h('div', { class: 'hook-checks' },
+          Object.entries(FAMILY_LABELS).map(([key, text]) => h('label', { key, class: 'hook-check' },
+            h('input', { type: 'checkbox', checked: f.family.includes(key), onChange: (e) => set({ family: e.currentTarget.checked ? f.family.concat(key) : f.family.filter((x) => x !== key) }) }),
+            h('span', null, text)))),
+        h('p', { class: 'hint hint--compact' }, 'The groups of Settings → Project → Tools. None ticked = every group. With tool names too, a call must match both.')
       ),
       h('div', { class: 'row' },
         h('label', { class: 'label', for: idBase + '-arg' }, 'Arguments match'),

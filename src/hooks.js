@@ -16,7 +16,7 @@
 // cloned repository must not run code, see the spec's trust section):
 //
 //   { enabled: true, list: [Hook, ...] }
-//   Hook = { id, name?, enabled, event, match?: { tool?, argText?, origin? },
+//   Hook = { id, name?, enabled, event, match?: { tool?, family?, argText?, origin? },
 //            handler: { kind: 'command', command } | { kind: 'command', shell, script },
 //            timeoutMs, failClosed, subagents }
 //
@@ -33,6 +33,9 @@ const settings = require('./settings.js');
 const STORE_KEY = 'hooks';
 const EVENTS = Object.freeze(['prompt.submit', 'tool.before', 'tool.after']);
 const ORIGINS = Object.freeze(['user', 'webhook', 'schedule', 'app']);
+// Tool families a hook can match: the authorization gates (`shell`, `file`,
+// `subagent`, `chats`, `mouaif`) plus `mcp` for every MCP server tool.
+const FAMILIES = Object.freeze(['shell', 'file', 'subagent', 'chats', 'mouaif', 'mcp']);
 const SHELLS = Object.freeze({ bash: 'bash', sh: 'sh', node: process.execPath, python3: 'python3' });
 const SCRIPT_EXT = Object.freeze({ bash: '.sh', sh: '.sh', node: '.mjs', python3: '.py' });
 const ID_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
@@ -51,6 +54,7 @@ const MAX_STDERR = 16 * 1024;
 const MAX_REASON = 2000;
 const MAX_CONTEXT = 8 * 1024;
 const MAX_PAYLOAD_TEXT = 16 * 1024;
+const MAX_CHANGE_TEXT = 2000;
 const MAX_PER_EVENT = 4;
 const MAX_CONCURRENT = 8;
 const REGEX_BUDGET_MS = 250;
@@ -109,6 +113,11 @@ function normalizeMatch(raw, at) {
     if (typeof t !== 'string' || !TOOL_RE.test(t)) throw new HookError(at + '.match.tool has an invalid name: ' + JSON.stringify(t));
   }
   if (tools.length) out.tool = tools;
+  const families = list(raw.family, at + '.match.family', FAMILIES.length);
+  for (const f of families) {
+    if (!FAMILIES.includes(f)) throw new HookError(at + '.match.family must be among ' + FAMILIES.join(', '));
+  }
+  if (families.length) out.family = families;
   const argText = str(raw.argText, at + '.match.argText', MAX_ARG_TEXT);
   if (argText) {
     try { new RegExp(argText); } catch (e) { throw new HookError(at + '.match.argText is not a valid regular expression: ' + e.message); }
@@ -133,8 +142,8 @@ function normalizeHook(raw, index = 0) {
   if (name) hook.name = name;
   const match = normalizeMatch(raw.match, at);
   if (match) {
-    if ((match.tool || match.argText) && raw.event === 'prompt.submit') {
-      throw new HookError(at + '.match.tool and match.argText only apply to tool events');
+    if ((match.tool || match.family || match.argText) && raw.event === 'prompt.submit') {
+      throw new HookError(at + '.match.tool, match.family and match.argText only apply to tool events');
     }
     hook.match = match;
   }
@@ -195,6 +204,20 @@ function toolMatches(patterns, tool) {
   return patterns.some((p) => (p.includes('*') ? globToRegExp(p).test(tool) : p === tool));
 }
 
+// toolFamily(tool) -> 'shell' | 'file' | 'subagent' | 'chats' | 'mouaif' | 'mcp' | tool
+// The authorization gate a tool resolves through; `mcp` for an MCP tool.
+function toolFamily(tool) {
+  const name = String(tool || '');
+  if (name.startsWith('mcp__')) return 'mcp';
+  try { return require('./tools/authorization.js').configToolName(name); } catch { return name; }
+}
+
+// The MCP server slug of `mcp__<slug>__<tool>`, or null.
+function mcpServerOf(tool) {
+  const m = /^mcp__(.+?)__./.exec(String(tool || ''));
+  return m ? m[1] : null;
+}
+
 // A user regex runs in a worker with a time budget so a catastrophic pattern
 // cannot hang a turn. Unanchored search semantics.
 function regexSearch(pattern, value, budgetMs = REGEX_BUDGET_MS) {
@@ -238,6 +261,7 @@ async function hookMatches(hook, event, payload, ctx) {
   if (!m) return true;
   if (m.origin && !m.origin.includes((payload.origin && payload.origin.kind) || 'user')) return false;
   if (m.tool && !toolMatches(m.tool, String(payload.tool || ''))) return false;
+  if (m.family && !m.family.includes(toolFamily(payload.tool))) return false;
   if (m.argText && !(await regexSearch(m.argText, safeJson(payload.args)))) return false;
   return true;
 }
@@ -437,6 +461,9 @@ async function runHooks(event, payload, ctx = {}) {
       input.attachments = payload.attachments || 0;
     } else {
       input.tool = payload.tool;
+      input.family = toolFamily(payload.tool);
+      const server = mcpServerOf(payload.tool);
+      if (server) input.mcpServer = server;
       input.callId = payload.callId || null;
       input.args = args;
       if (event === 'tool.after') {
@@ -464,7 +491,7 @@ async function runHooks(event, payload, ctx = {}) {
     if (parsed.updatedArgs) {
       const merged = Object.assign({}, args || {}, parsed.updatedArgs);
       if (safeJson(merged) !== safeJson(args)) {
-        note.before = args;
+        note.changes = argChanges(args, merged);
         args = merged;
         argsChanged = true;
         note.changedArgs = true;
@@ -491,6 +518,25 @@ async function runHooks(event, payload, ctx = {}) {
   if (argsChanged) outcome.args = args;
   if (contexts.length) outcome.context = contextBlock(event, contexts);
   return outcome;
+}
+
+// argChanges(before, after) -> [{ key, before?, after? }]
+// The top-level keys a hook changed (updatedArgs is a shallow merge), each
+// value as display text clipped for the card. A missing side means the key
+// was absent there.
+function argChanges(before, after) {
+  const a = isObject(before) ? before : {};
+  const b = isObject(after) ? after : {};
+  const show = (v) => clip(typeof v === 'string' ? v : safeJson(v), MAX_CHANGE_TEXT);
+  const out = [];
+  for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    if (safeJson(a[key]) === safeJson(b[key])) continue;
+    const change = { key };
+    if (Object.prototype.hasOwnProperty.call(a, key)) change.before = show(a[key]);
+    if (Object.prototype.hasOwnProperty.call(b, key)) change.after = show(b[key]);
+    out.push(change);
+  }
+  return out;
 }
 
 // contextBlock(event, [{ hook, text }]) -> string
@@ -533,6 +579,7 @@ function newId() {
 module.exports = {
   EVENTS,
   ORIGINS,
+  FAMILIES,
   SHELLS: Object.keys(SHELLS),
   HookError,
   normalizeHook,
@@ -545,5 +592,7 @@ module.exports = {
   testHook,
   newId,
   _toolMatches: toolMatches,
+  _toolFamily: toolFamily,
+  _argChanges: argChanges,
   _regexSearch: regexSearch
 };

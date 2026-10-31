@@ -38,6 +38,7 @@ Tools that never show an approval card run no hooks: progress updates, `list_fea
 ### Matching
 
 - **Tools**: tool names, comma-separated. `*` matches anything, so `mcp__github__*` matches every tool of that MCP server. Empty = every tool.
+- **Tool groups**: the groups of **Settings → Project → Tools**: **Shell**, **Files**, **Subagents**, **Chat tools**, **mouaif app** and **MCP servers** (every MCP tool). None ticked = every group. With tool names as well, a call must match both.
 - **Arguments match**: a regular expression searched in the call's arguments, written as JSON (`{"cmd":"git push -f origin main"}`). Empty = any arguments. A pattern gets 250 ms; a slower one counts as no match.
 - **Sent by**: who sent the turn's prompt: **You**, **Webhook**, **Recurring task** or **MCP App**. None ticked = everyone.
 
@@ -55,6 +56,7 @@ A hook is either a **command** (run by the system shell) or a **script** (bash, 
   "origin": { "kind": "user" },
   "nested": false,
   "tool": "shell",
+  "family": "shell",
   "callId": "call_…",
   "args": { "cmd": "git push -f origin main" }
 }
@@ -84,6 +86,8 @@ The hook answers with its exit code and output:
 }
 ```
 
+`family` is the tool's group (`shell`, `file`, `subagent`, `chats`, `mouaif` or `mcp`). An MCP tool's input also has `mcpServer`, the server's slug (`github` for `mcp__github__list_issues`).
+
 `decision` is `continue` (the default), `block` or `ask`. `ask` and `updatedArgs` only count in `tool.before`; `prompt.submit` can only block; `tool.after` can only add context. `updatedArgs` is merged into the call's arguments, and the approval gate, the card and the tool all see the new ones.
 
 Examples:
@@ -112,9 +116,9 @@ To turn every hook off without the Settings page, start mouaif with `MOUAIF_NO_H
 
 ### What you see in the chat
 
-- **Tool cards**: a line under the head, such as *Hook · no-force-push · blocked* (red), *Hook · rewrite · changed the arguments* (amber) or *Hook · git-branch · added context*. Tap it for each hook's decision, reason, time, the arguments before a change, and the context the model saw.
+- **Tool cards**: a line under the head, such as *Hook · no-force-push · blocked* (red), *Hook · rewrite · changed the arguments* (amber) or *Hook · git-branch · added context*. Tap it for each hook's decision, reason, time and the context the model saw. A hook that changed the arguments shows each changed one with its value before and after.
 - **Blocked calls**: the card's body says *Not run: blocked by hook `<id>`* with the reason, instead of output.
-- **Approval cards**: when a hook asked, the card shows which hook and why, opened.
+- **Approval cards**: when a hook asked, the card shows which hook and why, opened. When a hook changed the arguments, the card shows the new ones, with the before/after list under it.
 - **Prompts**: context a hook added sits under the prompt in a collapsed **Added by hooks** block.
 - **Blocked prompts** are not saved. The composer gets the text back and the status line shows the hook's reason.
 

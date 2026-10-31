@@ -22,6 +22,7 @@ function view(config) {
     list: config.list,
     events: hooks.EVENTS,
     origins: hooks.ORIGINS,
+    families: hooks.FAMILIES,
     shells: hooks.SHELLS,
     disabledByEnv: process.env.MOUAIF_NO_HOOKS === '1'
   };

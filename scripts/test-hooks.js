@@ -45,6 +45,21 @@ async function testValidation() {
   assert.equal(h.failClosed, false);
   assert.ok(hooks._toolMatches(['mcp__github__*'], 'mcp__github__list_issues'));
   assert.ok(!hooks._toolMatches(['shell'], 'shell2'));
+  // Families: the authorization gate a tool resolves through, `mcp` for MCP tools.
+  assert.throws(() => hooks.normalizeHook({ id: 'a', event: 'tool.before', match: { family: ['files'] }, handler: { kind: 'command', command: 'x' } }), /family/);
+  assert.throws(() => hooks.normalizeHook({ id: 'a', event: 'prompt.submit', match: { family: ['shell'] }, handler: { kind: 'command', command: 'x' } }), /tool events/);
+  assert.deepEqual(hooks.normalizeHook({ id: 'a', event: 'tool.before', match: { family: 'file' }, handler: { kind: 'command', command: 'x' } }).match, { family: ['file'] });
+  assert.equal(hooks._toolFamily('read_file'), 'file');
+  assert.equal(hooks._toolFamily('shell'), 'shell');
+  assert.equal(hooks._toolFamily('group_cli'), 'mouaif');
+  assert.equal(hooks._toolFamily('mcp__github__list_issues'), 'mcp');
+  // Argument diffs: changed, added and removed keys only, values as text.
+  assert.deepEqual(hooks._argChanges({ cmd: 'a', keep: 1, gone: true }, { cmd: 'b', keep: 1, n: { x: 1 } }), [
+    { key: 'cmd', before: 'a', after: 'b' },
+    { key: 'gone', before: 'true' },
+    { key: 'n', after: '{"x":1}' }
+  ]);
+  assert.equal(hooks._argChanges({ s: 'x'.repeat(5000) }, { s: 'y' })[0].before.length, 2001);
 }
 
 async function testParseOutput() {
@@ -85,6 +100,16 @@ async function testRunner() {
   assert.match(out.context, new RegExp('tool\\.before\\|shell\\|ls\\|c1\\|none\\|' + fs.realpathSync(projectDir).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   delete process.env.SECRET_FOR_TEST;
 
+  // match.family, and `family` / `mcpServer` in the input.
+  setHooks([{ id: 'fam', event: 'tool.before', match: { family: ['mcp', 'file'] }, handler: { kind: 'command', shell: 'node', script:
+    "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const i=JSON.parse(s);process.stdout.write(JSON.stringify({context:i.family+'|'+(i.mcpServer||'-')}))})" } }]);
+  out = await hooks.runHooks('tool.before', { tool: 'mcp__github__list_issues', args: {} }, ctx);
+  assert.match(out.context, /\nmcp\|github\n/);
+  out = await hooks.runHooks('tool.before', { tool: 'read_file', args: {} }, ctx);
+  assert.match(out.context, /\nfile\|-\n/);
+  out = await hooks.runHooks('tool.before', { tool: 'shell', args: {} }, ctx);
+  assert.equal(out.notes.length, 0);
+
   // updatedArgs chain; ask beats continue; block is not reachable from tool.after.
   setHooks([
     { id: 'rewrite', event: 'tool.before', handler: { kind: 'command', command: say({ updatedArgs: { cmd: 'git push origin main' } }) } },
@@ -96,7 +121,7 @@ async function testRunner() {
   assert.equal(out.reason, 'pushing to main');
   assert.deepEqual(out.args, { cmd: 'git push origin main' });
   assert.equal(out.notes[0].changedArgs, true);
-  assert.deepEqual(out.notes[0].before, { cmd: 'git push -f origin main' });
+  assert.deepEqual(out.notes[0].changes, [{ key: 'cmd', before: 'git push -f origin main', after: 'git push origin main' }]);
   out = await hooks.runHooks('tool.after', { tool: 'shell', args: {}, ok: true, result: { stdout: 'x' } }, ctx);
   assert.equal(out.decision, 'continue');
   assert.match(out.context, /pushed/);
