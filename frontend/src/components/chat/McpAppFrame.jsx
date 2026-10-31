@@ -3,9 +3,14 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
 import { useModal } from '../../hooks/useModal.js';
 import { boundedHeight, connectMcpApp, containerDimensionsFor } from './mcpAppBridge.js';
+import { THEME_PAINTED, surfaceHostContext, themeHostContext } from './appHostContext.js';
 import './mcp-app.css';
 
-export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onAuthorize, onMountStateChange }) {
+// `surface` ({ extensionId, surfaceId, slot, projectName }) mounts an
+// extension's view instead of a tool call's (docs/features/extensions.md);
+// `onClosed` tells its slot the view closed (a dock collapses to its chip),
+// and `onBridge` hands the slot the live bridge (host events, badges).
+export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onAuthorize, onMountStateChange, surface, onClosed, onBridge }) {
   const frame = useRef(null);
   const session = useRef(null);
   const closeView = useRef(null);
@@ -31,9 +36,16 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
       }
       setGeneration(n => n + 1);
     };
+    // Extension views are not on-the-fly apps: nothing reloads or messages them by path.
+    if (surface) return undefined;
     registerActiveAppFrame(projectDir, chatId, callId, { path: resolvedPath, title: resolvedTitle, reload });
     return () => unregisterActiveAppFrame(callId, reload);
-  }, [projectDir, chatId, callId, resolvedPath, resolvedTitle]);
+  }, [projectDir, chatId, callId, resolvedPath, resolvedTitle, surface]);
+  const surfaceKey = surface ? surface.extensionId + '/' + surface.surfaceId : '';
+  const closedRef = useRef(onClosed);
+  closedRef.current = onClosed;
+  const bridgeRef = useRef(onBridge);
+  bridgeRef.current = onBridge;
   const sheetRef = useModal({
     active: mode === 'fullscreen' && !!mount && !failed,
     onClose: () => applyMode('inline'),
@@ -111,8 +123,11 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
     const ctl = new AbortController();
     let id;
     setFailed(false); setUnavailable(false); setStatus('Loading app…'); setMount(null);
+    const mountBody = surface
+      ? { projectDir, chatId: chatId || undefined, extensionId: surface.extensionId, surfaceId: surface.surfaceId }
+      : { projectDir, chatId, callId };
     fetchJson('/api/mcp/apps/mount', { method: 'POST', signal: ctl.signal,
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectDir, chatId, callId })
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mountBody)
     }).then(async response => {
       if (!response.body?.enabled) {
         if (active) {
@@ -149,7 +164,7 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
         if (id) fetch('/api/mcp/apps/' + id, { method: 'DELETE', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
       });
     };
-  }, [projectDir, chatId, callId, generation]);
+  }, [projectDir, chatId, callId, surfaceKey, generation]);
 
   useEffect(() => {
     if (!mount || !frame.current) return;
@@ -169,16 +184,22 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
     void fetch('/api/mcp/apps/' + mount.id, { method: 'DELETE', keepalive: true,
     headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
     try { await bridge?.close(); } finally {
-    if (active) { setFailed(true); setStatus(error?.message || 'App closed — tool result shown below.'); setMode('inline'); }
+    if (active) { setFailed(true); setStatus(error?.message || (surface ? 'View closed — Retry to reopen.' : 'App closed — tool result shown below.')); setMode('inline'); }
+    if (bridgeRef.current) bridgeRef.current(null);
+    // Only the user's Close collapses an extension view's slot; a failure
+    // stays visible with its reason and Retry.
+    if (userClosed && closedRef.current) closedRef.current();
     }
     };
-    closeView.current = () => { void fail(new Error('App closed — Retry to reopen.')); };
+    let userClosed = false;
+    closeView.current = () => { userClosed = true; void fail(new Error('App closed — Retry to reopen.')); };
     const onPageHide = () => { void fail(new Error('App paused — Retry to reopen.')); };
     const onVisibility = () => { if (document.hidden) onPageHide(); };
     window.addEventListener('pagehide', onPageHide);
     document.addEventListener('visibilitychange', onVisibility);
     const timeout = setTimeout(() => fail(new Error('App initialization timed out — tool result shown below.')), 10000);
     connectMcpApp({ iframe: frame.current, mount,
+    hostContext: surface ? surfaceHostContext({ ...surface, chatId }) : undefined,
     onReady: () => {
       clearTimeout(timeout);
       if (!active) return;
@@ -216,7 +237,8 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
     }).then(bridge => {
     if (active && !closing) {
     session.current = bridge;
-    registerActiveAppSession(projectDir, chatId, callId, resolvedTitle, bridge, resolvedPath);
+    if (!surface) registerActiveAppSession(projectDir, chatId, callId, resolvedTitle, bridge, resolvedPath);
+    else if (bridgeRef.current) bridgeRef.current(bridge, mount);
     frame.current.src = mount.url;
     }
     else bridge.close();
@@ -225,9 +247,18 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
     try { const result = await post('/status', {}); if (result.status !== 200) await fail(new Error(result.body.error)); }
     catch (error) { if (active) await fail(error); }
     }, 5000);
+    // An extension view follows the active theme.
+    const onTheme = () => {
+      if (!surface || !session.current) return;
+      const t = themeHostContext();
+      session.current.updateHostContext({ theme: t.theme, styles: t.styles, mouaif: { ...surfaceHostContext({ ...surface, chatId }).mouaif } });
+    };
+    window.addEventListener(THEME_PAINTED, onTheme);
     return () => {
     active = false; closeView.current = null; clearTimeout(timeout); clearInterval(poll); ctl.abort();
-    unregisterActiveAppSession(callId, session.current);
+    window.removeEventListener(THEME_PAINTED, onTheme);
+    if (surface && bridgeRef.current) bridgeRef.current(null);
+    if (!surface) unregisterActiveAppSession(callId, session.current);
     window.removeEventListener('pagehide', onPageHide);
     document.removeEventListener('visibilitychange', onVisibility);
     };
@@ -244,7 +275,8 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
     class: 'mcp-app' + (isFullscreen ? ' mcp-app--fullscreen' : ''),
     role: isFullscreen ? 'dialog' : 'region',
     'aria-modal': isFullscreen ? 'true' : undefined,
-    'aria-label': resolvedTitle || 'MCP App'
+    'aria-label': resolvedTitle || 'MCP App',
+    'data-surface': surface ? surface.slot : undefined
   },
     h('header', { class: 'mcp-app__header' },
       h('strong', { class: 'mcp-app__title' }, resolvedTitle || 'MCP App'),

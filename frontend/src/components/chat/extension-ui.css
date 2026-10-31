@@ -1,0 +1,83 @@
+/* Extension views (docs/features/extensions.md): the dock chips above the
+   composer (ExtensionDocks.jsx) and the bottom sheet (ExtensionSheet.jsx).
+   Mobile first: the chip is a run-dock bar (44 px controls); an open dock
+   holds its view in a box up to 30 dvh that the user can drag taller; the
+   sheet fills the phone and becomes a centred card on wide screens. */
+
+.ext-dock { display: flex; flex-direction: column; flex: 0 0 auto; }
+.ext-dock__frame {
+  align-self: center;
+  width: 100%;
+  max-width: var(--read-max, 44rem);
+  max-height: 30dvh;
+  min-height: 8rem;
+  margin: 4px auto 0;
+  overflow: auto;
+  resize: vertical;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-sizing: border-box;
+}
+.ext-dock__frame .mcp-app { margin: 0; border: 0; }
+.ext-dock__ext { color: var(--muted); font-weight: 400; }
+.ext-dock__badge {
+  flex: 0 0 auto;
+  max-width: 8ch;
+  overflow: hidden;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.ext-dock__badge[data-tone="ok"] { background: var(--success-soft); color: var(--success); }
+.ext-dock__badge[data-tone="warn"] { background: var(--warning-soft); color: var(--warning); }
+.ext-dock__badge[data-tone="error"] { background: var(--danger-soft); color: var(--danger); }
+
+.ext-sheet__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: color-mix(in srgb, #000 45%, transparent);
+}
+.ext-sheet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 44rem;
+  height: 92dvh;
+  padding-bottom: var(--safe-bottom, env(safe-area-inset-bottom));
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  background: var(--bg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.ext-sheet__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--tap);
+  padding: 6px 10px 6px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.ext-sheet__icon { display: inline-flex; color: var(--accent); }
+.ext-sheet__titles { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ext-sheet__titles strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ext-sheet__ext { color: var(--muted); font-size: 0.75rem; }
+.ext-sheet__close { min-height: var(--tap); }
+.ext-sheet__body { flex: 1; min-height: 0; overflow: auto; padding: 8px; }
+.ext-sheet__body .mcp-app { margin: 0; }
+@media (min-width: 720px) {
+  .ext-sheet__overlay { align-items: center; }
+  .ext-sheet { height: min(80dvh, 48rem); border-radius: var(--r-lg); }
+}
+
+/* File menu entries for sheets (FileToolbar.jsx). */
+.file-toolbar__menu-item--extension .file-toolbar__menu-icon { color: var(--accent); }

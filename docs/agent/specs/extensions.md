@@ -3,7 +3,8 @@
 > Maintainer design proposal. Phases 1 (hooks on prompts and tool calls), 2 (turn hooks,
 > follow-ups, attention, run log), 3 (per-chat hooks, model hook tools) and 4 (http and module
 > handlers, redact, project hooks with hash trust) and 5 (the one-file format, registry, import /
-> export, `mcp` hooks, Settings → Extensions) are implemented; see `docs/features/hooks.md` and
+> export, `mcp` hooks, Settings → Extensions) and 6 (surface mounts, chat.dock, chat.sheet, theme
+> variables, live budget) are implemented; see `docs/features/hooks.md` and
 > `docs/features/extensions.md`. The rest is not. Same rules as every track: one feature = one
 > commit, Conventional Commits, mobile-first UI, a `docs/features/<slug>.md` page plus its
 > `docs/README.md` line, and `docs/agent/features/<slug>.md` notes in the same commit.
@@ -567,7 +568,7 @@ Each phase is one or more feature commits with docs and tests.
 | 3 | Per-chat hooks (`chat_hook`, hooks bar/sheet, promote) + `hook_create`/`hook_list`/`hook_delete` | "From now on block force pushes here" adds a chat hook after one forced approval card. **Done**, with these differences: the hooks bar opens a panel above the composer like the webhook bar; scope is `chat` or `app` (`project` waits for phase 4 trust); promote goes to the app only; model scripts are capped at 8 KB so the card shows them whole. Not done: the chat list's **Hooks** filter and row icon. |
 | 4 | `http` + `module` kinds, `redact`, project hooks with hash trust | A repo ships its own policy hooks; a fresh clone shows the review banner instead of running them. **Done**. Model scope `project` and chat → project promote write the project's settings; the new list is trusted only if the old one was. A redaction that times out withholds the result from the model. |
 | 5 | `.mouaif-extension.json` format, registry, import/export, `mcp` kind, Settings → Extensions | One file installs a server + its hooks. **Done**. Project extensions may only `server.ref`; a project file shadows an app extension with the same id; re-import turns an extension off. |
-| 6 | Surface mounts (`resourceUri` and inline `html`), `chat.dock` + `chat.sheet`, host theme variables, LRU budget | A CI dock shows red/green above the composer in every theme. |
+| 6 | Surface mounts (`resourceUri` and inline `html`), `chat.dock` + `chat.sheet`, host theme variables, LRU budget | A CI dock shows red/green above the composer in every theme. **Done**. Mounts go through `POST /api/mcp/apps/mount` with `extensionId`/`surfaceId` (the host owns the sandbox). Theme reaches views as the MCP Apps standard style variables. `displayMode` stays `inline`/`fullscreen` (the SDK's values); the slot is in `hostContext.mouaif.slot`. |
 | 7 | Host tools (`mouaif/*`) with permissions, host event forwarding | The dock updates live on `turn.end` and can insert a fix-it prompt into the composer. |
 | 8 | `settings.page`, `tool.renderer`, `project.card` | A custom renderer for `shell` output, an extension settings page. |
 | 9 | `model.context` permission (needs MCP Apps phase 2) | A ticket sheet sets "current ticket" context for the next turns. |

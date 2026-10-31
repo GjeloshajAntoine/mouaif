@@ -33,11 +33,39 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
   }, 5000);
   timer.unref();
 
+  // An extension surface (docs/features/extensions.md) stays valid while its
+  // extension is active here, its chat (if any) exists and, for a ui://
+  // surface, its server session and resource are the ones it mounted.
+  function validateSurface(mount) {
+    const found = require('./extensions.js').surface(mount.projectDir, mount.extensionId, mount.surfaceId);
+    if (!found) throw err('EMCP_APP_GONE', 'The extension was turned off or changed');
+    if (mount.chatId && !chats.getChat(mount.projectDir, mount.chatId)) throw err('EMCP_APP_GONE', 'Chat was removed');
+    if (!mount.uri) {
+      if (found.ui.html !== mount.html) throw err('EMCP_APP_STALE', 'The extension changed; reload');
+      return null;
+    }
+    if (found.ui.resourceUri !== mount.uri) throw err('EMCP_APP_STALE', 'The extension changed; reload');
+    const server = mcp.listServers(mount.projectDir).find(s => s.id === mount.serverId && s.slug === mount.serverSlug);
+    const session = mcp._sessions.get(mount.projectDir + '::' + mount.serverId);
+    if (!server || session !== mount.session || session?.status !== 'ready') throw err('EMCP_APP_GONE', 'The extension’s server disconnected');
+    if (session.appResourceEpoch !== mount.epoch) throw err('EMCP_APP_STALE', 'The extension’s view changed; reload');
+    for (const request of mount.requests.values()) {
+      if (request.done || request.controller.signal.aborted || !request.tool) continue;
+      const target = session.tools.find(t => t.name === request.tool.name);
+      if (!target || !apps.toolVisibleTo(target, 'app')
+        || authz.effectiveConfig(mount.projectDir, mcp.composedToolName(server.slug, request.tool.name), mount.chatId).mode === 'off') {
+        throw err('ETOOL_DISABLED', 'A requested tool was disabled or removed');
+      }
+    }
+    return session;
+  }
+
   function validate(mount) {
     try {
       if (!mount || mounts.get(mount.id) !== mount || mount.expires <= Date.now() || mount.lease <= Date.now()) {
         throw err('EMCP_APP_GONE', 'MCP App was closed or expired');
       }
+      if (mount.kind === 'surface') return validateSurface(mount);
       if (!chats.getChat(mount.projectDir, mount.chatId)) throw err('EMCP_APP_GONE', 'Chat was removed');
       if (mount.creationTool) {
         if (authz.effectiveConfig(mount.projectDir, mount.creationTool, mount.chatId).mode === 'off') {
@@ -72,6 +100,69 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
     }
   }
 
+  // mountSurface(body, origin) — an extension's UI in a slot (dock, sheet,
+  // settings page, tool renderer, project card). The view is resolved from the
+  // extension registry by id, never from a URI or HTML the browser sends.
+  async function mountSurface(body, origin) {
+    const { projectDir, chatId, extensionId, surfaceId } = body;
+    if (typeof projectDir !== 'string' || !projectDir || typeof extensionId !== 'string' || typeof surfaceId !== 'string') {
+      throw err('EBADINPUT', 'projectDir, extensionId and surfaceId are required');
+    }
+    if (chatId !== undefined && chatId !== null && typeof chatId !== 'string') throw err('EBADINPUT', 'chatId must be a string');
+    const extensions = require('./extensions.js');
+    const found = extensions.surface(projectDir, extensionId, surfaceId);
+    if (!found) throw err('EMCP_NOTFOUND', 'This extension view is not available here (off, not trusted or removed)');
+    if (extensions.CHAT_SLOTS.includes(found.ui.slot) && !chatId) throw err('EBADINPUT', 'This view lives in a chat; chatId is required');
+    if (chatId && !chats.getChat(projectDir, chatId)) throw err('EMCP_NOTFOUND', 'Chat not found');
+    let html;
+    let policy;
+    let server = null;
+    let session = null;
+    let epoch;
+    if (found.ui.html) {
+      // The same bundled MCP Apps SDK as an on-the-fly app (window.mouaifApp,
+      // connected): a view without network still speaks the protocol.
+      html = require('./instant-mcp-apps.js').renderHtml(found.ui.html, 'html', found.ext.name + ' · ' + found.ui.title);
+      // A single-file view gets no network, like an on-the-fly app.
+      policy = buildPolicy({ csp: { connectDomains: [], resourceDomains: [] } }, origin);
+    } else {
+      server = mcp.listServers(projectDir).find(s => s.slug === found.serverSlug);
+      if (!server) throw err('EMCP_NOTFOUND', 'The extension’s MCP server is not set up');
+      session = mcp._sessions.get(projectDir + '::' + server.id);
+      if (!session || session.status !== 'ready') {
+        await mcp.startServer(projectDir, server.id);
+        session = mcp._sessions.get(projectDir + '::' + server.id);
+      }
+      if (!session || session.status !== 'ready') throw err('EMCP_NOSESSION', 'The extension’s MCP server did not start');
+      epoch = session.appResourceEpoch;
+      const resource = await mcp.readAppResource(projectDir, server.id, found.ui.resourceUri, { refresh: true, declaredByExtension: true });
+      if (epoch !== session.appResourceEpoch) throw err('EMCP_APP_STALE', 'The extension’s view changed during mount; retry');
+      html = resource.text;
+      policy = buildPolicy(resource._meta.ui, origin);
+    }
+    if (mounts.size >= 64) throw err('EMCP_APP_LIMIT', 'Too many open MCP Apps');
+    const ticket = await sandbox.issue(origin, policy);
+    if (mounts.size >= 64) {
+      sandbox.revoke(ticket.token);
+      throw err('EMCP_APP_LIMIT', 'Too many open MCP Apps');
+    }
+    const id = crypto.randomBytes(24).toString('base64url');
+    const mount = { id, kind: 'surface', hostOrigin: origin, projectDir, chatId: chatId || null,
+      extensionId, surfaceId, slot: found.ui.slot, scope: found.scope,
+      permissions: found.ext.permissions.slice(), events: (found.ui.events || []).slice(),
+      serverId: server ? server.id : null, serverSlug: server ? server.slug : null, session, uri: found.ui.resourceUri || null,
+      html: found.ui.html || null, epoch,
+      title: found.ext.name + ' · ' + found.ui.title, ticket,
+      expires: Date.now() + 30 * 60 * 1000, lease: Date.now() + 20000, requests: new Map() };
+    mounts.set(id, mount);
+    validate(mount);
+    sandbox.bind(ticket.token, () => { validate(mount); });
+    return { enabled: true, id, url: ticket.url, origin: ticket.origin, title: mount.title, html, csp: policy.csp, permissions: {},
+      arguments: {}, result: { content: [], structuredContent: { mouaif: { type: 'mounted', slot: mount.slot } } },
+      surface: { extensionId, surfaceId, slot: mount.slot, title: found.ui.title, extensionName: found.ext.name,
+        permissions: mount.permissions, events: mount.events, hasServer: !!server } };
+  }
+
   async function handle(req, res, parsed, publicOrigin) {
     try {
     const sandboxMatch = parsed.pathname.match(/^\/api\/mcp\/apps\/sandbox\/([A-Za-z0-9_-]+)$/);
@@ -89,6 +180,9 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
     if (req.method !== 'POST' && !deleting) return sendJSON(res, 405, { error: 'Unsupported App method', code: 'EBADINPUT' });
     const body = await readJsonOr400(req, res);
       if (!body) return;
+      if (parsed.pathname === '/api/mcp/apps/mount' && req.method === 'POST' && body.extensionId !== undefined) {
+        return sendJSON(res, 200, await mountSurface(body, origin));
+      }
       if (parsed.pathname === '/api/mcp/apps/mount' && req.method === 'POST') {
         const { projectDir, chatId, callId } = body;
         if (typeof projectDir !== 'string' || typeof chatId !== 'string' || typeof callId !== 'string') throw err('EBADINPUT', 'projectDir, chatId and callId are required');
@@ -184,6 +278,10 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
         if (body.projectDir !== undefined || body.chatId !== undefined || body.modelId !== undefined || body.providerId !== undefined) {
           throw err('EBADINPUT', 'MCP App cannot select a chat or model');
         }
+        // An extension view sends messages only with the chat.message permission, and only in a chat.
+        if (mount.kind === 'surface' && (!mount.chatId || !mount.permissions.includes('chat.message'))) {
+          throw err('EMCP_VISIBILITY', 'This extension may not send messages in the chat');
+        }
         const chat = chats.getChat(mount.projectDir, mount.chatId);
         if (!chat.modelId) throw err('EBADINPUT', 'Select a chat model before sending an App message');
         if (runningChats.has(runningKey(mount.projectDir, mount.chatId))) throw err('EALREADY_RUNNING', 'Wait for the current response to finish');
@@ -216,6 +314,8 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
       if (match[2] !== 'call' || req.method !== 'POST') throw err('EBADINPUT', 'Unsupported App operation');
       if (typeof body.requestId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(body.requestId)) throw err('EBADINPUT', 'requestId is required');
       if (!session) throw err('EMCP_VISIBILITY', 'Tool is not app-callable on this server');
+      // Own-server calls are authorized in a chat (approval cards live there).
+      if (mount.kind === 'surface' && !mount.chatId) throw err('EMCP_VISIBILITY', 'This view has no chat; it can call its server only from a chat');
       let request = mount.requests.get(body.requestId);
       if (!request) {
         if (mount.requests.size >= 64) throw err('EMCP_APP_LIMIT', 'MCP App call limit reached; reload');

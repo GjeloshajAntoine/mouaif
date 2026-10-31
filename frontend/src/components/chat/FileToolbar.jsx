@@ -88,7 +88,7 @@ async function fetchGitStats(projectDir) {
 }
 
 export function FileToolbar(props) {
-const { projectDir, onOpenFileEditor, onOpenPreview, onOpenScreenCapture, customActions, onRunCustomAction, onRefreshCustomActions, orb } = props;
+const { projectDir, onOpenFileEditor, onOpenPreview, onOpenScreenCapture, customActions, onRunCustomAction, onRefreshCustomActions, orb, extensionSheets, onOpenExtensionSheet } = props;
 const [menuOpen, setMenuOpen] = useState(false);
   const [gitOpen, setGitOpen] = useState(false);
   const [cliOpen, setCliOpen] = useState(false);
@@ -402,6 +402,20 @@ chevron('down')
 )
 ),
     menuOpen && h('div', { ref: menuRef, class: 'file-toolbar__menu', role: 'menu' },
+// Extension sheets (docs/features/extensions.md), in the same section as custom actions.
+extensionSheets && extensionSheets.length ? [
+...extensionSheets.map((sheet) =>
+h('button', {
+key: 'ext:' + sheet.extensionId + '/' + sheet.surfaceId,
+class: 'file-toolbar__menu-item file-toolbar__menu-item--action file-toolbar__menu-item--extension',
+role: 'menuitem',
+type: 'button',
+'aria-haspopup': 'dialog',
+onClick: () => { setMenuOpen(false); if (onOpenExtensionSheet) onOpenExtensionSheet(sheet); }
+}, h('span', { class: 'file-toolbar__menu-icon', 'aria-hidden': 'true' }, '\u{1F9E9}'), h('span', null, sheet.title))
+),
+customActions && customActions.length ? null : h('div', { class: 'file-toolbar__menu-sep', role: 'separator', key: 'ext-sep' })
+] : null,
 customActions && customActions.length ? [
 ...customActions.map((action) =>
 h('button', {

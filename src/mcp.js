@@ -1310,7 +1310,9 @@ async function readAppResource(projectDir, serverId, uri, opts = {}) {
   if (!session || session.status !== 'ready') {
     throw err('EMCP_NOSESSION', 'MCP App server is not ready', { serverId });
   }
-  if (!session.tools.some(t => t._meta?.ui?.resourceUri === uri)) {
+  // An extension surface names its resource in the extension file the user
+  // approved (src/extensions.js), so it need not be declared by a tool.
+  if (!opts.declaredByExtension && !session.tools.some(t => t._meta?.ui?.resourceUri === uri)) {
     throw err('EMCP_NOTFOUND', 'MCP App resource is not declared by this server', { serverId, uri });
   }
   if (opts.signal?.aborted) throw err('EABORTED', 'MCP App resource read cancelled');

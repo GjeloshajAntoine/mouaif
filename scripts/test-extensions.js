@@ -212,6 +212,85 @@ async function testRoutes() {
   assert.equal((await call('DELETE', '/api/extensions/repo-policy/trust?projectDir=' + encodeURIComponent(projectDir))).status, 200);
 }
 
+// Phase 6: surfaces mount through the MCP Apps host, resolved from the
+// registry; chat slots need a chat; permissions gate messages and calls.
+async function testSurfaces() {
+  const chats = require('../src/chats.js');
+  const { createServer } = require('../src/index.js');
+  const app = createServer(0);
+  await new Promise((r) => app.listen(0, '127.0.0.1', r));
+  const base = 'http://127.0.0.1:' + app.address().port;
+  const post = async (route, body = {}) => {
+    const res = await fetch(base + route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    return { status: res.status, body: await res.json() };
+  };
+  const get = async (route) => { const res = await fetch(base + route); return { status: res.status, body: await res.json() }; };
+  try {
+    extensions.importApp(manifest({
+      id: 'ci-ui',
+      server: { name: 'CI ui server', command: process.execPath, args: [SERVER] },
+      hooks: [],
+      ui: [
+        { id: 'dock', slot: 'chat.dock', title: 'CI', html: '<!doctype html><p>dock view</p>', events: ['turn.end'] },
+        { id: 'sheet', slot: 'chat.sheet', title: 'CI sheet', resourceUri: 'ui://ci/sheet' },
+        { id: 'page', slot: 'settings.page', title: 'CI settings', html: '<!doctype html><p>settings view</p>' }
+      ]
+    }));
+    const chat = chats.createChat(projectDir, { title: 'surfaces' });
+    const q = '?projectDir=' + encodeURIComponent(projectDir);
+    assert.deepEqual((await get('/api/extensions/surfaces' + q)).body.surfaces, [], 'off: no surfaces');
+    assert.equal((await post('/api/mcp/apps/mount', { projectDir, chatId: chat.id, extensionId: 'ci-ui', surfaceId: 'dock' })).status, 404);
+    extensions.setAppEnabled('ci-ui', true);
+    const listed = (await get('/api/extensions/surfaces' + q)).body.surfaces;
+    assert.deepEqual(listed.map((x) => x.surfaceId), ['dock', 'sheet', 'page']);
+    assert.deepEqual(listed[0].events, ['turn.end']);
+    assert.equal(listed[0].html, undefined, 'the list carries no HTML');
+    assert.deepEqual((await get('/api/extensions/surfaces' + q + '&slot=chat.sheet')).body.surfaces.map((x) => x.surfaceId), ['sheet']);
+
+    // Inline html, in a chat.
+    let r = await post('/api/mcp/apps/mount', { projectDir, chatId: chat.id, extensionId: 'ci-ui', surfaceId: 'dock' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.enabled, true);
+    assert.match(r.body.html, /dock view/);
+    assert.equal(r.body.surface.slot, 'chat.dock');
+    assert.notEqual(r.body.origin, base);
+    const dock = r.body;
+    // A chat slot needs a chat; a settings page does not.
+    assert.equal((await post('/api/mcp/apps/mount', { projectDir, extensionId: 'ci-ui', surfaceId: 'dock' })).status, 400);
+    r = await post('/api/mcp/apps/mount', { projectDir, extensionId: 'ci-ui', surfaceId: 'page' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const page = r.body;
+    // A ui:// resource on the extension's server, not declared by any tool.
+    r = await post('/api/mcp/apps/mount', { projectDir, chatId: chat.id, extensionId: 'ci-ui', surfaceId: 'sheet' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.match(r.body.html, /CI sheet/);
+    const sheet = r.body;
+    assert.equal((await post('/api/mcp/apps/mount', { projectDir, chatId: chat.id, extensionId: 'ci-ui', surfaceId: 'nope' })).status, 404);
+    // No chat.message permission: no messages. No chat: no server calls.
+    r = await post('/api/mcp/apps/' + dock.id + '/message', { role: 'user', content: [{ type: 'text', text: 'hi' }] });
+    assert.equal(r.status, 403);
+    r = await post('/api/mcp/apps/' + page.id + '/call', { requestId: 'r1', name: 'ci_status', arguments: {} });
+    assert.equal(r.status, 403);
+    // The sheet can call its server's app-visible tools (authorized in its chat).
+    require('../src/tools/authorization.js').setAuthorization(projectDir, { mcp: { tools: { [mcp.composedToolName(mcp.listServers(projectDir).find((s) => s.name === 'CI ui server').slug, 'ci_status')]: { mode: 'allow' } } } });
+    r = await post('/api/mcp/apps/' + sheet.id + '/call', { requestId: 'r2', name: 'ci_status', arguments: {} });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body.structuredContent, { status: 'green' });
+    // Turning the extension off revokes its live views.
+    assert.equal((await post('/api/mcp/apps/' + dock.id + '/status')).status, 200);
+    extensions.setAppEnabled('ci-ui', false);
+    r = await post('/api/mcp/apps/' + dock.id + '/status');
+    assert.equal(r.status, 409);
+    assert.equal(r.body.code, 'EMCP_APP_GONE');
+    assert.equal((await post('/api/mcp/apps/' + page.id + '/status')).status, 409);
+    extensions.removeApp('ci-ui');
+    assert.throws(() => extensions.validate(manifest({ id: 'surfaces' })), /reserved/);
+  } finally {
+    await new Promise((r) => app.close(r));
+    await mcp.stopAll();
+  }
+}
+
 let finished = false;
 process.on('exit', (code) => {
   if (code === 0 && !finished) { console.error('test-extensions: stopped before the end (a promise never settled)'); process.exitCode = 1; }
@@ -223,6 +302,7 @@ async function main() {
   await testInlineServerAndMcpHooks();
   await testProjectExtensions();
   await testRoutes();
+  await testSurfaces();
   finished = true;
   console.log('test-extensions: ok');
 }

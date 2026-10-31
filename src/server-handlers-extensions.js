@@ -11,6 +11,8 @@
 //   GET    /api/extensions/:id/export                  -> the stored file + exportedAt (download)
 //   POST   /api/extensions/:id/trust { projectDir, hash } -> { extension }                  (project extension)
 //   DELETE /api/extensions/:id/trust?projectDir=       -> { ok }
+//   GET    /api/extensions/surfaces?projectDir=&slot=  -> { surfaces }   (active views; mounts go
+//                                                                         through POST /api/mcp/apps/mount)
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -37,6 +39,12 @@ async function handleExtensions(req, res, parsed) {
       const body = await readJsonOr400(req, res);
       if (!body) return;
       return sendJSON(res, 200, extensions.importApp(body.manifest));
+    }
+    // GET /api/extensions/surfaces?projectDir=&slot= -> { surfaces } — the views the UI may mount here.
+    if (urlPath === '/api/extensions/surfaces' && method === 'GET') {
+      if (!projectDirOk(query.projectDir)) return sendJSON(res, 200, { surfaces: [] });
+      const slot = typeof query.slot === 'string' && query.slot ? query.slot : '';
+      return sendJSON(res, 200, { surfaces: extensions.surfaces(query.projectDir, slot) });
     }
     const m = ROUTE_RE.exec(urlPath);
     if (!m) return sendJSON(res, 404, { error: 'not found' });

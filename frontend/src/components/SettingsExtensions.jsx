@@ -103,7 +103,11 @@ export function SettingsExtensionsView() {
       .then(setData, (e) => setStatus({ text: 'Could not load extensions: ' + e.message, kind: 'error' }));
   }, [projectDir, refresh]);
 
-  const reload = () => setRefresh((n) => n + 1);
+  // Open chats reload their extension views (ExtensionDocks.jsx).
+  const reload = () => {
+    setRefresh((n) => n + 1);
+    try { window.dispatchEvent(new CustomEvent('mouaif:extensions-changed')); } catch { /* no window */ }
+  };
 
   async function onFile(e) {
     const file = e.currentTarget.files && e.currentTarget.files[0];

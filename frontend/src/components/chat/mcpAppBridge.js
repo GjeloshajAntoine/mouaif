@@ -32,16 +32,18 @@ export function containerDimensionsFor(iframe, mode = 'inline') {
   return { width, maxHeight: window.innerHeight * 0.7 };
 }
 
-export async function connectMcpApp({ iframe, mount, onReady, onSize, onMode, onCall, onMessage, onClose }) {
+// hostContext: extra host context (an extension surface's theme, device and
+// `mouaif` slot info, appHostContext.js); merged over the defaults below.
+export async function connectMcpApp({ iframe, mount, onReady, onSize, onMode, onCall, onMessage, onClose, hostContext }) {
   let initialized = false;
   let closed = false;
   const bridge = new AppBridge(null, { name: 'mouaif', version: '1' }, {
     serverTools: {}, message: { text: {} }, sandbox: { csp: mount.csp, permissions: {} }
-  }, { hostContext: {
+  }, { hostContext: Object.assign({
     displayMode: 'inline', availableDisplayModes: ['inline', 'fullscreen'],
     containerDimensions: containerDimensionsFor(iframe, 'inline'),
     theme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-  } });
+  }, hostContext || {}) });
   bridge.onsandboxready = () => {
     if (!closed) bridge.sendSandboxResourceReady({ html: mount.html, sandbox: 'allow-scripts' }).catch(onClose);
   };
@@ -88,6 +90,17 @@ export async function connectMcpApp({ iframe, mount, onReady, onSize, onMode, on
         displayMode: mode,
         containerDimensions: containerDimensions || containerDimensionsFor(iframe, mode)
       });
+    },
+    // A theme change, for example (host-context-changed).
+    updateHostContext(patch) {
+      if (!closed && patch) bridge.setHostContext(patch);
+    },
+    // An event from mouaif into an extension surface (src/extension-host.js):
+    // a tool-result notification carrying { mouaif: { type: 'event', … } }.
+    async sendHostEvent(structuredContent) {
+      if (!initialized || closed) return false;
+      await bridge.sendToolResult({ content: [], structuredContent });
+      return true;
     },
     async sendAgentMessage(payload) {
       if (!initialized || closed) return false;

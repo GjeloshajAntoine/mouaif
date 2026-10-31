@@ -27,6 +27,9 @@ import { RunDock } from './RunDock.jsx';
 import { WebhookDock } from './WebhookDock.jsx';
 import { HooksDock } from './HooksDock.jsx';
 import { ProjectHooksBar } from './ProjectHooksBar.jsx';
+import { ExtensionDocks, useExtensionSurfaces } from './ExtensionDocks.jsx';
+import { ExtensionSheet } from './ExtensionSheet.jsx';
+import { registerSheetOpener } from './extensionEvents.js';
 import { PreviewUrlPrompt } from './PreviewUrlPrompt.jsx';
 import { authorizationCard } from './cards.js';
 import { requestWebpreview, setStatus } from '../../api.js';
@@ -80,6 +83,16 @@ const [FileEditor, setFileEditor] = useState(null);
 const [fileEditorInitialPath, setFileEditorInitialPath] = useState('');
 const [atMentionItems, setAtMentionItems] = useState(() => getAtMentionItems());
 const [screenCaptureOpen, setScreenCaptureOpen] = useState(false);
+// Extension sheets (docs/features/extensions.md): listed in the file menu,
+// one open at a time; a view can ask to open one of its own.
+const extensionSheets = useExtensionSurfaces(projectDir, 'chat.sheet');
+const [openSheet, setOpenSheet] = useState(null);
+useEffect(() => registerSheetOpener(({ extensionId, surfaceId }) => {
+  const found = extensionSheets.find((s) => s.extensionId === extensionId && s.surfaceId === surfaceId);
+  if (found) setOpenSheet(found);
+  return !!found;
+}), [extensionSheets]);
+useEffect(() => { setOpenSheet(null); }, [projectDir, chatId]);
 const ScreenCapturePanel = useLazyView(screenCaptureOpen, () => import('./ScreenCapturePanel.jsx'), 'ScreenCapturePanel');
 const capturedImagesSaveRef = useRef(Promise.resolve());
 useEffect(() => {
@@ -705,6 +718,8 @@ h(WebhookDock, { projectDir, chatId, onJumpToSeq: jumpToSeq }),
 h(HooksDock, { projectDir, chatId }),
 // The project's hooks while they wait for a review (docs/features/hooks.md).
 h(ProjectHooksBar, { projectDir }),
+// Extension views docked above the composer (docs/features/extensions.md).
+h(ExtensionDocks, { projectDir, chatId }),
 h('div', { class: 'chat-view__composer-row' },
 h('div', { class: 'chat-view__composer-tool' },
 h(FileToolbar, {
@@ -714,6 +729,8 @@ onOpenFileEditor: () => { setFileEditorInitialPath(''); setFileEditorOpen(true);
 onOpenPreview: () => setPreviewPromptOpen(true),
 onOpenScreenCapture: () => setScreenCaptureOpen(true),
 customActions,
+extensionSheets,
+onOpenExtensionSheet: setOpenSheet,
 onRunCustomAction: runCustomAction,
 onRefreshCustomActions: refreshCustomActions
 })
@@ -802,6 +819,9 @@ h('div', { class: 'chat-view__status-row' + (composerTools.status ? '' : ' chat-
   h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' })
   )
 ),
+openSheet && chatId
+? h(ExtensionSheet, { projectDir, chatId, surface: openSheet, onClose: () => setOpenSheet(null) })
+: null,
 screenCaptureOpen && ScreenCapturePanel
 ? h(ScreenCapturePanel, { onClose: () => setScreenCaptureOpen(false), onAttach: onCapturedImages, availableSlots: Math.max(0, 8 - imageAttachments.length) })
 : null,

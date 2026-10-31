@@ -51,6 +51,8 @@ const SLOTS = Object.freeze(['chat.dock', 'chat.sheet', 'settings.page', 'tool.r
 // Slots that live in a chat (a mount needs a chat id).
 const CHAT_SLOTS = Object.freeze(['chat.dock', 'chat.sheet', 'tool.renderer']);
 const UI_EVENTS = Object.freeze(['turn.start', 'turn.end', 'tool.after']);
+// Path words under /api/extensions/ that are not extension ids.
+const RESERVED_IDS = Object.freeze(['surfaces']);
 const SERVER_KEYS = Object.freeze(['name', 'command', 'args', 'env', 'cwd', 'url', 'transport', 'headers']);
 
 function hooksMod() { return require('./hooks.js'); }
@@ -140,6 +142,7 @@ function validate(raw, { scope = 'app' } = {}) {
   if (Buffer.byteLength(JSON.stringify(raw)) > MAX_FILE) throw fail('an extension file is at most 1 MiB');
   const id = str(raw.id, 'id', 40, { required: true });
   if (!ID_RE.test(id)) throw fail('id must be lowercase letters, digits and - (max 40)');
+  if (RESERVED_IDS.includes(id)) throw fail('id "' + id + '" is reserved');
   const ext = {
     id,
     name: str(raw.name, 'name', 80, { required: true }).trim(),
@@ -451,7 +454,26 @@ function surface(projectDir, extensionId, surfaceId) {
   return ui ? Object.assign({}, found, { ui }) : null;
 }
 
+// surfaces(projectDir, slot?) -> what the UI may mount here: one entry per
+// active extension's surface (no HTML or URIs: mounts resolve those server-side).
+function surfaces(projectDir, slot) {
+  const out = [];
+  for (const { ext, scope } of active(projectDir)) {
+    for (const ui of ext.ui) {
+      if (slot && ui.slot !== slot) continue;
+      const item = { extensionId: ext.id, extensionName: ext.name, surfaceId: ui.id, slot: ui.slot, title: ui.title,
+        scope, permissions: ext.permissions.slice() };
+      if (ui.collapsed) item.collapsed = ui.collapsed;
+      if (ui.events) item.events = ui.events.slice();
+      if (ui.match) item.match = ui.match;
+      out.push(item);
+    }
+  }
+  return out;
+}
+
 module.exports = {
+  surfaces,
   FORMAT, PERMISSIONS, SLOTS, CHAT_SLOTS, UI_EVENTS, SUFFIX, PROJECT_DIR,
   validate, summary, importApp, setAppEnabled, removeApp, exportApp, setProjectOff,
   projectFiles, trustProject, revokeProject, list, active, runtimeHooks, surface, clearCache

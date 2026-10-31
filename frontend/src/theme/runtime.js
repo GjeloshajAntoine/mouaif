@@ -87,6 +87,8 @@ function setMeta(name, content) {
 }
 
 function paintStyles(theme) {
+  // Extension views follow the theme (components/chat/appHostContext.js).
+  queueMicrotask(() => { try { window.dispatchEvent(new CustomEvent('mouaif:theme-painted')); } catch { /* no window */ } });
   styleEl(TOKENS_ID).textContent = tokenCss(theme);
   styleEl(CSS_ID).textContent = theme.css || '';
   const root = document.documentElement;

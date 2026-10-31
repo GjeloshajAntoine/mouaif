@@ -65,6 +65,21 @@ A repository can ship extensions as `.mouaif/extensions/<id>.mouaif-extension.js
 
 The whole file is at most 1 MiB. Keys mouaif does not know are kept, so a newer file still imports, and **Export** writes the file back unchanged plus `exportedAt`.
 
+### Where its UI shows
+
+Each `ui` entry is a **view**: a small web page (an MCP App) that mouaif runs sandboxed in a slot. The page has its own origin, no access to mouaif's page, cookies or session, and only the network its resource allows (none for inline `html`).
+
+- **`chat.dock`**: a bar above the message box in every chat where the extension is on, showing the view's title and a badge the view can set. **Open** shows the view under the bar, up to 30% of the screen height and taller if you drag its corner. The bar remembers whether you left it open, and `"collapsed": "open"` starts it open.
+- **`chat.sheet`**: an entry in the chat's file menu (next to custom actions) that opens the view in a bottom sheet. The view runs while the sheet is open.
+- Only **two** docked views run at once in a tab: opening a third closes the one you used least recently. A view also closes when the tab is hidden and offers **Retry** when you come back. Each view is a browser process, and mouaif's host is small.
+- `?safe` in the address shows no extension views.
+
+A view receives the active theme through the MCP Apps host context: the standard style variables (`--color-background-primary`, `--color-text-primary`, `--font-sans`, `--border-radius-md`, …) mapped from the mouaif theme, plus `theme` (`light` or `dark`, from the theme's background). It is updated when you switch themes. `hostContext.mouaif` carries `slot`, `extensionId`, `surfaceId`, `chatId`, `projectName` and the raw mouaif tokens (`--bg`, `--surface`, `--fg`, `--accent`, …).
+
+An inline `html` view gets the MCP Apps SDK already connected, as `window.mouaifApp` (`window.mouaifAppReady` resolves when it is): call `getHostContext()` and set `onhostcontextchanged` on it.
+
+A view can call its server's tools that are visible to apps, through the usual approval card in its chat, and send a message in the chat only with the `chat.message` permission.
+
 ### Order
 
 An extension's hooks run under the id `<extension>/<hook>` (shown that way on tool cards). The full order is:
