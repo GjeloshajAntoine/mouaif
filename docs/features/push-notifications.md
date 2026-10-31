@@ -39,6 +39,25 @@ mouaif serve --host 127.0.0.1 --public-origin https://mouaif.example.com
 | `error` | A chat turn fails (stream error, upstream error) | Chat title + error message |
 | `login` | A password, setup, or passkey sign-in issues a new session | "New sign-in as `<user>` from `<platform>`" |
 
+### Icons by type
+
+Each notification type carries its own icon, so the kind of alert is clear before the text is read:
+
+| Type (`data.kind`) | Icon |
+|--------------------|------|
+| `progress` | Blue ring filled to the current percentage, with the number inside (an indeterminate quarter ring when no percentage is known) |
+| `completion` | Green check |
+| `error`, or a `progress` update whose operation failed | Red cross |
+| `ask_user` | Purple question mark |
+| `tool_authorization` | Amber padlock |
+| `login` | Teal person |
+| `run` | Indigo play |
+| `test` | Pink bell |
+
+The icons are dynamic: the service worker draws them with `OffscreenCanvas` when each push arrives, rather than shipping static files. A progress icon therefore moves with the ASCII bar (`0%` → `42%` → `100%`), and a failed operation switches to the error icon in the same slot. Each push also gets a matching monochrome `badge` glyph, which Android shows in the status bar.
+
+The server leaves `icon` and `badge` out of the payload by default; a sender can still pass explicit `icon` / `badge` URLs to `sendPush()` to override the drawn ones. A browser that cannot draw in the worker, or a type with no entry, keeps the app icon (`/icons/icon-192.png`). iOS always shows the installed app's icon, whatever the payload says. Progress pushes carry `data.progress` (0–100 or `null`) and `data.failed` for the icon.
+
 Attention notifications use the current chat title, like status notifications, so users can identify the conversation before answering or approving. The question or tool description stays in the body. If chat metadata is unavailable, the title falls back to "The chat needs your answer" or "Authorization needed".
 
 Authorization pushes also cover direct composer commands: **`@agent`**, **`@shell`**, **`@webpreview`**, and **`@server/tool`** MCP calls. These routes use the same server-side attention notifier as normal model turns, including nested agent questions and approvals. Leaving the chat or disconnecting its response reader does not prevent the server from sending the alert. The Authorization and Authorization actions preferences apply to both direct commands and model-driven calls; existing approval APIs and quick actions are unchanged.

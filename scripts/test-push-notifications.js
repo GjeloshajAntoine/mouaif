@@ -324,6 +324,29 @@ pageResponds = true;
 await dispatchPush();
 assert.equal(shownNotifications.length, 5, 'a visible-chat status remains suppressed with a transferred MessagePort');
 
+// ---- Per-type notification icons ---------------------------------------
+// Each kind maps to its own glyph and colour; progress carries its live
+// percentage, and a failed progress update reads as an error.
+const iconSpec = (data) => swContext.notificationIconSpec(data);
+const glyphs = {
+progress: 'ring', completion: 'check', error: 'cross', ask_user: 'question',
+tool_authorization: 'lock', login: 'person', run: 'play', test: 'bell'
+};
+for (const [kind, glyph] of Object.entries(glyphs)) {
+assert.equal(iconSpec({ kind }).glyph, glyph, kind + ' notifications use the ' + glyph + ' icon');
+}
+assert.equal(new Set(Object.keys(glyphs).map((kind) => iconSpec({ kind }).color)).size, Object.keys(glyphs).length,
+'every notification type has its own colour');
+assert.equal(iconSpec({ kind: 'progress', progress: 42.4 }).percent, 42, 'the progress icon follows the live percentage');
+assert.equal(iconSpec({ kind: 'progress', progress: 140 }).percent, 100, 'the progress percentage is clamped');
+assert.equal(iconSpec({ kind: 'progress', progress: null }).percent, null, 'unknown progress draws an indeterminate ring');
+assert.equal(iconSpec({ kind: 'progress', progress: 30, failed: true }).glyph, 'cross', 'a failed operation turns into the error icon');
+assert.equal(iconSpec({ kind: 'mystery' }), null, 'an unknown kind keeps the app icon');
+assert.equal(shownNotifications[shownNotifications.length - 1].options.icon, '/icons/icon-192.png',
+'a worker without OffscreenCanvas falls back to the app icon');
+assert.ok(!pushSource.includes("icon: '/icons/icon-192.png'"), 'the server leaves the icon to the worker unless overridden');
+assert.ok(chatPushSource.includes("data: { progress: pctNum, failed: data.status === 'failed' }"), 'progress pushes carry the percentage the icon draws');
+
 // ---- Page-side cold-launch recovery -----------------------------------
 //
 // A cold launch wakes the worker from the click, so the worker's IndexedDB

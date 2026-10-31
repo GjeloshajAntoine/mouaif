@@ -251,6 +251,214 @@ self.addEventListener('message', (event) => {
   }
 });
 
+// ---- Notification icons ------------------------------------------------
+//
+// Each notification type gets its own icon, drawn here at push time rather
+// than shipped as static files, so it can follow the notification's live
+// state: a progress update draws a ring filled to its current percentage, and
+// a failed operation turns red. `icon` is the large colour image; `badge` is
+// the small monochrome status-bar glyph Android masks by alpha.
+//
+// Drawing needs OffscreenCanvas in the worker (Chrome, Edge, Firefox,
+// Safari 16.4+). Without it, or on any drawing error, the notification keeps
+// the app icon. iOS shows the app icon regardless of what is passed.
+const NOTIFICATION_ICON_STYLES = {
+  progress: { color: '#2563eb', glyph: 'ring' },
+  completion: { color: '#16a34a', glyph: 'check' },
+  error: { color: '#dc2626', glyph: 'cross' },
+  ask_user: { color: '#7c3aed', glyph: 'question' },
+  tool_authorization: { color: '#d97706', glyph: 'lock' },
+  login: { color: '#0d9488', glyph: 'person' },
+  run: { color: '#4f46e5', glyph: 'play' },
+  test: { color: '#db2777', glyph: 'bell' }
+};
+const NOTIFICATION_ICON_SIZE = 192;
+const NOTIFICATION_BADGE_SIZE = 96;
+const notificationIconCache = new Map();
+
+// notificationIconSpec(payload) -> { kind, color, glyph, percent } | null.
+// A failed progress update reads as an error; an unknown kind gets null so
+// the caller keeps the app icon.
+function notificationIconSpec(payload) {
+  const data = payload || {};
+  const failed = data.kind === 'progress' && data.failed === true;
+  const kind = failed ? 'error' : data.kind;
+  const style = NOTIFICATION_ICON_STYLES[kind];
+  if (!style) return null;
+  const raw = Number(data.progress);
+  const percent = style.glyph === 'ring' && data.progress != null && isFinite(raw)
+    ? Math.max(0, Math.min(100, Math.round(raw)))
+    : null;
+  return { kind, color: style.color, glyph: style.glyph, percent };
+}
+
+// drawNotificationGlyph(ctx, spec, size, mono) — paint one glyph in unit
+// coordinates. `mono` draws white on transparent (badge); otherwise a
+// coloured disc carries a white glyph.
+function drawNotificationGlyph(ctx, spec, size, mono) {
+  const s = size;
+  const ink = '#ffffff';
+  ctx.clearRect(0, 0, s, s);
+  if (!mono) {
+    ctx.fillStyle = spec.color;
+    ctx.beginPath();
+    ctx.arc(s / 2, s / 2, s / 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.strokeStyle = ink;
+  ctx.fillStyle = ink;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = s * (mono ? 0.12 : 0.09);
+  const line = (points) => {
+    ctx.beginPath();
+    points.forEach(([x, y], i) => (i ? ctx.lineTo(x * s, y * s) : ctx.moveTo(x * s, y * s)));
+    ctx.stroke();
+  };
+  switch (spec.glyph) {
+    case 'ring': {
+      const radius = s * (mono ? 0.36 : 0.32);
+      const share = spec.percent == null ? 0.25 : spec.percent / 100;
+      ctx.lineWidth = s * (mono ? 0.14 : 0.08);
+      ctx.globalAlpha = 0.3;
+      ctx.beginPath();
+      ctx.arc(s / 2, s / 2, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      if (share > 0) {
+        ctx.beginPath();
+        ctx.arc(s / 2, s / 2, radius, -Math.PI / 2, -Math.PI / 2 + share * Math.PI * 2);
+        ctx.stroke();
+      }
+      if (!mono && spec.percent != null) {
+        // The number sits inside the ring; shrink it until it fits.
+        const label = spec.percent + '%';
+        let fontSize = s * 0.21;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        do {
+          ctx.font = '700 ' + Math.round(fontSize) + 'px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+          fontSize -= 2;
+        } while (ctx.measureText(label).width > radius * 1.5 && fontSize > s * 0.1);
+        ctx.fillText(label, s / 2, s / 2 + s * 0.01);
+      }
+      break;
+    }
+    case 'check':
+      line([[0.3, 0.52], [0.44, 0.66], [0.71, 0.37]]);
+      break;
+    case 'cross':
+      line([[0.35, 0.35], [0.65, 0.65]]);
+      line([[0.65, 0.35], [0.35, 0.65]]);
+      break;
+    case 'question':
+      ctx.beginPath();
+      ctx.arc(0.5 * s, 0.39 * s, 0.13 * s, Math.PI, Math.PI * 2.3);
+      ctx.lineTo(0.5 * s, 0.58 * s);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0.5 * s, 0.72 * s, s * 0.055, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case 'lock': {
+      ctx.lineWidth = s * (mono ? 0.1 : 0.075);
+      ctx.beginPath();
+      ctx.moveTo(0.38 * s, 0.5 * s);
+      ctx.lineTo(0.38 * s, 0.42 * s);
+      ctx.arc(0.5 * s, 0.42 * s, 0.12 * s, Math.PI, Math.PI * 2);
+      ctx.lineTo(0.62 * s, 0.5 * s);
+      ctx.stroke();
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(0.29 * s, 0.48 * s, 0.42 * s, 0.3 * s, 0.05 * s);
+      else ctx.rect(0.29 * s, 0.48 * s, 0.42 * s, 0.3 * s);
+      ctx.fill();
+      // Keyhole: punched through so the disc (or transparency) shows.
+      ctx.save();
+      ctx.globalCompositeOperation = mono ? 'destination-out' : 'source-over';
+      ctx.fillStyle = mono ? '#000000' : spec.color;
+      ctx.beginPath();
+      ctx.arc(0.5 * s, 0.61 * s, 0.045 * s, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      break;
+    }
+    case 'person':
+      ctx.beginPath();
+      ctx.arc(0.5 * s, 0.38 * s, 0.12 * s, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(0.5 * s, 0.78 * s, 0.22 * s, Math.PI, Math.PI * 2);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    case 'play':
+      ctx.lineWidth = s * 0.06;
+      ctx.beginPath();
+      ctx.moveTo(0.41 * s, 0.32 * s);
+      ctx.lineTo(0.7 * s, 0.5 * s);
+      ctx.lineTo(0.41 * s, 0.68 * s);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      break;
+    case 'bell':
+      ctx.beginPath();
+      ctx.moveTo(0.29 * s, 0.65 * s);
+      ctx.lineTo(0.71 * s, 0.65 * s);
+      ctx.lineTo(0.65 * s, 0.56 * s);
+      ctx.lineTo(0.65 * s, 0.46 * s);
+      ctx.arc(0.5 * s, 0.46 * s, 0.15 * s, 0, Math.PI, true);
+      ctx.lineTo(0.35 * s, 0.56 * s);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(0.5 * s, 0.71 * s, 0.055 * s, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    default:
+      break;
+  }
+}
+
+async function blobToDataUrl(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  }
+  return 'data:' + (blob.type || 'image/png') + ';base64,' + btoa(binary);
+}
+
+async function renderNotificationImage(spec, size, mono) {
+  const key = [spec.kind, spec.percent, size, mono ? 'mono' : 'colour'].join('|');
+  if (notificationIconCache.has(key)) return notificationIconCache.get(key);
+  const canvas = new OffscreenCanvas(size, size);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  drawNotificationGlyph(ctx, spec, size, mono);
+  const url = await blobToDataUrl(await canvas.convertToBlob({ type: 'image/png' }));
+  // Progress can produce up to 101 ring images per kind; keep the cache small.
+  if (notificationIconCache.size > 64) notificationIconCache.clear();
+  notificationIconCache.set(key, url);
+  return url;
+}
+
+// notificationIconFor(payload) -> { icon, badge } drawn for this type and
+// state, or {} when the type is unknown or the worker cannot draw.
+async function notificationIconFor(payload) {
+  const spec = notificationIconSpec(payload);
+  if (!spec || typeof OffscreenCanvas !== 'function') return {};
+  try {
+    const [icon, badge] = await Promise.all([
+      renderNotificationImage(spec, NOTIFICATION_ICON_SIZE, false),
+      renderNotificationImage(spec, NOTIFICATION_BADGE_SIZE, true)
+    ]);
+    return { icon: icon || undefined, badge: badge || undefined };
+  } catch {
+    return {};
+  }
+}
+
 // ---- Push notifications ------------------------------------------------
 
 self.addEventListener('push', (event) => {
@@ -303,12 +511,14 @@ const sameAuthorizationSlot = incomingIsAuthorization && sameChat
 && authorizationKinds.has(notification.data.kind);
 if (sameTag || sameStatusSlot || sameAuthorizationSlot) notification.close();
 });
+    // An explicit server icon wins; otherwise draw one for this type and state.
+    const drawn = icon && badge ? {} : await notificationIconFor(payload);
     await self.registration.showNotification(title || 'mouaif', {
       body: body || '',
       tag: notifTag,
       renotify: renotify !== false,
-      icon: icon || '/icons/icon-192.png',
-      badge: badge || '/icons/favicon-32.png',
+      icon: icon || drawn.icon || '/icons/icon-192.png',
+      badge: badge || drawn.badge || '/icons/favicon-32.png',
       data: payload || {},
       actions: actions || [{ action: 'open', title: 'Open chat' }],
       requireInteraction: requireInteraction === true,

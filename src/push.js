@@ -222,7 +222,12 @@ function removeAllSubscriptions(sessionId) {
 // screen, notification style, and OS version (see src/statusBar.js). A push
 // without `bodyFor` sends the same `body` everywhere, which is what
 // authorization and sign-in alerts do.
-function sendPush({ sessionId, subs, title, body, bodyFor, tag, data, chatId, projectDir, actions, requireInteraction }) {
+//
+// `icon` / `badge` are optional overrides. Normally they are left out: the
+// service worker draws an icon for the notification's `data.kind` (and, for
+// progress, its live percentage) — see notificationIconFor() in
+// frontend/build/sw-src.js — and falls back to the app icon itself.
+function sendPush({ sessionId, subs, title, body, bodyFor, tag, data, chatId, projectDir, actions, requireInteraction, icon, badge }) {
 const targets = Array.isArray(subs) ? subs : (sessionId ? listSubscriptions(sessionId) : []);
 if (!targets.length) return;
 
@@ -242,8 +247,8 @@ if (!targets.length) return;
       body: targetBody || '',
       tag: tag || (chatId ? `chat-${chatId}` : undefined),
       renotify: true,
-      icon: '/icons/icon-192.png',
-      badge: '/icons/favicon-32.png',
+      ...(icon ? { icon } : {}),
+      ...(badge ? { badge } : {}),
       data: data || { chatId, projectDir, url: chatId && projectDir ? `/#/chat/${chatId}?projectDir=${encodeURIComponent(projectDir)}` : '/' },
       actions: Array.isArray(actions) && actions.length
         ? actions
@@ -273,14 +278,14 @@ if (!targets.length) return;
 
 // sendPushToSession — send a push notification to a specific session.
 // Called from handleChatStream for attention, completion, and error events.
-function sendPushToSession(sessionId, { title, body, bodyFor, chatId, projectDir, tag, data, actions, requireInteraction }) {
-sendPush({ sessionId, title, body, bodyFor, tag, chatId, projectDir, data, actions, requireInteraction });
+function sendPushToSession(sessionId, { title, body, bodyFor, chatId, projectDir, tag, data, actions, requireInteraction, icon, badge }) {
+sendPush({ sessionId, title, body, bodyFor, tag, chatId, projectDir, data, actions, requireInteraction, icon, badge });
 }
 // sendPushToAll — send to every subscribed endpoint regardless of session.
 // Used by the sign-in alert, which must reach the user's other devices even
 // though the login created a brand-new session.
-function sendPushToAll({ title, body, bodyFor, chatId, projectDir, tag, data, actions, requireInteraction }) {
-sendPush({ subs: listAllSubscriptions(), title, body, bodyFor, tag, chatId, projectDir, data, actions, requireInteraction });
+function sendPushToAll({ title, body, bodyFor, chatId, projectDir, tag, data, actions, requireInteraction, icon, badge }) {
+sendPush({ subs: listAllSubscriptions(), title, body, bodyFor, tag, chatId, projectDir, data, actions, requireInteraction, icon, badge });
 }
 
 

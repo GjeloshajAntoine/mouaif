@@ -1620,7 +1620,11 @@ promptSize: resolvedProfileId,
       sendChatPush('progress', {
       title: (chat && chat.title) || 'mouaif',
       bodyFor: (sub) => statusBody(sub, pctNum, info),
-      tag: statusPushTag
+      tag: statusPushTag,
+      // The service worker draws the progress icon as a ring at this
+      // percentage (red when the operation failed), so the icon moves with
+      // the bar instead of staying the static app icon.
+      data: { progress: pctNum, failed: data.status === 'failed' }
       });
       } else if (name === 'usage_update') {
       const updateCost = data && data.cost;
