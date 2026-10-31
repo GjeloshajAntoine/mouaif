@@ -1,0 +1,78 @@
+/* Foldable postures. Imported last by style.css.
+
+   A foldable reports its hinge through the Viewport Segments API only
+   while it is half-folded: flat (or closed, on the cover screen) the
+   browser sees one segment and every rule here stays out of the cascade,
+   so the regular mobile-first layout applies unchanged. Fold widths
+   themselves (344 px cover, ~690 x 830 px inner) need nothing special —
+   the shared layout already fits them (see test-responsive-layout.mjs).
+
+   Two postures, both scoped to the chat view, which is the only surface
+   with a reading area *and* a control surface to separate:
+
+     tabletop  (vertical-viewport-segments: 2) — hinge runs across the
+               screen. Head + transcript fill the top half, the bottom
+               stack (docks, composer, status) fills the bottom half,
+               like a laptop's screen and keyboard.
+     book      (horizontal-viewport-segments: 2) — hinge runs down the
+               screen. Head + transcript fill the left page, the bottom
+               stack sits at the foot of the right page.
+
+   In both, nothing is laid across the hinge itself: its width (0 on a
+   seamless fold, the seam on a dual-screen device) becomes a gap.
+
+   `.chat-view__dock` wraps the bottom stack and is `display: contents`
+   everywhere else, so on a single screen the chat keeps its flex column. */
+
+.chat-view__dock { display: contents; }
+
+@media (vertical-viewport-segments: 2) {
+  .chat-view__transcript-box {
+    /* Stop at the top edge of the hinge. */
+    margin-bottom: calc(env(viewport-segment-top 0 1) - env(viewport-segment-bottom 0 0));
+  }
+  .chat-view__dock {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    /* The chat view ends at the viewport's bottom edge (the tab bar is
+       hidden on chat), so a dock as tall as the bottom segment starts
+       exactly below the hinge, and the transcript (flex: 1) takes the
+       rest of the top half. A taller stack — a long draft, an open run
+       dock — grows upward instead of being clipped. */
+    min-height: env(viewport-segment-height 0 1);
+    max-height: 100%;
+    overflow-y: auto;
+    background: var(--bg);
+  }
+  /* The composer opens the bottom half, right under the hinge where the
+     eye already is; the status line follows it. */
+  .chat-view__dock > .chat-view__composer-row { padding-top: 10px; }
+}
+
+@media (horizontal-viewport-segments: 2) {
+  /* The frame has to start at the viewport's left edge for the segment
+     offsets to line up with it, so it is never capped and centred here. */
+  :root { --shell-max: none; }
+  .chat-view {
+    display: grid;
+    grid-template-columns:
+      env(viewport-segment-width 0 0)
+      calc(env(viewport-segment-left 1 0) - env(viewport-segment-right 0 0))
+      minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .chat-view > * { grid-column: 1; }
+  .chat-view__head { grid-row: 1; }
+  .chat-view__transcript-box { grid-row: 2; min-height: 0; }
+  .chat-view__dock {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    grid-column: 3;
+    grid-row: 1 / -1;
+    min-height: 0;
+    min-width: 0;
+    overflow-y: auto;
+  }
+}

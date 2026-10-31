@@ -183,6 +183,7 @@ Published pages about how the app is built. They are reachable by URL but not li
 - [Markdown renderer](features/markdown-renderer.md) — the safe renderer for chat messages.
 - [Lazy-loaded settings](features/frontend-lazy-settings.md) — settings pages load on demand for a faster first paint.
 - [Responsive layout](features/responsive-layout.md) — how the phone layout grows on tablet and desktop.
+- [Foldable phones](features/foldable-layout.md) — cover screen, inner screen, and the chat split around the hinge when half-folded.
 - [Routing](features/routing.md) — every hash the app answers and its parameters.
 - [Modal sheets](features/modal-sheets.md) — shared Escape, Tab, and focus behavior for full-screen sheets.
 - [Back closes the open sheet](features/sheet-back-gesture.md) — the phone's Back gesture closes a sheet or picker instead of leaving the page.

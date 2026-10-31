@@ -85,7 +85,11 @@ try {
     await new Promise(resolve => setTimeout(resolve, 200));
     for (const [width, height, fontSize] of [
     ...[360, 390, 430, 768, 900, 1024, 1280, 1920].map(width => [width, 800, 16]),
-    [360, 640, 20], [768, 600, 20], [1280, 600, 20], [1920, 900, 20]
+    [360, 640, 20], [768, 600, 20], [1280, 600, 20], [1920, 900, 20],
+    // Foldables: the narrowest cover screens (Flip/Fold cover at 320/344 px),
+    // the near-square inner screen of a book-style fold in both
+    // orientations, and the larger 7.6–8 in inner panels.
+    [320, 568, 16], [344, 882, 16], [690, 830, 16], [830, 690, 16], [884, 1104, 16], [344, 600, 20], [690, 830, 20]
     ]) {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 768 });
     await evaluate(`document.documentElement.style.fontSize = '${fontSize}px'`);

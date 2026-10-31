@@ -50,4 +50,5 @@ It mounts the real app shell with local API fixtures and checks Chats, Settings,
 ## Related
 
 - [Inspector](inspector.md) — the desktop panel layout this frame now has room for.
+- [Foldable phones](foldable-layout.md) — fold sizes and the half-folded chat layout.
 - [Chat UI](chat-ui.md) — transcript and composer surfaces.

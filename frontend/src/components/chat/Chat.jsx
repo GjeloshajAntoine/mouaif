@@ -681,6 +681,10 @@ h('span', { class: 'chat-view__jump-count' }, '')
 )
 )
 ),
+// The bottom stack: docks, composer and status line. `display: contents`
+// on a single screen, so it changes nothing there; on a half-folded
+// foldable (fold.css) it becomes the pane below or beside the hinge.
+h('div', { class: 'chat-view__dock' },
 h(WebpreviewDock, {
 preview: webPreviewPayload,
 onOpen: () => setWebPreviewOpen(true),
@@ -787,7 +791,8 @@ return h('div', {
 // the text but keeps the safe-area inset and any error state.
 h('div', { class: 'chat-view__status-row' + (composerTools.status ? '' : ' chat-view__status-row--hidden') },
   h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' })
-  ),
+  )
+),
 screenCaptureOpen && ScreenCapturePanel
 ? h(ScreenCapturePanel, { onClose: () => setScreenCaptureOpen(false), onAttach: onCapturedImages, availableSlots: Math.max(0, 8 - imageAttachments.length) })
 : null,
