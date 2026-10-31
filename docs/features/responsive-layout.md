@@ -31,6 +31,10 @@ This is deliberately *not* `inset: 0` on the track. A duplicated `.switch__track
 
 The responsive regression asserts the geometry directly: for `settingsPrompts` it checks that the control is ≥ 44 px, that both the track and the thumb sit inside the control's box, and that neither paints outside the viewport.
 
+## Segmented controls
+
+On a touch screen (`pointer: coarse`) a standalone segmented control — MCP server scope and transport, action type, custom prompt scope, the MCP store's install options — is 44 px tall: a 38 px pill inside the control's 2 px padding and 1 px border. With a mouse it keeps its compact 32 px. The Off/Ask/Allow segment inside a tool-tree row stays compact on every device, because the tree's rows are deliberately dense (see [Tool tree](tool-tree.md)).
+
 ## Desktop behaviour
 
 - Dictation keeps a narrower, centred column than general lists, so its controls and transcript remain easy to read on a large screen.

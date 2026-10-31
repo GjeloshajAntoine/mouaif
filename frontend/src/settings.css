@@ -785,6 +785,10 @@ a.mcps-card__cta,
 .mcps-sheet__hint { margin: 0 12px; }
 .mcps-seg { align-self: flex-start; margin: 0 12px; }
 .mcps-seg .seg__pill { min-height: 34px; padding: 0 14px; }
+@media (pointer: coarse) {
+  .prompts__scope-seg .seg__pill,
+  .mcps-seg .seg__pill { min-height: calc(var(--tap) - 6px); }
+}
 
 .mcps-opts { display: flex; flex-direction: column; gap: 6px; margin: 0 12px; }
 .mcps-opt {

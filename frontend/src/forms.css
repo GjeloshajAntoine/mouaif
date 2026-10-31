@@ -280,6 +280,16 @@ select.input {
 }
 .seg__item:not(.seg__item--on):active .seg__pill { color: var(--fg); }
 
+/* On touch screens a standalone segmented control (MCP scope/transport,
+   action type, prompt scope, MCP store) reaches the 44px tap minimum:
+   38px pill + 2px padding + 1px border on each side. The Off/Ask/Allow
+   segment inside a tool-tree row keeps its compact override; the prompt
+   scope and MCP store segments repeat this in settings.css, which loads
+   after this file. */
+@media (pointer: coarse) {
+  .seg__pill { min-height: calc(var(--tap) - 6px); }
+}
+
 /* ---- Toggle switches ---------------------------------------------- */
 
 /* Touch target: the visible track stays 42x26, but the row's label wraps the
