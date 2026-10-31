@@ -483,6 +483,14 @@ export function appendMessageToTranscript(m, isLive, refs, state) {
     badge.textContent = 'Webhook · run ' + m.origin.run;
     head.appendChild(badge);
   }
+  // A follow-up turn a `turn.end` hook started (docs/features/hooks.md).
+  if (m.role === 'user' && m.origin && m.origin.kind === 'hook') {
+    row.dataset.origin = 'hook';
+    const badge = document.createElement('span');
+    badge.className = 'chat-msg__origin';
+    badge.textContent = 'Hook · ' + m.origin.hookId + ' · follow-up ' + m.origin.depth + '/3';
+    head.appendChild(badge);
+  }
   head.appendChild(ts);
   row.appendChild(head);
   row.appendChild(body);

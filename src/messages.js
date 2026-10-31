@@ -71,8 +71,9 @@ if (out.length >= MAX_IMAGE_ATTACHMENTS) break;
 return out;
 }
 // Where a user message came from. Only a prompt mouaif itself started carries
-// one: a recurring task's run { kind: 'schedule', scheduleId, run } or a
-// webhook call's run { kind: 'webhook', hookId, eventId, run } (run counts from 1).
+// one: a recurring task's run { kind: 'schedule', scheduleId, run }, a
+// webhook call's run { kind: 'webhook', hookId, eventId, run } or a hook's
+// follow-up { kind: 'hook', hookId, depth, run } (run counts from 1).
 function normalizeOrigin(o) {
 if (!o || typeof o !== 'object') return null;
 const run = Number.isSafeInteger(o.run) && o.run > 0 ? o.run : null;
@@ -84,6 +85,12 @@ return { kind: 'schedule', scheduleId: o.scheduleId.slice(0, 80), run };
 if (o.kind === 'webhook') {
 if (typeof o.hookId !== 'string' || !o.hookId || typeof o.eventId !== 'string' || !o.eventId) return null;
 return { kind: 'webhook', hookId: o.hookId.slice(0, 80), eventId: o.eventId.slice(0, 80), run };
+}
+// A follow-up turn a `turn.end` hook started (src/hookTurns.js); `depth` is
+// its place in the chain (1..3) and doubles as `run`.
+if (o.kind === 'hook') {
+if (typeof o.hookId !== 'string' || !o.hookId) return null;
+return { kind: 'hook', hookId: o.hookId.slice(0, 40), depth: run, run };
 }
 return null;
 }

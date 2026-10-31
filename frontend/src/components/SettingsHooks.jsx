@@ -1,9 +1,11 @@
 // mouaif web — Settings → Hooks (docs/features/hooks.md)
 //
-// Commands that run when a prompt is sent and around each tool call. A hook
-// can block, ask for approval, rewrite a tool's arguments or add context for
-// the model; it can never approve anything. The list is saved as one JSON
-// config through /api/hooks, and the server validates every save.
+// Commands that run when a prompt is sent, around each tool call, when a turn
+// starts, ends or fails, and before a notification. A hook can block, ask for
+// approval, rewrite a tool's arguments, add context for the model, start one
+// follow-up turn or silence a notification; it can never approve anything.
+// The list is saved as one JSON config through /api/hooks, and the server
+// validates every save. Recent runs come from /api/hooks/runs.
 import { h, Fragment } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { fetchJson, activeProject } from '../api.js';
@@ -12,9 +14,17 @@ import './settings/hooks.css';
 const EVENT_LABELS = {
   'prompt.submit': 'Prompt sent',
   'tool.before': 'Before a tool runs',
-  'tool.after': 'After a tool ran'
+  'tool.after': 'After a tool ran',
+  'turn.start': 'Turn starts',
+  'turn.end': 'Turn finished',
+  'turn.error': 'Turn failed or stopped',
+  attention: 'Before a notification'
 };
-const ORIGIN_LABELS = { user: 'You', webhook: 'Webhook', schedule: 'Recurring task', app: 'MCP App' };
+const TOOL_EVENTS = ['tool.before', 'tool.after'];
+// Events where a block (or a failure with "block on failure") stops something.
+const BLOCKING_EVENTS = ['prompt.submit', 'tool.before'];
+const ORIGIN_LABELS = { user: 'You', webhook: 'Webhook', schedule: 'Recurring task', app: 'MCP App', hook: 'Hook follow-up' };
+const DECISION_LABELS = { continue: 'ran', block: 'blocked', ask: 'asked', error: 'failed', skipped: 'skipped' };
 // Tool families, as the authorization gates group them (src/hooks.js FAMILIES).
 const FAMILY_LABELS = { shell: 'Shell', file: 'Files', subagent: 'Subagents', chats: 'Chat tools', mouaif: 'mouaif app', mcp: 'MCP servers' };
 
@@ -41,6 +51,20 @@ const EXAMPLES = [
     hook: {
       id: 'git-branch', name: 'Git branch', event: 'prompt.submit',
       handler: { kind: 'command', shell: 'bash', script: 'branch=$(git branch --show-current 2>/dev/null) || exit 0\n[ -n "$branch" ] && echo "Current git branch: $branch"\n' }
+    }
+  },
+  {
+    key: 'tests', label: 'Keep going until the tests pass',
+    hook: {
+      id: 'tests-pass', name: 'Tests must pass', event: 'turn.end', timeoutMs: 60000,
+      handler: { kind: 'command', shell: 'bash', script: 'npm test --silent >/dev/null 2>&1 && exit 0\necho \'{"followUp":"npm test fails. Fix it before finishing."}\'\n' }
+    }
+  },
+  {
+    key: 'night', label: 'No notifications at night',
+    hook: {
+      id: 'quiet-night', name: 'Quiet at night', event: 'attention',
+      handler: { kind: 'command', shell: 'bash', script: 'hour=$(date +%H)\nif [ "$hour" -ge 22 ] || [ "$hour" -lt 7 ]; then echo \'{"suppress":true}\'; fi\n' }
     }
   },
   {
@@ -88,7 +112,7 @@ function fromForm(f) {
   if (f.name.trim()) hook.name = f.name.trim();
   const match = {};
   const tools = f.tools.split(/[\s,]+/).map((t) => t.trim()).filter(Boolean);
-  if (f.event !== 'prompt.submit') {
+  if (TOOL_EVENTS.includes(f.event)) {
     if (tools.length) match.tool = tools;
     if (f.family.length) match.family = f.family;
     if (f.argText.trim()) match.argText = f.argText.trim();
@@ -100,8 +124,8 @@ function fromForm(f) {
     : { kind: 'command', command: f.command };
   const timeout = Number(f.timeoutMs);
   if (Number.isFinite(timeout) && timeout > 0) hook.timeoutMs = timeout;
-  if (f.failClosed) hook.failClosed = true;
-  if (f.subagents) hook.subagents = true;
+  if (f.failClosed && BLOCKING_EVENTS.includes(f.event)) hook.failClosed = true;
+  if (f.subagents && TOOL_EVENTS.includes(f.event)) hook.subagents = true;
   return hook;
 }
 
@@ -112,7 +136,10 @@ function matchSummary(hook) {
   if (m.family) bits.push(m.family.map((x) => FAMILY_LABELS[x] || x).join(', ') + ' tools');
   if (m.argText) bits.push('/' + m.argText + '/');
   if (m.origin) bits.push('from ' + m.origin.map((o) => ORIGIN_LABELS[o] || o).join(', '));
-  return bits.length ? bits.join(' · ') : (hook.event === 'prompt.submit' ? 'every prompt' : 'every tool');
+  if (bits.length) return bits.join(' · ');
+  if (hook.event === 'prompt.submit') return 'every prompt';
+  if (hook.event === 'attention') return 'every notification';
+  return TOOL_EVENTS.includes(hook.event) ? 'every tool' : 'every turn';
 }
 
 function handlerSummary(hook) {
@@ -137,6 +164,21 @@ async function api(method, url, body) {
   return r.body;
 }
 
+// The sample event Test sends, shaped like the real one for each event.
+function samplePayload(hook) {
+  switch (hook.event) {
+    case 'prompt.submit': return { content: 'Test prompt from Settings', attachments: 0 };
+    case 'turn.start': return { model: 'test-model', provider: 'test', thinkingLevel: '' };
+    case 'turn.end': return { text: 'Test answer from Settings.', usage: null, cost: null, toolCount: 1, followUpDepth: 0 };
+    case 'turn.error': return { code: 'EUPSTREAM', message: 'Test error from Settings', stopped: false };
+    case 'attention': return { kind: 'tool_authorization', tool: 'shell' };
+    default: {
+      const tool = (hook.match && hook.match.tool && hook.match.tool[0] && !hook.match.tool[0].includes('*')) ? hook.match.tool[0] : 'shell';
+      return { tool, args: { cmd: 'echo test' }, ...(hook.event === 'tool.after' ? { ok: true, result: { stdout: 'test\n', exitCode: 0 } } : {}) };
+    }
+  }
+}
+
 function HookEditor({ initial, isNew, onSave, onCancel, onDelete, projectDir }) {
   const [f, setF] = useState(() => toForm(initial));
   const [error, setError] = useState('');
@@ -157,10 +199,7 @@ function HookEditor({ initial, isNew, onSave, onCancel, onDelete, projectDir }) 
     setBusy(true); setTest(null); setError('');
     const hook = fromForm(f);
     if (!hook.id) hook.id = 'test';
-    const payload = hook.event === 'prompt.submit'
-      ? { content: 'Test prompt from Settings' }
-      : { tool: (hook.match && hook.match.tool && hook.match.tool[0] && !hook.match.tool[0].includes('*')) ? hook.match.tool[0] : 'shell',
-          args: { cmd: 'echo test' }, ...(hook.event === 'tool.after' ? { ok: true, result: { stdout: 'test\n', exitCode: 0 } } : {}) };
+    const payload = samplePayload(hook);
     try { setTest(await api('POST', '/api/hooks/test', { hook, payload, projectDir })); }
     catch (e) { setError(e.message); }
     setBusy(false);
@@ -181,7 +220,7 @@ function HookEditor({ initial, isNew, onSave, onCancel, onDelete, projectDir }) 
       h('select', { id: idBase + '-event', class: 'input', value: f.event, onChange: (e) => set({ event: e.currentTarget.value }) },
         Object.entries(EVENT_LABELS).map(([key, text]) => h('option', { key, value: key }, text + ' (' + key + ')')))
     ),
-    f.event !== 'prompt.submit' ? h(Fragment, null,
+    TOOL_EVENTS.includes(f.event) ? h(Fragment, null,
       h('div', { class: 'row' },
         h('label', { class: 'label', for: idBase + '-tools' }, 'Tools'),
         h('input', { id: idBase + '-tools', class: 'input', value: f.tools, autocapitalize: 'off', spellcheck: false, placeholder: 'shell, group_cli, mcp__github__*', onInput: (e) => set({ tools: e.currentTarget.value }) }),
@@ -207,7 +246,7 @@ function HookEditor({ initial, isNew, onSave, onCancel, onDelete, projectDir }) 
         Object.entries(ORIGIN_LABELS).map(([key, text]) => h('label', { key, class: 'hook-check' },
           h('input', { type: 'checkbox', checked: f.origin.includes(key), onChange: (e) => set({ origin: e.currentTarget.checked ? f.origin.concat(key) : f.origin.filter((o) => o !== key) }) }),
           h('span', null, text)))),
-      h('p', { class: 'hint hint--compact' }, 'Who sent the prompt of the turn. None ticked = everyone.')
+      h('p', { class: 'hint hint--compact' }, 'Who sent the prompt of the turn. Hook follow-up = a turn a "Turn finished" hook started. None ticked = everyone.')
     ),
     h('div', { class: 'row' },
       h('span', { class: 'label' }, 'Runs'),
@@ -230,12 +269,12 @@ function HookEditor({ initial, isNew, onSave, onCancel, onDelete, projectDir }) 
       h('label', { class: 'label', for: idBase + '-timeout' }, 'Timeout (ms)'),
       h('input', { id: idBase + '-timeout', class: 'input', type: 'number', inputMode: 'numeric', min: 500, max: 60000, step: 500, value: f.timeoutMs, onInput: (e) => set({ timeoutMs: e.currentTarget.value }) })
     ),
-    h('label', { class: 'hook-check hook-check--row' },
+    BLOCKING_EVENTS.includes(f.event) ? h('label', { class: 'hook-check hook-check--row' },
       h('input', { type: 'checkbox', checked: f.failClosed, onChange: (e) => set({ failClosed: e.currentTarget.checked }) }),
-      h('span', null, 'Block when the hook fails or times out (otherwise the turn goes on)')),
-    h('label', { class: 'hook-check hook-check--row' },
+      h('span', null, 'Block when the hook fails or times out (otherwise the turn goes on)')) : null,
+    TOOL_EVENTS.includes(f.event) ? h('label', { class: 'hook-check hook-check--row' },
       h('input', { type: 'checkbox', checked: f.subagents, onChange: (e) => set({ subagents: e.currentTarget.checked }) }),
-      h('span', null, 'Also run for subagents\' tool calls')),
+      h('span', null, 'Also run for subagents\' tool calls')) : null,
     error ? h('p', { class: 'status', 'data-state': 'error', role: 'alert' }, error) : null,
     test ? h('div', { class: 'hook-test', role: 'status' },
       h('div', { class: 'hook-test__head' },
@@ -245,6 +284,8 @@ function HookEditor({ initial, isNew, onSave, onCancel, onDelete, projectDir }) 
       test.parsed.error ? h('p', null, 'Error: ' + test.parsed.error) : null,
       test.parsed.context ? h('pre', { class: 'hook-mono' }, 'Context: ' + test.parsed.context) : null,
       test.parsed.updatedArgs ? h('pre', { class: 'hook-mono' }, 'New arguments: ' + JSON.stringify(test.parsed.updatedArgs)) : null,
+      test.parsed.followUp ? h('pre', { class: 'hook-mono' }, 'Follow-up turn: ' + test.parsed.followUp) : null,
+      test.parsed.suppress ? h('p', null, 'Would silence the notification.') : null,
       test.stderr ? h('pre', { class: 'hook-mono' }, 'stderr: ' + test.stderr) : null
     ) : null,
     h('div', { class: 'hook-edit__bar' },
@@ -260,16 +301,42 @@ function HookEditor({ initial, isNew, onSave, onCancel, onDelete, projectDir }) 
   );
 }
 
+function timeAgo(at) {
+  const s = Math.max(0, Math.round((Date.now() - at) / 1000));
+  if (s < 60) return s + ' s ago';
+  if (s < 3600) return Math.round(s / 60) + ' min ago';
+  if (s < 86400) return Math.round(s / 3600) + ' h ago';
+  return new Date(at).toLocaleDateString();
+}
+
+function RunRow({ run }) {
+  const tone = run.decision === 'block' || run.decision === 'error' ? 'bad' : (run.decision === 'ask' || run.decision === 'skipped' ? 'warn' : '');
+  return h('li', { class: 'hook-run' },
+    h('div', { class: 'hook-run__head' },
+      h('span', { class: 'hook-run__name' }, run.name || run.hook),
+      h('span', { class: 'hook-chip' + (tone === 'bad' ? ' hook-chip--bad' : tone === 'warn' ? ' hook-chip--warn' : '') }, DECISION_LABELS[run.decision] || run.decision)),
+    h('div', { class: 'hook-run__meta' },
+      [EVENT_LABELS[run.event] || run.event, Number.isFinite(run.ms) ? run.ms + ' ms' : '', timeAgo(run.at)].filter(Boolean).join(' · ')),
+    run.detail ? h('div', { class: 'hook-run__detail' }, run.detail) : null,
+    run.error ? h('div', { class: 'hook-run__detail hook-run__detail--error' }, run.error) : null);
+}
+
 export function SettingsHooksView() {
   const [config, setConfig] = useState(null);
   const [editing, setEditing] = useState(null); // { id, hook, isNew }
   const [status, setStatus] = useState({ text: '', kind: '' });
   const [json, setJson] = useState(null);
+  const [runs, setRuns] = useState(null);
   const projectDir = (activeProject.value && activeProject.value.dir) || '';
 
   useEffect(() => {
     api('GET', '/api/hooks').then(setConfig, (e) => setStatus({ text: 'Could not load hooks: ' + e.message, kind: 'error' }));
   }, []);
+
+  function loadRuns() {
+    api('GET', '/api/hooks/runs?limit=50').then((r) => setRuns(r.runs || []), () => setRuns([]));
+  }
+  useEffect(loadRuns, []);
 
   async function save(next, message) {
     const saved = await api('PUT', '/api/hooks', { enabled: next.enabled, list: next.list });
@@ -336,7 +403,7 @@ export function SettingsHooksView() {
     ),
     h('section', { class: 'settings-hooks' },
       h('p', { class: 'hint settings-hooks__intro' },
-        'Hooks are commands mouaif runs when you send a prompt, and before and after each tool call. A hook can block a call, ask you to approve it, change its arguments, or add context for the model. A hook can never approve a call. They run on this computer with your permissions.'),
+        'Hooks are commands mouaif runs when you send a prompt, before and after each tool call, when a turn starts, finishes or fails, and before a notification. A hook can block a call, ask you to approve it, change its arguments, add context for the model, start one more turn or silence a notification. A hook can never approve a call. They run on this computer with your permissions.'),
       config && config.disabledByEnv ? h('div', { class: 'settings-hooks__notice', role: 'status' },
         h('strong', null, 'Hooks are off'), ' — mouaif was started with MOUAIF_NO_HOOKS=1.') : null,
 
@@ -407,12 +474,24 @@ export function SettingsHooksView() {
       h('p', { class: 'status', 'data-state': status.kind, 'aria-live': 'polite' }, status.text),
 
       h('div', { class: 'group' },
+        h('div', { class: 'group__title' }, 'Recent runs', h('span', { class: 'group__title-note' }, 'last 50, newest first')),
+        runs === null ? h('p', { class: 'hint hint--compact' }, 'Loading…') : null,
+        runs && !runs.length ? h('p', { class: 'hint hint--compact' }, 'No hook has run yet.') : null,
+        runs && runs.length ? h('ul', { class: 'hook-runs' },
+          runs.map((run) => h(RunRow, { key: run.id, run }))) : null,
+        h('div', { class: 'settings-hooks__actions' },
+          h('button', { type: 'button', class: 'btn', onClick: loadRuns }, 'Refresh'))
+      ),
+
+      h('div', { class: 'group' },
         h('div', { class: 'group__title' }, 'How a hook answers'),
         h('ul', { class: 'settings-hooks__help' },
           h('li', null, h('strong', null, 'Exit 0, no output'), ': carry on.'),
           h('li', null, h('strong', null, 'Exit 0, plain text'), ': the text goes to the model as context.'),
           h('li', null, h('strong', null, 'Exit 2'), ': block. stderr is the reason the model sees.'),
           h('li', null, h('strong', null, 'Exit 0, JSON'), ': ', h('code', null, '{"decision":"block"|"ask"|"continue","reason","updatedArgs","context"}'), '.'),
+          h('li', null, h('strong', null, 'Turn finished'), ': ', h('code', null, '{"followUp":"…"}'), ' starts one more turn with that prompt, at most 3 in a row.'),
+          h('li', null, h('strong', null, 'Before a notification'), ': ', h('code', null, '{"suppress":true}'), ' sends no notification.'),
           h('li', null, h('strong', null, 'Anything else'), ': an error. The turn goes on unless the hook blocks on failure.')
         )
       )

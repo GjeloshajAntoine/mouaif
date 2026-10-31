@@ -7,6 +7,13 @@
 //   prompt.submit  before a user message is saved   -> block | context
 //   tool.before    before the approval gate         -> block | ask | updatedArgs | context
 //   tool.after     after the tool returned          -> context
+//   turn.start     a turn is about to call the model -> observe
+//   turn.end       a turn finished and was saved    -> followUp (one more turn)
+//   turn.error     a turn failed or was stopped     -> observe
+//   attention      a push is about to be sent       -> suppress
+//
+// turn.start, turn.end and turn.error never delay the chat (callers do not
+// await them). Every executed hook is logged to the `hook_run` table.
 //
 // Hooks only TIGHTEN: there is no `allow` decision. A hook can stop a call, force
 // the approval card, rewrite arguments (which the gate then sees) or add labelled
@@ -31,8 +38,20 @@ const { Worker } = require('node:worker_threads');
 const settings = require('./settings.js');
 
 const STORE_KEY = 'hooks';
-const EVENTS = Object.freeze(['prompt.submit', 'tool.before', 'tool.after']);
-const ORIGINS = Object.freeze(['user', 'webhook', 'schedule', 'app']);
+const EVENTS = Object.freeze(['prompt.submit', 'tool.before', 'tool.after', 'turn.start', 'turn.end', 'turn.error', 'attention']);
+const TOOL_EVENTS = Object.freeze(['tool.before', 'tool.after']);
+// Events whose `block` stops something; elsewhere a block is just a note.
+const BLOCKING_EVENTS = Object.freeze(['prompt.submit', 'tool.before']);
+const CONTEXT_EVENTS = Object.freeze(['prompt.submit', 'tool.before', 'tool.after']);
+// The fields each non-tool event sends besides the common ones.
+const EVENT_FIELDS = Object.freeze({
+  'turn.start': ['model', 'provider', 'thinkingLevel'],
+  'turn.end': ['text', 'usage', 'cost', 'toolCount', 'followUpDepth'],
+  'turn.error': ['code', 'message', 'stopped'],
+  attention: ['kind', 'tool']
+});
+// `hook` is a follow-up turn a turn.end hook started.
+const ORIGINS = Object.freeze(['user', 'webhook', 'schedule', 'app', 'hook']);
 // Tool families a hook can match: the authorization gates (`shell`, `file`,
 // `subagent`, `chats`, `mouaif`) plus `mcp` for every MCP server tool.
 const FAMILIES = Object.freeze(['shell', 'file', 'subagent', 'chats', 'mouaif', 'mcp']);
@@ -57,6 +76,8 @@ const MAX_REASON = 2000;
 const MAX_CONTEXT = 8 * 1024;
 const MAX_PAYLOAD_TEXT = 16 * 1024;
 const MAX_CHANGE_TEXT = 2000;
+const MAX_FOLLOW_UP = 4000;
+const KEEP_RUNS = 200;
 const MAX_PER_EVENT = 4;
 const MAX_CONCURRENT = 8;
 const REGEX_BUDGET_MS = 250;
@@ -144,7 +165,7 @@ function normalizeHook(raw, index = 0) {
   if (name) hook.name = name;
   const match = normalizeMatch(raw.match, at);
   if (match) {
-    if ((match.tool || match.family || match.argText) && raw.event === 'prompt.submit') {
+    if ((match.tool || match.family || match.argText) && !TOOL_EVENTS.includes(raw.event)) {
       throw new HookError(at + '.match.tool, match.family and match.argText only apply to tool events');
     }
     hook.match = match;
@@ -376,7 +397,7 @@ function clip(text, max) {
   return s.length > max ? s.slice(0, max) + '…' : s;
 }
 
-// parseOutput(run) -> { decision, reason?, updatedArgs?, context?, notice?, error? }
+// parseOutput(run) -> { decision, reason?, updatedArgs?, context?, notice?, followUp?, suppress?, error? }
 function parseOutput(run) {
   if (run.timedOut) return { decision: 'error', error: 'timed out' };
   if (run.code === 2) {
@@ -400,6 +421,8 @@ function parseOutput(run) {
   if (typeof out.reason === 'string' && out.reason.trim()) parsed.reason = clip(out.reason.trim(), MAX_REASON);
   if (typeof out.context === 'string' && out.context.trim()) parsed.context = out.context.trim();
   if (typeof out.notice === 'string' && out.notice.trim()) parsed.notice = clip(out.notice.trim(), 300);
+  if (typeof out.followUp === 'string' && out.followUp.trim()) parsed.followUp = clip(out.followUp.trim(), MAX_FOLLOW_UP);
+  if (out.suppress === true) parsed.suppress = true;
   if (out.updatedArgs !== undefined) {
     if (!isObject(out.updatedArgs)) return { decision: 'error', error: 'updatedArgs must be an object' };
     parsed.updatedArgs = out.updatedArgs;
@@ -420,13 +443,15 @@ function resultForPayload(result) {
 //   args?        (tool.before, after every updatedArgs, when changed)
 //   context?     (combined, untagged; wrap with contextBlock())
 //   contextBy[]  (hook ids that added context)
+//   followUps[]  (turn.end: [{ hook, text }])
+//   suppress?    (attention: true when a hook asked for no push)
 //   notes[]      one per hook that ran, for the transcript chip
 // }
 //
-// payload: { tool?, args?, ok?, result?, content?, origin?, callId? }
+// payload: { tool?, args?, ok?, result?, content?, origin?, callId?, ...EVENT_FIELDS[event] }
 // ctx:     { projectDir, chatId, cwd?, nested?, signal?, disabled? }
 async function runHooks(event, payload, ctx = {}) {
-  const outcome = { decision: 'continue', notes: [], contextBy: [] };
+  const outcome = { decision: 'continue', notes: [], contextBy: [], followUps: [] };
   if (ctx.disabled || disabledByEnv()) return outcome;
   let config;
   try { config = getConfig(); } catch { return outcome; }
@@ -461,6 +486,11 @@ async function runHooks(event, payload, ctx = {}) {
     if (event === 'prompt.submit') {
       input.content = clip(payload.content || '', MAX_PAYLOAD_TEXT * 4);
       input.attachments = payload.attachments || 0;
+    } else if (EVENT_FIELDS[event]) {
+      for (const key of EVENT_FIELDS[event]) {
+        if (payload[key] === undefined) continue;
+        input[key] = typeof payload[key] === 'string' ? clip(payload[key], MAX_PAYLOAD_TEXT) : payload[key];
+      }
     } else {
       input.tool = payload.tool;
       input.family = toolFamily(payload.tool);
@@ -475,7 +505,7 @@ async function runHooks(event, payload, ctx = {}) {
     }
     const run = await runCommand(hook, input, ctx);
     let parsed = parseOutput(run);
-    if (parsed.decision === 'error' && hook.failClosed && event !== 'tool.after') {
+    if (parsed.decision === 'error' && hook.failClosed && BLOCKING_EVENTS.includes(event)) {
       parsed = { decision: 'block', reason: 'Hook "' + (hook.name || hook.id) + '" failed (' + parsed.error + ') and is set to block on failure.', error: parsed.error };
     }
     // Only tool.before may ask or rewrite; prompt.submit may only block.
@@ -483,7 +513,10 @@ async function runHooks(event, payload, ctx = {}) {
       if (parsed.decision === 'ask') parsed.decision = 'continue';
       delete parsed.updatedArgs;
     }
-    if (event === 'tool.after' && parsed.decision === 'block') parsed.decision = 'continue';
+    if (!BLOCKING_EVENTS.includes(event) && parsed.decision === 'block') parsed.decision = 'continue';
+    if (!CONTEXT_EVENTS.includes(event)) delete parsed.context;
+    if (event !== 'turn.end') delete parsed.followUp;
+    if (event !== 'attention') delete parsed.suppress;
 
     const note = { hook: hook.id, event, decision: parsed.decision, ms: run.ms };
     if (hook.name) note.name = hook.name;
@@ -504,7 +537,16 @@ async function runHooks(event, payload, ctx = {}) {
       outcome.contextBy.push(hook.id);
       note.context = true;
     }
+    if (parsed.followUp) {
+      outcome.followUps.push({ hook: hook.id, text: parsed.followUp });
+      note.followUp = true;
+    }
+    if (parsed.suppress) {
+      outcome.suppress = true;
+      note.suppress = true;
+    }
     outcome.notes.push(note);
+    logRun(note, ctx);
     if (parsed.decision === 'block') {
       outcome.decision = 'block';
       outcome.reason = parsed.reason || 'Blocked by hook "' + (hook.name || hook.id) + '".';
@@ -520,6 +562,82 @@ async function runHooks(event, payload, ctx = {}) {
   if (argsChanged) outcome.args = args;
   if (contexts.length) outcome.context = contextBlock(event, contexts);
   return outcome;
+}
+
+// hasHooks(event) -> boolean — any enabled hook for this event, so a caller
+// can skip deferring work (a push) when nothing would run.
+function hasHooks(event) {
+  if (disabledByEnv()) return false;
+  try {
+    const config = getConfig();
+    return config.enabled && config.list.some((h) => h.enabled && h.event === event);
+  } catch { return false; }
+}
+
+// ---- Run log -----------------------------------------------------------------
+//
+// The last KEEP_RUNS hook runs app-wide, for Settings → Hooks. Logging is
+// best-effort: a broken store never fails a hook.
+
+const RUN_TABLE = `
+  CREATE TABLE IF NOT EXISTS hook_run (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    at          INTEGER NOT NULL,
+    hook_id     TEXT NOT NULL,
+    name        TEXT,
+    event       TEXT NOT NULL,
+    project_dir TEXT,
+    chat_id     TEXT,
+    decision    TEXT NOT NULL,
+    ms          INTEGER,
+    detail      TEXT,
+    error       TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_hook_run_chat ON hook_run (project_dir, chat_id, id)
+`;
+let runDb = null;
+function runStore() {
+  if (runDb) return runDb;
+  const d = settings.getDb();
+  d.exec(RUN_TABLE);
+  runDb = d;
+  return d;
+}
+
+// logRun(note, ctx) — one row per executed hook (or a follow-up outcome).
+function logRun(note, ctx = {}) {
+  try {
+    const d = runStore();
+    const detail = note.reason || note.notice || (note.followUp ? 'asked for a follow-up turn' : '')
+      || (note.suppress ? 'suppressed the notification' : '') || (note.changedArgs ? 'changed the arguments' : '')
+      || (note.context ? 'added context' : '');
+    d.prepare(`INSERT INTO hook_run (at, hook_id, name, event, project_dir, chat_id, decision, ms, detail, error)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(Date.now(), String(note.hook || '?').slice(0, 40), note.name || null,
+      String(note.event || ''), ctx.projectDir || null, ctx.chatId || null, String(note.decision || ''),
+      Number.isFinite(note.ms) ? Math.round(note.ms) : null, detail ? clip(detail, 300) : null,
+      note.error ? clip(note.error, 300) : null);
+    d.prepare('DELETE FROM hook_run WHERE id <= (SELECT id FROM hook_run ORDER BY id DESC LIMIT 1 OFFSET ?)').run(KEEP_RUNS);
+  } catch { /* the log is best-effort */ }
+}
+
+// listRuns({ projectDir?, chatId?, limit? }) -> newest first
+function listRuns({ projectDir, chatId, limit } = {}) {
+  const n = Math.max(1, Math.min(KEEP_RUNS, Number(limit) || 50));
+  const where = [];
+  const params = [];
+  if (projectDir) { where.push('project_dir = ?'); params.push(projectDir); }
+  if (chatId) { where.push('chat_id = ?'); params.push(chatId); }
+  const sql = 'SELECT * FROM hook_run' + (where.length ? ' WHERE ' + where.join(' AND ') : '') + ' ORDER BY id DESC LIMIT ?';
+  return runStore().prepare(sql).all(...params, n).map((r) => {
+    const run = { id: r.id, at: r.at, hook: r.hook_id, event: r.event, decision: r.decision };
+    if (r.name) run.name = r.name;
+    if (r.project_dir) run.projectDir = r.project_dir;
+    if (r.chat_id) run.chatId = r.chat_id;
+    if (r.ms != null) run.ms = r.ms;
+    if (r.detail) run.detail = r.detail;
+    if (r.error) run.error = r.error;
+    return run;
+  });
 }
 
 // argChanges(before, after) -> [{ key, before?, after? }]
@@ -580,6 +698,7 @@ function newId() {
 
 module.exports = {
   EVENTS,
+  TOOL_EVENTS,
   ORIGINS,
   FAMILIES,
   SHELLS: Object.keys(SHELLS),
@@ -589,6 +708,9 @@ module.exports = {
   getConfig,
   setConfig,
   runHooks,
+  hasHooks,
+  logRun,
+  listRuns,
   contextBlock,
   parseOutput,
   testHook,

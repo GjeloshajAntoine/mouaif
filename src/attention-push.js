@@ -10,7 +10,9 @@ const { resolveNotificationPrefs } = require('./notifications.js');
 
 // `broadcast` is for a turn nobody's browser started (a recurring task's run):
 // it has no push session, so the alert goes to every subscribed device.
-function notifyAttention({ sessionId, projectDir, chatId, name, data, preferences, broadcast }) {
+// `attention` hooks (src/hooks.js) run first and may suppress the push.
+// `origin` is the turn's origin kind for their `Sent by` match.
+function notifyAttention({ sessionId, projectDir, chatId, name, data, preferences, broadcast, origin }) {
   if ((!sessionId && !broadcast) || !projectDir || !chatId) return;
   if (name !== 'authorization_required' && name !== 'ask_user_required') return;
   const prefs = preferences || resolveNotificationPrefs(settings.getApp().notifications);
@@ -40,7 +42,8 @@ function notifyAttention({ sessionId, projectDir, chatId, name, data, preference
     const chat = chats.getChat(projectDir, chatId);
     chatTitle = (chat && chat.title) || '';
   } catch { /* best-effort metadata */ }
-  (sessionId ? (o) => push.sendPushToSession(sessionId, o) : push.sendPushToAll)({
+  const send = (o) => (sessionId ? push.sendPushToSession(sessionId, o) : push.sendPushToAll(o));
+  const message = {
     title: chatTitle || (question ? 'The chat needs your answer' : 'Authorization needed'),
     body: question
       ? (request.question ? String(request.question).slice(0, 240) : 'Open the chat to answer.')
@@ -57,7 +60,12 @@ function notifyAttention({ sessionId, projectDir, chatId, name, data, preference
     },
     actions,
     requireInteraction: true
-  });
+  };
+  const hooks = require('./hooks.js');
+  if (!hooks.hasHooks('attention')) { send(message); return; }
+  hooks.runHooks('attention', { origin: { kind: (origin && origin.kind) || 'user' }, kind, tool: message.data.tool || '' },
+    { projectDir, chatId, cwd: projectDir })
+    .then((o) => { if (!o.suppress) send(message); }, () => send(message));
 }
 
 module.exports = { notifyAttention };

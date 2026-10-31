@@ -1,7 +1,7 @@
 # Spec — hooks and MCP-App UI extensions
 
-> Maintainer design proposal. Phase 1 (hooks on prompts and tool calls) is implemented; see
-> `docs/features/hooks.md`. The rest is not. Same rules as every track: one feature = one
+> Maintainer design proposal. Phases 1 (hooks on prompts and tool calls) and 2 (turn hooks,
+> follow-ups, attention, run log) are implemented; see `docs/features/hooks.md`. The rest is not. Same rules as every track: one feature = one
 > commit, Conventional Commits, mobile-first UI, a `docs/features/<slug>.md` page plus its
 > `docs/README.md` line, and `docs/agent/features/<slug>.md` notes in the same commit.
 
@@ -297,8 +297,9 @@ the system block, so prompt caching stays intact.
 - At most 4 inline hooks per event per call, 8 concurrent hook executions app-wide, one
   `command` spawn queue (this host has 4 cores and 4 GB).
 - `followUp`: at most 3 per user turn, counted along the chain; the follow-up prompt carries
-  `origin: { kind: "hook", hookId, depth }` and is delivered through the webhook-style queue so
-  it never overlaps a running turn. `turn.end` hooks see `origin` and can stop themselves.
+  `origin: { kind: "hook", hookId, depth }`. It starts right after the hooks answer and is
+  dropped (logged as skipped) if the chat is busy by then, so it never overlaps a running turn
+  or lands after the user took over. `turn.end` hooks see `origin` and can stop themselves.
 - Nested subagents fire no hooks unless the hook sets `"subagents": true`; then the payload
   carries the subagent's depth and author.
 - Direct composer tool calls that go through `runSingleToolCall` (`@agent`) fire
@@ -559,7 +560,7 @@ Each phase is one or more feature commits with docs and tests.
 | # | Work | Outcome |
 | --- | --- | --- |
 | 1 | `src/hooks.js`, `command` kind, `tool.before`/`tool.after`/`prompt.submit`, app-scope `hooks` setting, tool-card chips, master switch + `MOUAIF_NO_HOOKS=1` | A shell hook blocks `git push -f` and the model sees why. **Done** — see `docs/features/hooks.md`. `match.family` and the per-key before/after diff are in; `match.chatTags` waits for chat tags, which mouaif does not have yet. Hooks run server-side, so `?safe` (a browser flag) is not their off switch; it stays for UI surfaces. |
-| 2 | `turn.end` + `followUp` queue, `turn.start`/`turn.error`/`attention`, run log in Settings | A hook keeps the agent going until `npm test` passes, max 3 follow-ups. |
+| 2 | `turn.end` + `followUp` queue, `turn.start`/`turn.error`/`attention`, run log in Settings | A hook keeps the agent going until `npm test` passes, max 3 follow-ups. **Done**. A follow-up is dropped, not queued, when the chat is busy by the time the hooks answer (§4.6). `attention` covers approval, ask_user and completion pushes. |
 | 3 | Per-chat hooks (`chat_hook`, hooks bar/sheet, promote) + `hook_create`/`hook_list`/`hook_delete` | "From now on block force pushes here" adds a chat hook after one forced approval card. |
 | 4 | `http` + `module` kinds, `redact`, project hooks with hash trust | A repo ships its own policy hooks; a fresh clone shows the review banner instead of running them. |
 | 5 | `.mouaif-extension.json` format, registry, import/export, `mcp` kind, Settings → Extensions | One file installs a server + its hooks. |

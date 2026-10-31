@@ -28,7 +28,7 @@ function setHooks(list, enabled = true) {
 
 async function testValidation() {
   assert.throws(() => hooks.normalizeHook({ id: 'Bad Id', event: 'tool.before', handler: { kind: 'command', command: 'true' } }), /id/);
-  assert.throws(() => hooks.normalizeHook({ id: 'a', event: 'turn.end', handler: { kind: 'command', command: 'true' } }), /event/);
+  assert.throws(() => hooks.normalizeHook({ id: 'a', event: 'chat.created', handler: { kind: 'command', command: 'true' } }), /event/);
   assert.throws(() => hooks.normalizeHook({ id: 'a', event: 'tool.before', handler: { kind: 'http' } }), /kind/);
   assert.throws(() => hooks.normalizeHook({ id: 'a', event: 'tool.before', handler: { kind: 'command' } }), /command or a script/);
   assert.throws(() => hooks.normalizeHook({ id: 'a', event: 'tool.before', handler: { kind: 'command', command: 'x', script: 'y' } }), /not both/);
@@ -239,12 +239,157 @@ async function testUserRowContext() {
   assert.deepEqual(messages.withHookContext([{ type: 'text', text: 'a' }], { context: 'c' }), [{ type: 'text', text: 'a' }, { type: 'text', text: 'c' }]);
 }
 
+// Phase 2: turn.start / turn.end / turn.error / attention, follow-ups, run log.
+async function testTurnEvents() {
+  const hookTurns = require('../src/hookTurns.js');
+  const ctx = { projectDir, chatId: 'c-turn', cwd: projectDir };
+  // tool/family/argText only on tool events; new events validate.
+  assert.throws(() => hooks.normalizeHook({ id: 'a', event: 'turn.end', match: { tool: ['shell'] }, handler: { kind: 'command', command: 'x' } }), /tool events/);
+  assert.equal(hooks.normalizeHook({ id: 'a', event: 'attention', match: { origin: ['hook'] }, handler: { kind: 'command', command: 'x' } }).event, 'attention');
+  assert.deepEqual(hooks.parseOutput({ code: 0, stdout: '{"followUp":"go on","suppress":true}' }), { decision: 'continue', followUp: 'go on', suppress: true });
+
+  // Each field only counts on its event: block/context are notes elsewhere.
+  setHooks([{ id: 'loud', event: 'turn.start', handler: { kind: 'command', command: say({ decision: 'block', context: 'x', followUp: 'y', suppress: true }) } }]);
+  let out = await hooks.runHooks('turn.start', { model: 'm' }, ctx);
+  assert.equal(out.decision, 'continue');
+  assert.equal(out.context, undefined);
+  assert.deepEqual(out.followUps, []);
+  assert.equal(out.suppress, undefined);
+  setHooks([{ id: 'quiet', event: 'attention', handler: { kind: 'command', command: say({ suppress: true }) } }]);
+  assert.equal(hooks.hasHooks('attention'), true);
+  assert.equal(hooks.hasHooks('turn.end'), false);
+  out = await hooks.runHooks('attention', { kind: 'completion' }, ctx);
+  assert.equal(out.suppress, true);
+
+  // The input carries only the event's own fields, text capped.
+  setHooks([{ id: 'echo', event: 'turn.end', handler: { kind: 'command', shell: 'node', script:
+    "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const i=JSON.parse(s);" +
+    "process.stdout.write(JSON.stringify({followUp:[i.event,i.text.length,i.toolCount,i.followUpDepth,i.origin.kind,'model' in i].join('|')}))})" } }]);
+  out = await hooks.runHooks('turn.end', { origin: { kind: 'user' }, text: 'x'.repeat(40000), toolCount: 2, followUpDepth: 0, model: 'leak' }, ctx);
+  assert.equal(out.followUps[0].text, 'turn.end|16385|2|0|user|false');
+
+  // Follow-ups: one turn, origin hook with depth; capped at 3; dropped when busy.
+  setHooks([{ id: 'tests', event: 'turn.end', handler: { kind: 'command', command: say({ followUp: 'Fix the tests.' }) } }]);
+  const started = [];
+  const startTurn = async (body, life, token) => { started.push({ body, token }); return { ok: true }; };
+  const base = Object.assign({ modelId: 'm1', providerId: 'p1', sessionToken: 'tok', text: 'done' }, ctx);
+  let r = await hookTurns.fireTurnEnd(Object.assign({ origin: { kind: 'user' } }, base), { startTurn, isRunning: () => false });
+  assert.equal(r.followUp, 'started');
+  assert.equal(started[0].body.content, 'Fix the tests.');
+  assert.deepEqual(started[0].body.origin, { kind: 'hook', hookId: 'tests', depth: 1, run: 1 });
+  assert.equal(started[0].token, 'tok');
+  assert.deepEqual(messages.normalizeMessage({ role: 'user', content: 'x', origin: started[0].body.origin }).origin, { kind: 'hook', hookId: 'tests', depth: 1, run: 1 });
+  r = await hookTurns.fireTurnEnd(Object.assign({ origin: { kind: 'hook', hookId: 'tests', depth: 2, run: 2 } }, base), { startTurn, isRunning: () => false });
+  assert.equal(r.followUp, 'started');
+  assert.equal(started[1].body.origin.depth, 3);
+  r = await hookTurns.fireTurnEnd(Object.assign({ origin: { kind: 'hook', hookId: 'tests', depth: 3, run: 3 } }, base), { startTurn, isRunning: () => false });
+  assert.equal(r.followUp, 'limit');
+  r = await hookTurns.fireTurnEnd(Object.assign({ origin: { kind: 'user' } }, base), { startTurn, isRunning: () => true });
+  assert.equal(r.followUp, 'busy');
+  r = await hookTurns.fireTurnEnd(Object.assign({ origin: { kind: 'user' } }, base), { startTurn: async () => ({ ok: false, code: 'EALREADY_RUNNING' }), isRunning: () => false });
+  assert.equal(r.followUp, 'busy');
+  assert.equal(started.length, 2);
+
+  // Two hooks asking at once make one labelled turn.
+  setHooks([
+    { id: 'one', event: 'turn.end', handler: { kind: 'command', command: say({ followUp: 'A' }) } },
+    { id: 'two', event: 'turn.end', handler: { kind: 'command', command: say({ followUp: 'B' }) } }
+  ]);
+  await hookTurns.fireTurnEnd(Object.assign({ origin: { kind: 'user' } }, base), { startTurn, isRunning: () => false });
+  assert.equal(started[2].body.content, '[one] A\n\n[two] B');
+
+  // Run log: newest first, filtered by chat, follow-up outcomes included, capped.
+  const runs = hooks.listRuns({ chatId: 'c-turn', limit: 200 });
+  assert.ok(runs.length >= 10);
+  assert.equal(runs[0].hook, 'one');
+  assert.equal(runs[0].decision, 'continue');
+  assert.match(runs[0].detail, /follow-up 1\/3 started/);
+  assert.ok(runs.some((x) => x.decision === 'skipped' && /busy/.test(x.error)));
+  assert.ok(runs.some((x) => x.decision === 'skipped' && /3 follow-ups/.test(x.error)));
+  assert.equal(hooks.listRuns({ chatId: 'nope' }).length, 0);
+  for (let i = 0; i < 210; i++) hooks.logRun({ hook: 'bulk', event: 'turn.start', decision: 'continue', ms: 1 }, ctx);
+  assert.equal(hooks.listRuns({ limit: 500 }).length, 200);
+  setHooks([]);
+}
+
+// A real turn through runChatStream against a mock provider: turn.start and
+// turn.end fire, turn.end's follow-ups chain to the cap, a failed turn fires
+// turn.error.
+async function testTurnE2E() {
+  const http = require('node:http');
+  const settings = require('../src/settings.js');
+  const chats = require('../src/chats.js');
+  const { handleChatStream } = require('../src/server-handlers-chats.js');
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (d) => { body += d; });
+    req.on('end', () => {
+      if (body.includes('FAIL')) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end('{"error":{"message":"boom"}}'); return; }
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.write('data: {"choices":[{"delta":{"content":"Done."},"index":0}]}\n\n');
+      res.write('data: {"choices":[{"finish_reason":"stop","index":0}]}\n\n');
+      res.write('data: [DONE]\n\n');
+      res.end();
+    });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  settings.setProject(projectDir, { models: [{ id: 'mock', provider: 'openai-compatible', label: 'Mock' }] });
+  settings.setApp({ providers: [{ id: 'openai-compatible', type: 'openai-compatible', baseUrl: 'http://127.0.0.1:' + server.address().port, apiKey: 'k' }] });
+  const log = path.join(root, 'turn-events.jsonl');
+  const record = "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{require('fs').appendFileSync(" + JSON.stringify(log) + ",s.replace(/\\n/g,' ')+'\\n');";
+  setHooks([
+    { id: 'start', event: 'turn.start', handler: { kind: 'command', shell: 'node', script: record + '});' } },
+    { id: 'err', event: 'turn.error', handler: { kind: 'command', shell: 'node', script: record + '});' } },
+    { id: 'more', event: 'turn.end', handler: { kind: 'command', shell: 'node', script: record + "process.stdout.write(JSON.stringify({followUp:'Keep going.'}))});" } }
+  ]);
+  const mockReq = (body) => ({ method: 'POST', headers: { 'content-type': 'application/json' },
+    on(ev, cb) { if (ev === 'data') process.nextTick(() => cb(Buffer.from(JSON.stringify(body)))); if (ev === 'end') process.nextTick(cb); } });
+  const mockRes = () => ({ statusCode: 0, body: '', writeHead(c) { this.statusCode = c; }, write(c) { this.body += c; }, end() {}, setHeader() {}, getHeader() {} });
+  const read = () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+  const waitFor = async (fn, ms = 30000) => { const t = Date.now(); while (Date.now() - t < ms) { if (fn()) return true; await new Promise((r) => setTimeout(r, 100)); } return false; };
+
+  const chat = chats.createChat(projectDir, { title: 'turns' });
+  const res = mockRes();
+  await handleChatStream(mockReq({ projectDir, modelId: 'mock', content: 'start' }), res, chat.id, null);
+  assert.equal(res.statusCode, 200);
+  // The first turn plus three follow-ups, then the chain stops.
+  const capped = await waitFor(() => hooks.listRuns({ chatId: chat.id }).some((x) => x.decision === 'skipped'));
+  assert.ok(capped, 'chain reached its cap: ' + JSON.stringify(hooks.listRuns({ chatId: chat.id }).slice(0, 3)));
+  const users = messages.listMessages(projectDir, chat.id).filter((m) => m.role === 'user');
+  assert.deepEqual(users.map((m) => m.content), ['start', 'Keep going.', 'Keep going.', 'Keep going.']);
+  assert.deepEqual(users.map((m) => m.origin && m.origin.depth), [undefined, 1, 2, 3]);
+  assert.equal(users[1].origin.kind, 'hook');
+  assert.equal(users[1].origin.hookId, 'more');
+  const events = read();
+  const ends = events.filter((e) => e.event === 'turn.end');
+  assert.deepEqual(ends.map((e) => e.followUpDepth), [0, 1, 2, 3]);
+  assert.equal(ends[0].text, 'Done.');
+  assert.deepEqual(ends.map((e) => e.origin.kind), ['user', 'hook', 'hook', 'hook']);
+  const starts = events.filter((e) => e.event === 'turn.start');
+  assert.equal(starts.length, 4);
+  assert.equal(starts[0].model, 'mock');
+
+  // A failed turn: turn.error, and no turn.end.
+  const failChat = chats.createChat(projectDir, { title: 'fail' });
+  await handleChatStream(mockReq({ projectDir, modelId: 'mock', content: 'FAIL now' }), mockRes(), failChat.id, null);
+  assert.ok(await waitFor(() => read().some((e) => e.event === 'turn.error' && e.chatId === failChat.id)), 'turn.error fired');
+  const err = read().find((e) => e.event === 'turn.error' && e.chatId === failChat.id);
+  assert.equal(err.stopped, false);
+  assert.ok(err.code);
+  await new Promise((r) => setTimeout(r, 300));
+  assert.ok(!read().some((e) => e.event === 'turn.end' && e.chatId === failChat.id));
+  server.close();
+  setHooks([]);
+}
+
 async function main() {
   await testValidation();
   await testParseOutput();
   await testRunner();
   await testToolLoop();
   await testUserRowContext();
+  await testTurnEvents();
+  await testTurnE2E();
   console.log('test-hooks: ok');
 }
 

@@ -40,6 +40,14 @@ async function handleHooks(req, res, parsed) {
       if (!body) return;
       return sendJSON(res, 200, view(hooks.setConfig(body)));
     }
+    if (urlPath === '/api/hooks/runs' && method === 'GET') {
+      const q = parsed.query || {};
+      return sendJSON(res, 200, { runs: hooks.listRuns({
+        projectDir: typeof q.projectDir === 'string' ? q.projectDir : '',
+        chatId: typeof q.chatId === 'string' ? q.chatId : '',
+        limit: q.limit
+      }) });
+    }
     if (urlPath === '/api/hooks/test' && method === 'POST') {
       const body = await readJsonOr400(req, res);
       if (!body) return;

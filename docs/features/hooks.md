@@ -2,12 +2,14 @@
 
 ## Overview
 
-Hooks are commands mouaif runs at fixed points of a chat turn: when you send a prompt, before a tool runs and after it ran. A hook can:
+Hooks are commands mouaif runs at fixed points of a chat turn: when you send a prompt, before a tool runs and after it ran, when a turn starts, finishes or fails, and before a notification is sent. A hook can:
 
 - **block** a prompt or a tool call, with a reason the model reads,
 - **ask**: show the approval card for a call, even for a tool set to Allow,
 - **change the arguments** of a tool call before it runs,
-- **add context** for the model, such as the current git branch or the state of CI.
+- **add context** for the model, such as the current git branch or the state of CI,
+- **start one more turn** when a turn finishes, for example until the tests pass,
+- **silence a notification**.
 
 Hooks only add checks. A hook cannot approve a call, skip the approval card or run a tool that is Off. The tool permissions in **Settings → Project** stay the only place that grants anything.
 
@@ -18,9 +20,10 @@ Hooks run on the computer that runs mouaif, with its user's permissions, like a 
 Open **Settings → App defaults → Hooks** (`#/settings/hooks`).
 
 - **Run hooks** pauses or resumes every hook at once.
-- **New hook** opens an empty editor. **Start from an example** fills it with a working hook: block force pushes, ask before `rm -rf`, add the git branch to prompts, or log every tool call.
+- **New hook** opens an empty editor. **Start from an example** fills it with a working hook: block force pushes, ask before `rm -rf`, add the git branch to prompts, keep going until the tests pass, no notifications at night, or log every tool call.
 - Each hook card shows when it runs, what it matches and its command. Its switch turns that hook on or off. **Edit** opens the editor, and the arrows change the order hooks run in.
 - **Test** in the editor runs the hook once with a sample event and shows its decision, exit code, time and output. Nothing in a chat changes.
+- **Recent runs** lists the last 50 hook runs, newest first: the hook, its event, what it decided, how long it took and any error. A follow-up turn that was not started shows here as *skipped* with the reason. mouaif keeps the last 200 runs.
 - **Edit as JSON** shows every hook as JSON to copy, paste or change; **Apply** replaces the whole list. **Download** saves `mouaif-hooks.json`, which **Edit as JSON** accepts back.
 
 Hooks are app-wide: they apply to every project and every chat. A project's `.mouaif.json` cannot define hooks, so opening a cloned repository never runs its code.
@@ -32,15 +35,23 @@ Hooks are app-wide: they apply to every project and every chat. A project's `.mo
 | `prompt.submit` | when a prompt is sent, before it is saved: typed prompts, webhook calls, recurring tasks and MCP App messages | block, add context |
 | `tool.before` | before a tool call reaches the approval gate | block, ask, change arguments, add context |
 | `tool.after` | after the tool returned, before the model sees the result | add context |
+| `turn.start` | when a turn is about to call the model | watch |
+| `turn.end` | when a turn finished and was saved | start one follow-up turn |
+| `turn.error` | when a turn failed, or you stopped it | watch |
+| `attention` | before a push notification: a tool waiting for approval, a question for you, a finished turn | silence it |
+
+`turn.start`, `turn.end` and `turn.error` hooks run beside the chat: the chat never waits for them. `attention` hooks delay the notification by as long as they take.
 
 Tools that never show an approval card run no hooks: progress updates, `list_features` and skill activation. A subagent's tool calls run hooks only when the hook has **Also run for subagents' tool calls** ticked. Commands you run yourself from the composer (`/shell`, `@action`, direct MCP calls) run no hooks: hooks check what the model does. An `@agent` delegation runs hooks on its `subagent` call, and on the delegated model's calls when the hook includes subagents.
 
 ### Matching
 
+Tools, **Tool groups** and **Arguments match** only apply to `tool.before` and `tool.after`.
+
 - **Tools**: tool names, comma-separated. `*` matches anything, so `mcp__github__*` matches every tool of that MCP server. Empty = every tool.
 - **Tool groups**: the groups of **Settings → Project → Tools**: **Shell**, **Files**, **Subagents**, **Chat tools**, **mouaif app** and **MCP servers** (every MCP tool). None ticked = every group. With tool names as well, a call must match both.
 - **Arguments match**: a regular expression searched in the call's arguments, written as JSON (`{"cmd":"git push -f origin main"}`). Empty = any arguments. A pattern gets 250 ms; a slower one counts as no match.
-- **Sent by**: who sent the turn's prompt: **You**, **Webhook**, **Recurring task** or **MCP App**. None ticked = everyone.
+- **Sent by**: who sent the turn's prompt: **You**, **Webhook**, **Recurring task**, **MCP App** or **Hook follow-up** (a turn a `turn.end` hook started). None ticked = everyone.
 
 ### Writing a hook
 
@@ -88,7 +99,21 @@ The hook answers with its exit code and output:
 
 `family` is the tool's group (`shell`, `file`, `subagent`, `chats`, `mouaif` or `mcp`). An MCP tool's input also has `mcpServer`, the server's slug (`github` for `mcp__github__list_issues`).
 
+The other events send their own fields instead of `tool`, `args` and `content`:
+
+| Event | Fields |
+| --- | --- |
+| `turn.start` | `model`, `provider`, `thinkingLevel` |
+| `turn.end` | `text` (the final answer, up to 16 KB), `usage`, `cost`, `toolCount`, `followUpDepth` (0 for a turn you started) |
+| `turn.error` | `code`, `message`, `stopped` (true when you pressed Stop) |
+| `attention` | `kind` (`tool_authorization`, `ask_user` or `completion`), `tool` |
+
 `decision` is `continue` (the default), `block` or `ask`. `ask` and `updatedArgs` only count in `tool.before`; `prompt.submit` can only block; `tool.after` can only add context. `updatedArgs` is merged into the call's arguments, and the approval gate, the card and the tool all see the new ones.
+
+Two fields belong to the newer events:
+
+- `followUp` (`turn.end`): a prompt for one more turn in the same chat (up to 4000 characters). See [Follow-up turns](#follow-up-turns).
+- `suppress: true` (`attention`): no notification for this event.
 
 Examples:
 
@@ -106,9 +131,32 @@ fi
 branch=$(git branch --show-current 2>/dev/null) && [ -n "$branch" ] && echo "Current git branch: $branch"
 ```
 
+```bash
+# Keep going until the tests pass (turn.end, timeout 60 s)
+npm test --silent >/dev/null 2>&1 && exit 0
+echo '{"followUp":"npm test fails. Fix it before finishing."}'
+```
+
+```bash
+# No notifications at night (attention)
+hour=$(date +%H)
+if [ "$hour" -ge 22 ] || [ "$hour" -lt 7 ]; then echo '{"suppress":true}'; fi
+```
+
+A `node` script can use `require` or `import`.
+
+### Follow-up turns
+
+When a `turn.end` hook answers with `followUp`, mouaif sends that text as the next prompt in the same chat, as if you had typed it. The prompt shows *Hook · `<id>` · follow-up 1/3* in the transcript, and its notifications go to the browser that started the first turn.
+
+- A chain stops after **3** follow-ups. Each `turn.end` hook gets `followUpDepth` and the `hook` origin, so it can also stop on its own sooner.
+- When several hooks ask at once, mouaif starts one turn with each request labelled by its hook.
+- If the chat is busy when the hooks answer (you sent a message, or another run started), the follow-up is dropped, not queued. It never runs on top of your turn or after you took over.
+- A failed or stopped turn fires `turn.error`, not `turn.end`, so it never gets a follow-up. **Stop** works on a follow-up turn like on any other.
+
 ### When hooks fail
 
-A hook that exits with another code, prints bad JSON or runs past its timeout (default 5 s, between 0.5 and 60 s) is an error. By default the turn goes on and the tool card says the hook failed. With **Block when the hook fails or times out** ticked, an error in `prompt.submit` or `tool.before` blocks instead.
+A hook that exits with another code, prints bad JSON or runs past its timeout (default 5 s, between 0.5 and 60 s) is an error. By default the turn goes on and the tool card says the hook failed. With **Block when the hook fails or times out** ticked, an error in `prompt.submit` or `tool.before` blocks instead. The other events have nothing to block: a failure is only recorded. An `attention` hook that fails lets the notification through.
 
 When several hooks match, they run one after another in the list's order. A block stops the rest; an ask wins over carrying on; each hook sees the arguments the previous hooks changed; context from every hook is kept. At most 4 hooks run per event per call, and at most 8 hook processes run at once across the app.
 
@@ -119,7 +167,7 @@ To turn every hook off without the Settings page, start mouaif with `MOUAIF_NO_H
 - **Tool cards**: a line under the head, such as *Hook · no-force-push · blocked* (red), *Hook · rewrite · changed the arguments* (amber) or *Hook · git-branch · added context*. Tap it for each hook's decision, reason, time and the context the model saw. A hook that changed the arguments shows each changed one with its value before and after.
 - **Blocked calls**: the card's body says *Not run: blocked by hook `<id>`* with the reason, instead of output.
 - **Approval cards**: when a hook asked, the card shows which hook and why, opened. When a hook changed the arguments, the card shows the new ones, with the before/after list under it.
-- **Prompts**: context a hook added sits under the prompt in a collapsed **Added by hooks** block.
+- **Prompts**: context a hook added sits under the prompt in a collapsed **Added by hooks** block. A prompt a hook sent carries *Hook · `<id>` · follow-up N/3*.
 - **Blocked prompts** are not saved. The composer gets the text back and the status line shows the hook's reason.
 
 ## What the model sees

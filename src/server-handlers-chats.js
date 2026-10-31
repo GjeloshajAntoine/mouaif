@@ -855,7 +855,9 @@ async function handleChatStream(req, res, chatId, sessionToken, lifecycle = {}) 
 // Start a normal persisted turn without an HTTP client. The same runner
 // owns validation, busy/cancel state, authorization, live replay and errors.
 // Resolve only after setup succeeds; later errors remain in the transcript.
-function startChatTurn(body, lifecycle = {}) {
+// `sessionToken` lets a turn mouaif starts on behalf of a browser (a hook's
+// follow-up) notify that browser like the turn before it.
+function startChatTurn(body, lifecycle = {}, sessionToken = null) {
   return new Promise((resolve) => {
     let status = 0;
     const sink = {
@@ -874,7 +876,7 @@ function startChatTurn(body, lifecycle = {}) {
     };
     // `origin` marks a prompt that mouaif itself started (a recurring task's run).
     // It is only honoured here, never from an HTTP request body.
-    runChatStream(body, sink, body.chatId, null, lifecycle, { origin: body.origin, hookOrigin: body.hookOrigin }).catch((e) => {
+    runChatStream(body, sink, body.chatId, sessionToken, lifecycle, { origin: body.origin, hookOrigin: body.hookOrigin }).catch((e) => {
       resolve({ ok: false, code: e.code || 'EINTERNAL', error: e.message || String(e) });
     });
   });
@@ -990,6 +992,16 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
   runningChatCancels.set(runKey, runController);
   liveChat.ensureLiveChat(runKey);
 
+  // Turn hooks (src/hookTurns.js): run beside the chat, never awaited.
+  const hookTurns = require('./hookTurns.js');
+  let hookCwd = projectDir;
+  try { hookCwd = require('./chatWorkingFolder.js').resolveForCall(projectDir, chatId); } catch { /* project folder */ }
+  const turnHookBase = { projectDir, chatId, cwd: hookCwd, origin: internal.origin || hookOrigin };
+  const fireTurnError = (code, message, stopped) => { hookTurns.fireTurnError(Object.assign({ code, message, stopped }, turnHookBase)); };
+  hookTurns.fireTurnStart(Object.assign({ model: model.id, provider: model.providerId || providerId,
+    thinkingLevel: thinkingLevel || chat.thinkingLevel || '' }, turnHookBase));
+  let turnToolCount = 0;
+
   // Open SSE.
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -1008,6 +1020,7 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
   // system is read-only.
   const traceStream = chat.trace ? trace.open(projectDir, chatId) : null;
   function emit(name, data) {
+    if (name === 'tool_result') turnToolCount++;
     try {
       res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n');
     } catch { /* socket closed */ }
@@ -1410,6 +1423,14 @@ function accumulateRoundUsage(roundUsage) {
   }
 
   function sendChatPush(kind, options = {}) {
+    // `attention` hooks (src/hooks.js) may suppress a completion push.
+    const hooksMod = require('./hooks.js');
+    if (kind === 'completion' && !options.afterHooks && hooksMod.hasHooks('attention')) {
+      const again = () => sendChatPush(kind, Object.assign({}, options, { afterHooks: true }));
+      hooksMod.runHooks('attention', { origin: { kind: hookOrigin.kind }, kind: 'completion' }, { projectDir, chatId, cwd: projectDir })
+        .then((o) => { if (!o.suppress) again(); }, again);
+      return;
+    }
     // A recurring run has no browser session; its completion and errors still
     // reach every subscribed device.
     const broadcast = !_pushSessionId && (kind === 'completion' || kind === 'error') && hasRecurringTask();
@@ -1634,7 +1655,7 @@ promptSize: resolvedProfileId,
           });
         } catch { /* non-fatal */ }
       } else if (name === 'authorization_required' || name === 'ask_user_required') {
-      notifyAttention({ sessionId: _pushSessionId, projectDir, chatId, name, data, preferences: notificationPrefs, broadcast: hasRecurringTask() });
+      notifyAttention({ sessionId: _pushSessionId, projectDir, chatId, name, data, preferences: notificationPrefs, broadcast: hasRecurringTask(), origin: hookOrigin });
       } else if (name === 'progress_update') {
       // Updatable per-chat push notification for real-time progress.
       // Uses a stable tag so each new progress_update replaces the
@@ -1798,6 +1819,7 @@ promptSize: resolvedProfileId,
   // creates a red error card (and, after reconciliation, a duplicate
   // copy of the same card) for an intentional cancellation.
   if (runController.signal.aborted) {
+  fireTurnError('EABORTED', 'stopped', true);
   if (assistantContent.trim() || assistantReasoning.trim()) {
   try {
     messages.appendMessage(projectDir, chatId, {
@@ -1812,6 +1834,7 @@ promptSize: resolvedProfileId,
   return;
   }
   const errPayload = { code: 'EINTERNAL', message: streamErr && streamErr.message ? streamErr.message : 'stream failed' };
+  fireTurnError(errPayload.code, errPayload.message, false);
     const info = statusInfo({ kind: 'error', message: 'Error: ' + errPayload.message });
     // Capture the failure's context before resetting the completed turn.
     lastToolName = '';
@@ -1856,6 +1879,7 @@ promptSize: resolvedProfileId,
         // and reconciliation renders the persisted EUPSTREAM/EABORTED row a
         // second time.
         if (runController.signal.aborted) {
+          fireTurnError('EABORTED', 'stopped', true);
           if (assistantContent.trim() || assistantReasoning.trim()) {
             try {
               messages.appendMessage(projectDir, chatId, {
@@ -1899,6 +1923,7 @@ promptSize: resolvedProfileId,
   // the error itself, so the transcript shows exactly what the
   // model produced before the failure.
   const errPayload = Object.assign({ code: result.error.code || 'EUPSTREAM' }, result.error);
+  fireTurnError(errPayload.code, errPayload.message || '', false);
     const partialCost = unpersistedBilledCost(result);
     if (assistantContent.trim() || assistantReasoning.trim()) {
       try {
@@ -1939,6 +1964,20 @@ promptSize: resolvedProfileId,
   lastToolName = '';
   turnStartedAt = 0;
   liveChat.finishLiveChat(runKey);
+  // `turn.end` after the turn is saved and the chat is free; a hook may
+  // start one follow-up turn (src/hookTurns.js).
+  if (result && result.ok) {
+    hookTurns.fireTurnEnd(Object.assign({
+      modelId, providerId, sessionToken, lifecycle,
+      text: assistantContent,
+      usage: lastEnrichment && lastEnrichment.usage ? lastEnrichment.usage : null,
+      cost: turnCostKnown ? { total: turnCost + (delegatedCost || 0), currency: 'USD' } : null,
+      toolCount: turnToolCount
+    }, turnHookBase), {
+      startTurn: (b, life, token) => startChatTurn(b, life, token),
+      isRunning: () => runningChats.has(runKey)
+    }).catch(() => {});
+  }
   res.end();
 }
 
