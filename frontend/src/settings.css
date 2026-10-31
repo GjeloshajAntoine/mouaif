@@ -108,6 +108,24 @@ background: var(--surface-2); color: var(--fg); cursor: pointer;
 /* ---- Settings home (cards) -------------------------------------- */
 
 .settings-home { margin: 0; padding: 0; border: 0; }
+/* Tablet and desktop: two columns instead of one long phone list.
+   Providers and This project stack on the left, App defaults (the long
+   group) runs down the right, and the footer spans both. Row 2 takes the
+   slack (`auto 1fr`), so a tall right column never pushes This project
+   down away from Providers. */
+@media (min-width: 720px) {
+  .settings-home {
+    display: grid;
+    /* The right column is a little wider: its row details are the long ones. */
+    grid-template-columns: minmax(0, 4fr) minmax(0, 5fr);
+    grid-template-rows: auto 1fr;
+    align-items: start;
+  }
+  .settings-home > .group:nth-child(1) { grid-column: 1; grid-row: 1; }
+  .settings-home > .group:nth-child(2) { grid-column: 2; grid-row: 1 / span 2; margin-top: 6px; margin-left: 0; }
+  .settings-home > .group:nth-child(3) { grid-column: 1; grid-row: 2; }
+  .settings-home > .settings-home__resolution { grid-column: 1 / -1; }
+}
 
 /* ---- Settings: projects list ------------------------------------ */
 .sprojects__empty {

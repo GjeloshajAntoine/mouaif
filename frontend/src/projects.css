@@ -728,3 +728,26 @@ border-left: 1px solid var(--border);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---- Tablet and desktop: the chat lists use the window ------------
+   The ~3-row cap above keeps several project cards on one phone screen.
+   On a tablet or a desktop it left a short scroll box above an empty
+   window. From 720px wide (and 600px tall, so a phone turned sideways
+   keeps its compact cards) each list grows with the window height, and a
+   project on its own fills the view down to the tab bar: the section, the
+   card list and the card become a bounded flex column, and the chat list
+   is the flexible child that scrolls (it still owns infinite scroll).
+   The card still hugs a short list instead of stretching empty. */
+@media (min-width: 720px) and (min-height: 600px) {
+  .project-card__chats { max-height: max(10.0625rem, 32dvh); }
+  .app__main > section:has(> .projects__list > .project-card:only-child) {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+  .projects__list:has(> .project-card:only-child) { flex: 0 1 auto; min-height: 0; }
+  .project-card:only-child { min-height: 0; }
+  .project-card:only-child > :not(.project-card__chats) { flex-shrink: 0; }
+  .project-card:only-child .project-card__chats { flex: 0 1 auto; max-height: none; min-height: 0; }
+}
