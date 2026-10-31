@@ -98,6 +98,16 @@ It can also call **host tools**: ordinary MCP `tools/call` requests whose name s
 
 In an inline view: `await window.mouaifApp.callServerTool({ name: 'mouaif/chat.badge', arguments: { text: '2 fail', tone: 'error' } })`.
 
+### Context for the model
+
+A view of an extension with the `model.context` permission can set context the model sees on the next turns, with the standard `ui/update-model-context` request (`await window.mouaifApp.updateModelContext({ content: [{ type: 'text', text: 'Current ticket: #142 …' }], structuredContent: { ticket: 142 } })`).
+
+- Each view has one entry per chat, and the latest update replaces it. It holds text up to 4 KB plus JSON up to 4 KB. A chat takes at most 4 views and 16 KB, and an entry expires 2 hours after its last update. Sending empty content clears the view's entry.
+- Setting context never starts or interrupts a turn. New or changed context goes with your **next prompt**, as a labelled block the model is told to treat as data from the view (`<app-context extension="…" view="…">`). It is stored with that prompt, so later turns and a resumed chat see exactly what the model saw, and unchanged context is not sent again.
+- An **App context** bar above the message box shows each entry exactly as the model receives it, whether it is sent yet, and **Clear** / **Clear all**. Clearing stops it from being sent again; the model keeps what it already received. Under the prompt it was sent with, it appears in the **Added by extension views** block.
+- Context lives in memory only: a restart forgets it. Closing the view does not clear it, so a sheet can set the current ticket and close. Turning the extension off or deleting the chat does clear it.
+- Nothing goes into the system prompt, and a view cannot pick the chat or the model.
+
 ### Events
 
 A view that lists `"events": ["turn.start", "turn.end", "tool.after"]` in its `ui` entry receives those chat events while it is open (nothing is queued for a closed view). They arrive as a tool-result notification whose `structuredContent` is `{ "mouaif": { "type": "event", "event": "turn.end", "payload": { … } } }`. The payloads are:

@@ -68,6 +68,10 @@ Commit: `feat(mcp): support configured HTTPS sandbox hosting`.
 
 Commit: `feat(mcp): accept bounded app model context`.
 
+### Phase 2 progress
+
+`ui/update-model-context` is implemented for **extension views** with the `model.context` permission (`src/app-context.js`, extensions spec phase 9): text and bounded JSON, per-chat bounds and expiry, labelled untrusted data on the next prompt only when changed, no auto-turn, an "App context" bar with view/clear. Retention decision taken there: context survives view closure (session-only, cleared with the extension or chat). Tool-result apps still do not advertise the capability; enabling them is the rest of this phase.
+
 ## Phase 3 — richer automatic messages
 
 1. Add image blocks through the existing normalized attachment path: supported image MIME, valid bounded base64, per-image/aggregate limits and attachment count; reject remote URLs and malformed blocks.

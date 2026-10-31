@@ -277,7 +277,7 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
           title: mount.title, html: resource.text, csp: policy.csp, permissions: {},
           arguments: call.args || {}, result: toolResult });
       }
-      const match = parsed.pathname.match(/^\/api\/mcp\/apps\/([A-Za-z0-9_-]+)(?:\/(call|status|cancel|message|host))?$/);
+      const match = parsed.pathname.match(/^\/api\/mcp\/apps\/([A-Za-z0-9_-]+)(?:\/(call|status|cancel|message|host|context))?$/);
       if (!match) return sendJSON(res, 404, { error: 'Not found' });
       const id = match[1];
       const mount = mounts.get(id);
@@ -287,6 +287,16 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
       if (match[2] === 'status') {
       mount.lease = Date.now() + 20000;
       return sendJSON(res, 200, { ok: true });
+      }
+      // ui/update-model-context from an extension view with model.context (src/app-context.js).
+      if (match[2] === 'context' && req.method === 'POST') {
+        if (mount.kind !== 'surface' || !mount.permissions.includes('model.context')) {
+          throw err('EMCP_VISIBILITY', 'This view may not give the model context');
+        }
+        if (!mount.chatId) throw err('EBADINPUT', 'Model context belongs to a chat');
+        if (body.projectDir !== undefined || body.chatId !== undefined || body.modelId !== undefined) throw err('EBADINPUT', 'A view cannot select a chat or model');
+        return sendJSON(res, 200, require('./app-context.js').set({ projectDir: mount.projectDir, chatId: mount.chatId,
+          extensionId: mount.extensionId, surfaceId: mount.surfaceId, title: mount.title }, body));
       }
       // mouaif/* host tools: extension views only, permission-checked (src/extension-host-tools.js).
       if (match[2] === 'host' && req.method === 'POST') {

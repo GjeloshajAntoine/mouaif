@@ -275,8 +275,9 @@ const chat = chats.updateChat(dir, id, safeBody);
         const hook = hooks.forChat(dir, id);
         if (hook) hooks.remove(hook.id);
       } catch { /* non-fatal */ }
-      // So do its own hooks (src/chatHooks.js).
+      // So do its own hooks (src/chatHooks.js) and its app context.
       try { require('./chatHooks.js').removeChat(dir, id); } catch { /* non-fatal */ }
+      try { require('./app-context.js').clear(dir, id); } catch { /* non-fatal */ }
       return sendJSON(res, 200, { ok: true, removed: id });
     } catch (e) {
       return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
@@ -967,6 +968,16 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
       if (outcome.context) promptHooks.context = outcome.context;
     }
   } catch { /* a broken hook store never blocks a prompt */ }
+  // Model context extension views set (src/app-context.js): the entries that
+  // changed since last sent ride on this prompt, labelled like hook context.
+  try {
+    const app = require('./app-context.js').snapshot(projectDir, chatId);
+    if (app) {
+      promptHooks = promptHooks || { notes: [] };
+      promptHooks.notes = (promptHooks.notes || []).concat(app.notes);
+      promptHooks.context = promptHooks.context ? promptHooks.context + '\n' + app.context : app.context;
+    }
+  } catch { /* app context is best-effort */ }
   // A hook can take seconds; another request may have started a run meanwhile.
   if (runningChats.has(runKey)) {
     return sendJSON(res, 409, { error: 'A response is already streaming for this chat', code: 'EALREADY_RUNNING', id: chatId });

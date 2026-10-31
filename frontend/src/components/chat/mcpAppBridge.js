@@ -34,11 +34,15 @@ export function containerDimensionsFor(iframe, mode = 'inline') {
 
 // hostContext: extra host context (an extension surface's theme, device and
 // `mouaif` slot info, appHostContext.js); merged over the defaults below.
-export async function connectMcpApp({ iframe, mount, onReady, onSize, onMode, onCall, onMessage, onClose, hostContext }) {
+// onModelContext: an extension view with the model.context permission may
+// set context for the next turns (ui/update-model-context); other apps get
+// the SDK's unsupported-method error, as before.
+export async function connectMcpApp({ iframe, mount, onReady, onSize, onMode, onCall, onMessage, onClose, hostContext, onModelContext }) {
   let initialized = false;
   let closed = false;
   const bridge = new AppBridge(null, { name: 'mouaif', version: '1' }, {
-    serverTools: {}, message: { text: {} }, sandbox: { csp: mount.csp, permissions: {} }
+    serverTools: {}, message: { text: {} }, sandbox: { csp: mount.csp, permissions: {} },
+    ...(onModelContext ? { updateModelContext: { text: {}, structuredContent: {} } } : {})
   }, { hostContext: Object.assign({
     displayMode: 'inline', availableDisplayModes: ['inline', 'fullscreen'],
     containerDimensions: containerDimensionsFor(iframe, 'inline'),
@@ -65,6 +69,13 @@ export async function connectMcpApp({ iframe, mount, onReady, onSize, onMode, on
     if (!initialized || closed) throw new Error('App is not initialized');
     return onMessage(params, extra.mcpReq.signal);
   };
+  if (onModelContext) {
+    bridge.onupdatemodelcontext = async (params, extra) => {
+      if (!initialized || closed) throw new Error('App is not initialized');
+      await onModelContext(params, extra.mcpReq.signal);
+      return {};
+    };
+  }
   bridge.onsizechange = ({ height }) => { if (initialized && !closed) onSize(height); };
   bridge.onrequestdisplaymode = async ({ mode }) => {
     if (!initialized || closed) throw new Error('App is not initialized');

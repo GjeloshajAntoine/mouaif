@@ -95,3 +95,7 @@
   font-size: 0.8rem;
   font-weight: 600;
 }
+
+/* The App context bar's entries (AppContextBar.jsx). */
+.app-context__entry + .app-context__entry { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.app-context__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

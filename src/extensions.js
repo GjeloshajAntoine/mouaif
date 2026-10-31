@@ -52,7 +52,7 @@ const SLOTS = Object.freeze(['chat.dock', 'chat.sheet', 'settings.page', 'tool.r
 const CHAT_SLOTS = Object.freeze(['chat.dock', 'chat.sheet', 'tool.renderer']);
 const UI_EVENTS = Object.freeze(['turn.start', 'turn.end', 'tool.after']);
 // Path words under /api/extensions/ that are not extension ids.
-const RESERVED_IDS = Object.freeze(['surfaces']);
+const RESERVED_IDS = Object.freeze(['surfaces', 'context']);
 const SERVER_KEYS = Object.freeze(['name', 'command', 'args', 'env', 'cwd', 'url', 'transport', 'headers']);
 
 function hooksMod() { return require('./hooks.js'); }

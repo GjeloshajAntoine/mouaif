@@ -1,11 +1,11 @@
 # Spec — hooks and MCP-App UI extensions
 
-> Maintainer design proposal. Phases 1 (hooks on prompts and tool calls), 2 (turn hooks,
+> Maintainer design proposal. All nine phases are implemented. Phases 1 (hooks on prompts and tool calls), 2 (turn hooks,
 > follow-ups, attention, run log), 3 (per-chat hooks, model hook tools) and 4 (http and module
 > handlers, redact, project hooks with hash trust) and 5 (the one-file format, registry, import /
 > export, `mcp` hooks, Settings → Extensions), 6 (surface mounts, chat.dock, chat.sheet, theme
-> variables, live budget), 7 (host tools, host events) and 8 (settings.page, tool.renderer,
-> project.card) are implemented; see `docs/features/hooks.md` and
+> variables, live budget), 7 (host tools, host events), 8 (settings.page, tool.renderer,
+> project.card) and 9 (model.context) are implemented; see `docs/features/hooks.md` and
 > `docs/features/extensions.md`. The rest is not. Same rules as every track: one feature = one
 > commit, Conventional Commits, mobile-first UI, a `docs/features/<slug>.md` page plus its
 > `docs/README.md` line, and `docs/agent/features/<slug>.md` notes in the same commit.
@@ -572,7 +572,7 @@ Each phase is one or more feature commits with docs and tests.
 | 6 | Surface mounts (`resourceUri` and inline `html`), `chat.dock` + `chat.sheet`, host theme variables, LRU budget | A CI dock shows red/green above the composer in every theme. **Done**. Mounts go through `POST /api/mcp/apps/mount` with `extensionId`/`surfaceId` (the host owns the sandbox). Theme reaches views as the MCP Apps standard style variables. `displayMode` stays `inline`/`fullscreen` (the SDK's values); the slot is in `hostContext.mouaif.slot`. |
 | 7 | Host tools (`mouaif/*`) with permissions, host event forwarding | The dock updates live on `turn.end` and can insert a fix-it prompt into the composer. **Done**. The SDK has no host `tools/list` hook, so host tools are called by name (documented) rather than listed. Events come from the chat stream (`host_event` frames, unbuffered to followers), not from hooks. |
 | 8 | `settings.page`, `tool.renderer`, `project.card` | A custom renderer for `shell` output, an extension settings page. **Done**. Settings pages run in the active project. Renderers count toward the two-view budget. |
-| 9 | `model.context` permission (needs MCP Apps phase 2) | A ticket sheet sets "current ticket" context for the next turns. |
+| 9 | `model.context` permission (needs MCP Apps phase 2) | A ticket sheet sets "current ticket" context for the next turns. **Done** for extension views: `ui/update-model-context` with `model.context`, bounded and session-only, sent once per change with the next prompt as labelled data, an "App context" bar to view and clear. Context is kept when the view closes (a sheet sets the ticket and closes). Tool-result apps still get the unsupported-method error: MCP Apps plan phase 2 for them is separate. |
 
 Phases 1–4 are useful alone and touch no UI-sandbox code. Phases 6+ depend on the MCP Apps
 phase 0 hardening that already landed and should not ship to remote users before MCP Apps

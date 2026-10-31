@@ -8,6 +8,8 @@
 //          setBadge?, bridge() -> live bridge | null, open?() }
 
 export const COMPOSER_INSERT = 'mouaif:composer-insert';
+// A view changed the model context of a chat (AppContextBar.jsx reloads).
+export const APP_CONTEXT_CHANGED = 'mouaif:app-context-changed';
 
 const entries = new Set();
 const sheetOpeners = new Set();

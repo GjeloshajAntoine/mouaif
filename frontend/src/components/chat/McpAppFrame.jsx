@@ -4,7 +4,7 @@ import { fetchJson } from '../../api.js';
 import { useModal } from '../../hooks/useModal.js';
 import { boundedHeight, connectMcpApp, containerDimensionsFor } from './mcpAppBridge.js';
 import { THEME_PAINTED, surfaceHostContext, themeHostContext } from './appHostContext.js';
-import { performHostAction } from './extensionEvents.js';
+import { performHostAction, APP_CONTEXT_CHANGED } from './extensionEvents.js';
 import './mcp-app.css';
 
 // `surface` ({ extensionId, surfaceId, slot, projectName }) mounts an
@@ -202,6 +202,13 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
     const timeout = setTimeout(() => fail(new Error('App initialization timed out — tool result shown below.')), 10000);
     connectMcpApp({ iframe: frame.current, mount,
     hostContext: surface ? surfaceHostContext({ ...surface, chatId }) : undefined,
+    onModelContext: surface && chatId && Array.isArray(mount.surface?.permissions) && mount.surface.permissions.includes('model.context')
+      ? async (params, signal) => {
+        const response = await post('/context', { content: params.content, structuredContent: params.structuredContent }, AbortSignal.any([signal, ctl.signal]));
+        if (response.status !== 200) throw new Error(response.body.error || 'Model context was refused');
+        window.dispatchEvent(new CustomEvent(APP_CONTEXT_CHANGED));
+      }
+      : undefined,
     onReady: () => {
       clearTimeout(timeout);
       if (!active) return;

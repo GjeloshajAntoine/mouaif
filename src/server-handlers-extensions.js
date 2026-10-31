@@ -46,6 +46,18 @@ async function handleExtensions(req, res, parsed) {
       const slot = typeof query.slot === 'string' && query.slot ? query.slot : '';
       return sendJSON(res, 200, { surfaces: extensions.surfaces(query.projectDir, slot) });
     }
+    // The model context extension views set in a chat (src/app-context.js):
+    //   GET    /api/extensions/context?projectDir=&chatId=        -> { entries }
+    //   DELETE /api/extensions/context?projectDir=&chatId=&key=   -> { ok }   (no key: all)
+    if (urlPath === '/api/extensions/context' && (method === 'GET' || method === 'DELETE')) {
+      const appContext = require('./app-context.js');
+      if (typeof query.projectDir !== 'string' || typeof query.chatId !== 'string' || !query.projectDir || !query.chatId) {
+        return sendJSON(res, 400, { error: 'projectDir and chatId are required' });
+      }
+      if (method === 'GET') return sendJSON(res, 200, { entries: appContext.list(query.projectDir, query.chatId) });
+      appContext.clear(query.projectDir, query.chatId, typeof query.key === 'string' && query.key ? query.key : undefined);
+      return sendJSON(res, 200, { ok: true });
+    }
     const m = ROUTE_RE.exec(urlPath);
     if (!m) return sendJSON(res, 404, { error: 'not found' });
     const id = m[1];

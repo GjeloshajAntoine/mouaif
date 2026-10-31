@@ -31,6 +31,7 @@ import { ExtensionDocks, useExtensionSurfaces } from './ExtensionDocks.jsx';
 import { ExtensionSheet } from './ExtensionSheet.jsx';
 import { registerSheetOpener, COMPOSER_INSERT } from './extensionEvents.js';
 import { setToolRenderers } from './extensionRenderer.js';
+import { AppContextBar } from './AppContextBar.jsx';
 import { PreviewUrlPrompt } from './PreviewUrlPrompt.jsx';
 import { authorizationCard } from './cards.js';
 import { requestWebpreview, setStatus } from '../../api.js';
@@ -744,6 +745,8 @@ h(HooksDock, { projectDir, chatId }),
 h(ProjectHooksBar, { projectDir }),
 // Extension views docked above the composer (docs/features/extensions.md).
 h(ExtensionDocks, { projectDir, chatId }),
+// Context extension views gave the model, and whether it is sent yet.
+h(AppContextBar, { projectDir, chatId }),
 h('div', { class: 'chat-view__composer-row' },
 h('div', { class: 'chat-view__composer-tool' },
 h(FileToolbar, {
