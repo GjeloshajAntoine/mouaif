@@ -37,7 +37,9 @@ const ORIGINS = Object.freeze(['user', 'webhook', 'schedule', 'app']);
 // `subagent`, `chats`, `mouaif`) plus `mcp` for every MCP server tool.
 const FAMILIES = Object.freeze(['shell', 'file', 'subagent', 'chats', 'mouaif', 'mcp']);
 const SHELLS = Object.freeze({ bash: 'bash', sh: 'sh', node: process.execPath, python3: 'python3' });
-const SCRIPT_EXT = Object.freeze({ bash: '.sh', sh: '.sh', node: '.mjs', python3: '.py' });
+// A node script is a plain `.js` in a folder with no package.json, so Node
+// detects its module type: `require` and `import` both work.
+const SCRIPT_EXT = Object.freeze({ bash: '.sh', sh: '.sh', node: '.js', python3: '.py' });
 const ID_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
 const TOOL_RE = /^[A-Za-z0-9_*.-]{1,128}$/;
 const MAX_HOOKS = 50;
