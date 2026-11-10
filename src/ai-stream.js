@@ -470,9 +470,13 @@ async function runSingleToolCall(c, cx) {
       // Creating or updating an interactive app in the chat card always prompts
       // the user even when the family or tool is Allow. The request-only draft
       // and agent-to-app message delivery have no file or server side effects.
-      forcePrompt = args.request === undefined && args.message === undefined;
+      // A relink changes only which of this chat's artifacts the app reads, so
+      // it follows the tool's ordinary permission.
+      forcePrompt = args.request === undefined && args.message === undefined && args.relink === undefined;
       summary = args.request !== undefined
       ? 'Prepare development draft: ' + (args.name || 'On-the-fly app')
+      : args.relink !== undefined
+      ? 'Change the data an MCP App reads: ' + (args.path || '') + ' ' + JSON.stringify(args.relink).slice(0, 200)
       : args.message !== undefined
       ? 'Send message to MCP App (' + (args.name || 'On-the-fly app') + '): ' + String(args.message).slice(0, 200)
       : (args.path !== undefined && args.source !== undefined

@@ -39,9 +39,12 @@ function checkSource(source) {
 
 // The dependency's self-contained browser bundle stays inline: no CDN, build,
 // eval, Node execution, or network permission is needed for an imported app.
-function renderHtml(source, kind, name) {
-  checkSource(source);
+// `options.link` turns an HTML source's artifact links into inline data.
+function renderHtml(authored, kind, name, options = {}) {
+  checkSource(authored);
   if (kind !== 'html' && kind !== 'js') throw err('EBADINPUT', 'Invalid app source kind');
+  const source = options.link && kind === 'html' ? options.link(authored) : authored;
+  const limit = source === authored ? MAX_HTML_BYTES : MAX_LINKED_HTML_BYTES;
   const sdk = fs.readFileSync(require.resolve('@modelcontextprotocol/ext-apps/app-with-deps'), 'utf8');
   const binding = sdk.match(/(?:,|\{)([\w$]+) as App(?:,|\})/);
   if (!binding) throw err('EMCP_APP_RESOURCE', 'Unsupported MCP Apps browser bundle');
@@ -66,7 +69,9 @@ function renderHtml(source, kind, name) {
     const offset = head ? head.index + head[0].length : doctype ? doctype[0].length : 0;
     html = source.slice(0, offset) + script + source.slice(offset);
   }
-  if (Buffer.byteLength(html, 'utf8') > MAX_HTML_BYTES) throw err('EBADINPUT', 'Rendered app exceeds the 1 MiB limit');
+  if (Buffer.byteLength(html, 'utf8') > limit) {
+    throw err('EBADINPUT', limit === MAX_HTML_BYTES ? 'Rendered app exceeds the 1 MiB limit' : 'The app and its linked data exceed the 8 MiB limit; link a smaller artifact');
+  }
   return html;
 }
 
@@ -117,11 +122,46 @@ function writeExistingSource(root, filename, source) {
   fs.writeFileSync(target, source, { mode: stat.mode & 0o777 });
 }
 
+// An app's source, in the project or, for `artifact:<name>`, with the chat's artifacts.
+function readAppSource(projectDir, chatId, filename) {
+  const artifacts = require('./artifacts.js');
+  if (typeof filename !== 'string' || !filename.startsWith(artifacts.LINK_PREFIX)) return readSource(projectDir, filename);
+  const kind = sourceKind(filename);
+  const source = artifacts.readBytes(projectDir, chatId, filename).bytes.toString('utf8');
+  checkSource(source);
+  return { source, kind };
+}
+
+function writeAppSource(projectDir, chatId, filename, source) {
+  const artifacts = require('./artifacts.js');
+  if (filename.startsWith(artifacts.LINK_PREFIX)) artifacts.save(projectDir, chatId, filename, source);
+  else writeExistingSource(projectRoot(projectDir), filename, source);
+}
+
 // Shared by the HTTP routes and the model-facing native tool.
 // On-the-fly apps render as interactive views inside a chat card and never
 // register a project MCP server or MCP tool.
-function createApp(projectDir, body) {
+//
+// `context.chatId` is set when a chat's tool asks. A new app then becomes one of
+// that chat's artifacts, `path` may be `artifact:<name>`, and its data links are
+// checked now, so a wrong link is the tool's error rather than a broken card.
+function createApp(projectDir, request, context = {}) {
   const root = projectRoot(projectDir);
+  const chatId = context.chatId || null;
+  const artifacts = require('./artifacts.js');
+  // The path the project's configuration is keyed by, which `root` may not be:
+  // it decides where this chat's artifacts live.
+  const owner = context.projectDir || projectDir;
+  const body = { ...request };
+  if (typeof body.path === 'string' && body.path.startsWith(artifacts.LINK_PREFIX)) {
+    if (!chatId) throw err('EBADINPUT', 'artifact: paths belong to a chat');
+    body.path = artifacts.get(owner, chatId, body.path).link;
+  }
+  const linkOptions = chatId ? { link: html => artifacts.resolveLinks(owner, chatId, html) } : {};
+  if (body.relink !== undefined && (body.path === undefined || body.source !== undefined || body.request !== undefined || body.message !== undefined)) {
+    throw err('EBADINPUT', 'relink goes with path alone: it changes which artifact an existing app reads');
+  }
+  if (body.relink !== undefined && !chatId) throw err('EBADINPUT', 'relink belongs to a chat');
   const name = body.name === undefined ? 'On-the-fly app' : body.name;
   if (typeof name !== 'string' || !name.trim() || name.trim().length > 100) throw err('EBADINPUT', 'App name must be 1–100 characters');
   const title = name.trim();
@@ -153,23 +193,42 @@ function createApp(projectDir, body) {
   }
   let filename;
   let updated = false;
+  let relinked;
+  let links;
   if (isSourceUpdate) {
     const kind = sourceKind(body.path);
-    renderHtml(body.source, kind, title);
-    writeExistingSource(root, body.path, body.source);
+    renderHtml(body.source, kind, title, linkOptions);
+    writeAppSource(owner, chatId, body.path, body.source);
     filename = body.path;
     updated = true;
-  } else if (inputs[0] === 'path') {
-    const { source, kind } = readSource(root, body.path);
-    renderHtml(source, kind, title);
+    links = artifacts.listLinks(body.source);
+  } else if (inputs[0] === 'path' && body.relink !== undefined) {
+    const { source, kind } = readAppSource(owner, chatId, body.path);
+    const next = artifacts.relink(source, body.relink);
+    renderHtml(next.source, kind, title, linkOptions);
+    writeAppSource(owner, chatId, body.path, next.source);
     filename = body.path;
+    updated = true;
+    relinked = next.relinked;
+    links = artifacts.listLinks(next.source);
+  } else if (inputs[0] === 'path') {
+    const { source, kind } = readAppSource(owner, chatId, body.path);
+    renderHtml(source, kind, title, linkOptions);
+    filename = body.path;
+    links = artifacts.listLinks(source);
   } else {
     const kind = sourceKind(body.filename);
-    renderHtml(body.source, kind, title);
-    filename = newSourcePath(root, kind);
-    fs.writeFileSync(path.join(root, filename), body.source, { flag: 'wx', mode: 0o600 });
+    renderHtml(body.source, kind, title, linkOptions);
+    links = artifacts.listLinks(body.source);
+    if (chatId) {
+      const artifactName = artifacts.uniqueName(owner, chatId, path.basename(body.filename));
+      filename = artifacts.save(owner, chatId, artifactName, body.source, { createdBy: 'agent', description: title }).artifact.link;
+    } else {
+      filename = newSourcePath(root, kind);
+      fs.writeFileSync(path.join(root, filename), body.source, { flag: 'wx', mode: 0o600 });
+    }
   }
-  return updated ? { name: title, path: filename, updated: true } : { name: title, path: filename };
+  return { name: title, path: filename, ...(updated ? { updated: true } : {}), ...(relinked ? { relinked } : {}), ...(links && links.length ? { links } : {}) };
 }
 
-module.exports = { APP_DIR, MAX_SOURCE_BYTES, projectRoot, sourceKind, renderHtml, readSource, newSourcePath, developmentDraft, createApp };
+module.exports = { APP_DIR, MAX_SOURCE_BYTES, projectRoot, sourceKind, renderHtml, readSource, readAppSource, newSourcePath, developmentDraft, createApp };
