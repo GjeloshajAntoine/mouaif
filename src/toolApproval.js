@@ -40,7 +40,7 @@ function buildApprovalDetails(input) {
       const root = fs.realpathSync(details.workingDirectory);
       const target = fs.realpathSync(path.resolve(root, args.path || args.file));
       const relative = path.relative(root, target);
-      if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('outside working folder');
+      if (!relative || require('./util.js').relEscapes(relative)) throw new Error('outside working folder');
       const stat = fs.statSync(target);
       details.fileExists = true;
       if (stat.isFile()) {

@@ -65,7 +65,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const hideFileContent = require('../hideFileContent.js');
-const { err } = require('../util.js');
+const { err, relEscapes } = require('../util.js');
 
 // Caps applied when the caller did not override them in settings.
 const DEFAULT_MAX_MATCHES = 200;
@@ -492,7 +492,7 @@ function cleanRelPath(raw) {
 function toRelPath(root, p) {
   const abs = path.isAbsolute(p) ? path.resolve(p) : path.resolve(root, p);
   const rel = path.relative(root, abs);
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+  if (!rel || relEscapes(rel)) {
     throw err('EOUTSIDE_PROJECT', 'Path escapes the project root', { path: p });
   }
   return rel.split(path.sep).join('/');
@@ -504,7 +504,7 @@ function toAbsInside(root, rel) {
   try { real = fs.realpathSync(abs); } catch { real = null; }
   const check = real || abs;
   const relOut = path.relative(root, check);
-  if (relOut && (relOut.startsWith('..') || path.isAbsolute(relOut))) {
+  if (relOut && (relEscapes(relOut))) {
     throw err('EOUTSIDE_PROJECT', 'Path escapes the project root', { path: rel });
   }
   return check;
@@ -740,7 +740,7 @@ function toRel(scope, absPath) {
   let real = abs;
   try { real = fs.realpathSync(abs); } catch { /* keep the lexical path */ }
   const rel = path.relative(scope.root, real);
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+  if (!rel || relEscapes(rel)) {
     // Outside the project root: the walker never returns these, and neither
     // should the engine. Returning a marker makes the leak visible instead
     // of silently dropping or silently including it.

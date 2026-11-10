@@ -7,6 +7,7 @@
 // there is exactly one definition.
 
 const querystring = require('querystring');
+const path = require('path');
 
 // err(code, message, extra) — a typed Error with a machine-readable
 // `code`. `extra`, when given, is copied onto the error (path, size,
@@ -197,6 +198,14 @@ function errCodeToHttpStatus(code, def) {
   return HTTP_STATUS_BY_CODE[code] || (def === undefined ? 500 : def);
 }
 
+// relEscapes(rel) — true when a `path.relative(root, target)` result points
+// outside `root`: exactly `..`, a `../` (or `..\\`) prefix, or another drive.
+// A bare `rel.startsWith('..')` also matched names such as `..notes.md`, so a
+// real file inside the project was refused as an escape.
+function relEscapes(rel) {
+  return rel === '..' || rel.startsWith('..' + path.sep) || rel.startsWith('../') || path.isAbsolute(rel);
+}
+
 module.exports = {
 err,
 joinUrl,
@@ -207,5 +216,6 @@ projectModelRecord,
 PROJECT_MODEL_FIELDS,
 firstStringField,
 firstStringValue,
-errCodeToHttpStatus
+errCodeToHttpStatus,
+relEscapes
 };

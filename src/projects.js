@@ -39,6 +39,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const settings = require('./settings.js');
+const { relEscapes } = require('./util.js');
 
 // The per-project config file. Same name as settings.PROJECT_FILE: this is the
 // file the "Config file in the folder" option writes at add time and adopts
@@ -60,7 +61,7 @@ function isUnderHome(absPath) {
   // Same path, or a descendant.
   if (resolved === homeResolved) return true;
   const rel = path.relative(homeResolved, resolved);
-  return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+  return !!rel && !relEscapes(rel);
 }
 
 function ensureSafeRoot(absPath) {

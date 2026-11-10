@@ -52,7 +52,7 @@ The mode, allowlist, and timeouts live in `<projectDir>/.mouaif.json` under `too
 
 Every tool:
 
-- Refuses paths that escape the project root with `EOUTSIDE_PROJECT` (`. .`, absolute paths outside the root, and symlinks that point outside are all rejected).
+- Refuses paths that escape the project root with `EOUTSIDE_PROJECT` (`..` segments, absolute paths outside the root, and symlinks that point outside are all rejected). Only a whole `..` segment counts as an escape: a name such as `..notes.md` or a folder such as `...draft/` is an ordinary project file.
 - Skips generated/private directories during walks (`node_modules`, `.git`, `.mouaif`, `dist`, `build`).
 - Refuses text reads over `fileReadMaxLines` (default 10000 lines) or `fileReadMaxBytes` (default 4 MiB), including slices. This bounds server memory before decoding a large single-line file.
 - Attaches an image read as a picture (see [read-file-images.md](./read-file-images.md)) and refuses one over `fileReadMaxImageBytes` (default 4 MB). `startLine` / `endLine` do not apply to images.

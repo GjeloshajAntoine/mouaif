@@ -113,6 +113,14 @@ function writeFile(p, content) {
   assert(r1o.ok === false && r1o.result.error.code === 'EOUTSIDE_PROJECT', 'read_file EOUTSIDE_PROJECT on ..');
   const r1a = await files.runFileTool('read_file', { projectDir: root, args: { path: '/etc/hosts' } });
   assert(r1a.ok === false && r1a.result.error.code === 'EOUTSIDE_PROJECT', 'read_file EOUTSIDE_PROJECT on absolute outside');
+  // A name that merely starts with `..` is inside the project.
+  writeFile(path.join(root, '..notes.md'), 'dots');
+  const r1d = await files.runFileTool('read_file', { projectDir: root, args: { path: '..notes.md' } });
+  assert(r1d.ok === true && r1d.result.body === 'dots', 'read_file reads a ..-prefixed file name');
+  const r1dw = await files.runFileTool('write_file', { projectDir: root, args: { path: '...draft/x.md', content: 'x' } });
+  assert(r1dw.ok === true, 'write_file writes under a ...-prefixed folder');
+  fs.rmSync(path.join(root, '..notes.md'));
+  fs.rmSync(path.join(root, '...draft'), { recursive: true });
 
   // ---- runFileTool: list_files -----------------------------------
   writeFile(path.join(root, 'src', 'a.js'), 'a');

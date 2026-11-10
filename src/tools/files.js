@@ -86,7 +86,7 @@ const TEXT_EXTS = new Set(searchEngine.TEXT_EXTS);
 // ---- Errors ------------------------------------------------------------
 
 // Shared typed-error helper; single definition lives in src/util.js.
-const { err } = require('../util.js');
+const { err, relEscapes } = require('../util.js');
 
 // ---- Path safety -------------------------------------------------------
 
@@ -113,7 +113,7 @@ function toRelPath(root, p) {
   if (typeof p !== 'string' || !p.trim()) throw err('EBADINPUT', 'path is required');
   const abs = path.isAbsolute(p) ? path.resolve(p) : path.resolve(root, p);
   const rel = path.relative(root, abs);
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+  if (!rel || relEscapes(rel)) {
     throw err('EOUTSIDE_PROJECT', 'Path escapes the project root', { path: p });
   }
   return rel.split(path.sep).join('/');
@@ -134,7 +134,7 @@ function toAbsInside(root, rel) {
   catch { real = null; }
   if (real) {
     const rel2 = path.relative(root, real);
-    if (!rel2 || rel2.startsWith('..') || path.isAbsolute(rel2)) {
+    if (!rel2 || relEscapes(rel2)) {
       throw err('EOUTSIDE_PROJECT', 'Path escapes the project root', { path: rel });
     }
     return real;
@@ -161,7 +161,7 @@ function toAbsInside(root, rel) {
     }
     if (suffix) probeReal = path.join(probeReal, suffix);
     const rel2 = path.relative(root, probeReal);
-    if (!rel2 || rel2.startsWith('..') || path.isAbsolute(rel2)) {
+    if (!rel2 || relEscapes(rel2)) {
       throw err('EOUTSIDE_PROJECT', 'Path escapes the project root', { path: rel });
     }
     return probeReal;
@@ -170,7 +170,7 @@ function toAbsInside(root, rel) {
   // though the parent doesn't exist yet, e.g. mkdir -p). Verify the
   // original `abs` is at least lexically inside the root.
   const rel2 = path.relative(root, abs);
-  if (!rel2 || rel2.startsWith('..') || path.isAbsolute(rel2)) {
+  if (!rel2 || relEscapes(rel2)) {
     throw err('EOUTSIDE_PROJECT', 'Path escapes the project root', { path: rel });
   }
   return abs;

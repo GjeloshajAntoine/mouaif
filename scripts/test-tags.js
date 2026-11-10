@@ -65,6 +65,7 @@ fs.writeFileSync(path.join(PROJ, 'blob.xyz'), Buffer.from([0x00, 0x01, 0x02, 0xf
 check('toRelPath posix-normalizes', tags.toRelPath(PROJ, path.join('src', 'a.js')) === 'src/a.js');
 check('toRelPath accepts abs inside root', tags.toRelPath(PROJ, path.join(PROJ, 'src', 'a.js')) === 'src/a.js');
 throws('toRelPath refuses ..', () => tags.toRelPath(PROJ, '../evil.js'), 'EOUTSIDE_PROJECT');
+check('toRelPath keeps a ..-prefixed file name', tags.toRelPath(PROJ, '..notes.md') === '..notes.md');
 throws('toRelPath refuses absolute outside', () => tags.toRelPath(PROJ, path.resolve(os.tmpdir(), 'x.js')), 'EOUTSIDE_PROJECT');
 throws('toRelPath refuses empty', () => tags.toRelPath(PROJ, ''), 'EBADINPUT');
 

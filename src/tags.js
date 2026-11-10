@@ -31,7 +31,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { err } = require('./util.js');
+const { err, relEscapes } = require('./util.js');
 const settings = require('./settings.js');
 const hideFileContent = require('./hideFileContent.js');
 
@@ -78,7 +78,7 @@ function toRelPath(projectDir, p) {
   // Accept both an already-relative path and an absolute path inside root.
   const abs = path.isAbsolute(p) ? path.resolve(p) : path.resolve(rootResolved, p);
   const rel = path.relative(rootResolved, abs);
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+  if (!rel || relEscapes(rel)) {
     throw err('EOUTSIDE_PROJECT', 'Path escapes the project root', { path: p });
   }
   // Store POSIX-style so the file round-trips across OSes.
@@ -91,14 +91,14 @@ function toAbsInside(projectDir, relPath) {
   const rootResolved = path.resolve(projectDir);
   const abs = path.resolve(rootResolved, relPath);
   const rel = path.relative(rootResolved, abs);
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+  if (!rel || relEscapes(rel)) {
     throw err('EOUTSIDE_PROJECT', 'Path escapes the project root', { path: relPath });
   }
   // Symlink guard: if the file exists and its realpath leaves root, refuse.
   try {
     const real = fs.realpathSync(abs);
     const realRel = path.relative(fs.realpathSync(rootResolved), real);
-    if (realRel.startsWith('..') || path.isAbsolute(realRel)) {
+    if (relEscapes(realRel)) {
       throw err('EOUTSIDE_PROJECT', 'Symlink target escapes the project root', { path: relPath });
     }
   } catch (e) {
