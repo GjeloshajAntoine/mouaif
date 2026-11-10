@@ -116,19 +116,31 @@ async function networkFirstNavigation(request) {
   // fallback uses a fresh Request keyed at the root because the
   // original request may have included a query string we don't
   // care about for the offline shell.
+  //
+  // A tab the browser discarded in the background reloads when the user
+  // comes back, often on a half-dead connection where fetch() neither
+  // answers nor fails for a minute or more. Waiting on it left a blank
+  // page. When a cached shell exists, give the network a short head start
+  // and then serve the shell; the network response still refreshes the
+  // cache when it lands.
   const cache = await caches.open(SHELL_CACHE);
-  try {
-    const fresh = await fetch(request);
-    if (fresh && fresh.ok) {
-      cache.put('/', fresh.clone()).catch(() => {});
-    }
+  const cached = await cache.match('/');
+  const network = fetch(request).then((fresh) => {
+    if (fresh && fresh.ok) cache.put('/', fresh.clone()).catch(() => {});
     return fresh;
-  } catch (err) {
-    const cached = await cache.match('/');
-    if (cached) return cached;
-    throw err;
+  });
+  if (!cached) return network;
+  network.catch(() => {});
+  const timeout = new Promise((resolve) => setTimeout(() => resolve(null), NAVIGATION_TIMEOUT_MS));
+  try {
+    const winner = await Promise.race([network, timeout]);
+    return winner || cached;
+  } catch {
+    return cached;
   }
 }
+
+const NAVIGATION_TIMEOUT_MS = 3000;
 
 async function cacheFirstAsset(request) {
   const cache = await caches.open(CACHE_NAME);
