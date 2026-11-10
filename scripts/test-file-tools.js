@@ -139,6 +139,25 @@ function writeFile(p, content) {
   assert(r1ll.ok === false && r1ll.result.error.code === 'EOUTSIDE_PROJECT', 'read_file still refuses an in-project symlink leading out, named through the alias');
   fs.rmSync(path.join(root, 'leak.txt'));
   fs.rmSync(aliasDir, { recursive: true, force: true });
+
+  // A dangling symlink is not a missing name: writing to it creates its
+  // target, so the target is what must stay inside the project.
+  fs.symlinkSync(path.join(outsideDir, 'planted.txt'), path.join(root, 'dangling-out'));
+  const r1dl = await files.runFileTool('write_file', { projectDir: root, args: { path: 'dangling-out', content: 'x' } });
+  assert(r1dl.ok === false && r1dl.result.error.code === 'EOUTSIDE_PROJECT', 'write_file refuses a dangling symlink leading out');
+  assert(!fs.existsSync(path.join(outsideDir, 'planted.txt')), 'write_file creates nothing outside through a dangling symlink');
+  fs.symlinkSync(path.join(outsideDir, 'gone'), path.join(root, 'dangling-dir'));
+  const r1dd = await files.runFileTool('write_file', { projectDir: root, args: { path: 'dangling-dir/sub/f.txt', content: 'x' } });
+  assert(r1dd.ok === false && r1dd.result.error.code === 'EOUTSIDE_PROJECT', 'write_file refuses a new path below a dangling symlink leading out');
+  assert(!fs.existsSync(path.join(outsideDir, 'gone')), 'write_file creates no folder outside through a dangling symlink');
+  fs.symlinkSync('dangling-target.md', path.join(root, 'dangling-in'));
+  const r1di = await files.runFileTool('write_file', { projectDir: root, args: { path: 'dangling-in', content: 'in' } });
+  assert(r1di.ok === true && fs.readFileSync(path.join(root, 'dangling-target.md'), 'utf8') === 'in', 'write_file still writes through a dangling symlink that stays inside');
+  fs.symlinkSync('loop-b', path.join(root, 'loop-a'));
+  fs.symlinkSync('loop-a', path.join(root, 'loop-b'));
+  const r1lp = await files.runFileTool('write_file', { projectDir: root, args: { path: 'loop-a', content: 'x' } });
+  assert(r1lp.ok === false && r1lp.result.error.code === 'ELOOP', 'write_file refuses a symlink loop');
+  for (const name of ['dangling-out', 'dangling-dir', 'dangling-in', 'dangling-target.md', 'loop-a', 'loop-b']) fs.rmSync(path.join(root, name));
   fs.rmSync(outsideDir, { recursive: true, force: true });
 
   // ---- runFileTool: list_files -----------------------------------

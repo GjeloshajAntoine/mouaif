@@ -161,41 +161,43 @@ function toAbsInside(root, rel) {
     }
     return real;
   }
-  // Slow path: file (or a parent) doesn't exist. Walk up until we
-  // find an ancestor that does, realpath that, then re-join. Each
-  // step is still subject to the same containment check. `suffix`
-  // accumulates the parts we peeled off on the way up, joined back
-  // on the way down.
+  // Slow path: file (or a parent) doesn't exist. Walk up until we find an
+  // ancestor that does, realpath that, then re-join the peeled segments and
+  // check containment of the result.
+  //
+  // A segment that fails realpath is not always missing: a dangling symlink
+  // fails it too, and writing to it creates the link's target. Peeling it
+  // like a missing name let write_file create a file anywhere a link inside
+  // the project pointed. So a symlink segment is replaced by its target and
+  // the walk goes on from there; the final check then sees where the write
+  // would really land.
   let probe = abs;
-  let suffix = '';
-  while (probe !== root && probe !== path.dirname(probe)) {
-    let probeReal;
-    try { probeReal = fs.realpathSync(probe); }
-    catch {
-      // Append the segment we are about to step over to `suffix`,
-      // then step the probe up to its parent. Order matters: the
-      // basename we are peeling is `path.basename(probe)` BEFORE we
-      // reassign `probe` to its dirname.
-      const peeled = path.basename(probe);
-      probe = path.dirname(probe);
-      suffix = suffix ? (peeled + path.sep + suffix) : peeled;
+  const suffix = [];
+  let hops = 0;
+  let resolved;
+  while (true) {
+    try {
+      resolved = path.join(fs.realpathSync(probe), ...suffix);
+      break;
+    } catch { /* missing, or a dangling link */ }
+    let link = null;
+    try { if (fs.lstatSync(probe).isSymbolicLink()) link = fs.readlinkSync(probe); }
+    catch { /* missing */ }
+    if (link !== null) {
+      if (++hops > 40) throw err('ELOOP', 'Too many levels of symbolic links', { path: rel });
+      probe = path.resolve(canonicalPath(path.dirname(probe)), link);
       continue;
     }
-    if (suffix) probeReal = path.join(probeReal, suffix);
-    const rel2 = path.relative(root, probeReal);
-    if (!rel2 || relEscapes(rel2)) {
-      throw err('EOUTSIDE_PROJECT', 'Path escapes the project root', { path: rel });
-    }
-    return probeReal;
+    const parent = path.dirname(probe);
+    if (parent === probe) { resolved = path.join(probe, ...suffix); break; }
+    suffix.unshift(path.basename(probe));
+    probe = parent;
   }
-  // If we walked all the way to the root, the file is "inside" (even
-  // though the parent doesn't exist yet, e.g. mkdir -p). Verify the
-  // original `abs` is at least lexically inside the root.
-  const rel2 = path.relative(root, abs);
+  const rel2 = path.relative(root, resolved);
   if (!rel2 || relEscapes(rel2)) {
     throw err('EOUTSIDE_PROJECT', 'Path escapes the project root', { path: rel });
   }
-  return abs;
+  return resolved;
 }
 
 // ---- artifact: paths ---------------------------------------------------
