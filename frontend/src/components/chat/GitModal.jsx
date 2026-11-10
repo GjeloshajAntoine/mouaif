@@ -504,21 +504,21 @@ export function GitModal(props) {
         title: 'Unstaged changes',
         count: unstaged.length,
         open: sectionOpen(state, 'unstaged'),
-        onToggle: toggle
+        onToggle: toggle,
+        action: unstaged.length > 0
+          ? h('button', {
+            class: 'gm__file-action gm__stage-all',
+            type: 'button',
+            disabled: !!busy,
+            onClick: stageAll,
+            'aria-label': 'Stage all ' + unstaged.length + ' unstaged changes',
+            title: 'Stage all unstaged changes'
+          }, 'Stage all')
+          : null
       },
         unstaged.length === 0
           ? h('div', { class: 'gm__empty' }, 'Working tree clean')
-          : h(Fragment, null,
-            unstaged.map((f) => h(FileRow, { key: f.path, file: f, action: 'add', onAction: onFileAction, busy: !!busy })),
-            h('button', {
-              class: 'gm__stage-all',
-              type: 'button',
-              disabled: !!busy,
-              onClick: stageAll,
-              'aria-label': 'Stage all unstaged changes',
-              title: 'Stage all unstaged changes'
-            }, 'Stage all (' + unstaged.length + ')')
-          )
+          : unstaged.map((f) => h(FileRow, { key: f.path, file: f, action: 'add', onAction: onFileAction, busy: !!busy }))
       ),
       h(Section, {
         id: 'commits',
@@ -659,18 +659,24 @@ function GitConfirm({ confirm, busy, onCancel, onConfirm, sheetRef }) {
 
 // One collapsible section. Open state is owned by the modal's reducer, so
 // it survives a refresh.
-function Section({ id, title, count, open, onToggle, children }) {
+// `action` is an optional button shown at the right of the header, outside
+// the toggle (a button can't nest in a button), so it stays in view even when
+// the list under it is long or the section is collapsed.
+function Section({ id, title, count, open, onToggle, action, children }) {
   return h('div', { class: 'gm__section' },
-    h('button', {
-      class: 'gm__section-head' + (open ? ' is-open' : ''),
-      type: 'button',
-      onClick: () => onToggle(id),
-      'aria-expanded': String(open),
-      'aria-controls': 'gm-section-' + id
-    },
-      h('span', { class: 'gm__section-caret', 'aria-hidden': 'true' }, open ? '\u25BE' : '\u25B8'),
-      h('span', { class: 'gm__section-title' }, title),
-      h('span', { class: 'gm__section-count' }, count || '')
+    h('div', { class: 'gm__section-bar' },
+      h('button', {
+        class: 'gm__section-head' + (open ? ' is-open' : ''),
+        type: 'button',
+        onClick: () => onToggle(id),
+        'aria-expanded': String(open),
+        'aria-controls': 'gm-section-' + id
+      },
+        h('span', { class: 'gm__section-caret', 'aria-hidden': 'true' }, open ? '\u25BE' : '\u25B8'),
+        h('span', { class: 'gm__section-title' }, title),
+        h('span', { class: 'gm__section-count' }, count || '')
+      ),
+      action || null
     ),
     open ? h('div', { id: 'gm-section-' + id, class: 'gm__section-body' }, children) : null
   );

@@ -2037,7 +2037,14 @@ min-height: var(--tap);
 .gm__section {
   border-bottom: 1px solid var(--border);
 }
+/* Header row: the toggle fills it; an optional action button sits right. */
+.gm__section-bar {
+  display: flex;
+  align-items: center;
+}
 .gm__section-head {
+  flex: 1 1 auto;
+  min-width: 0;
   width: 100%;
   display: flex;
   align-items: center;
@@ -2226,26 +2233,8 @@ transition: background 80ms ease, opacity 80ms ease;
 }
 .gm__commit-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 /* Stage-all button between the staged and unstaged sections */
-.gm__stage-all {
-width: 100%;
-min-height: var(--tap);
-padding: 8px 12px 8px 24px;
-border: 0;
-border-top: 1px solid var(--border);
-background: var(--surface-2);
-color: var(--accent);
-font: inherit;
-font-size: 0.72rem;
-font-weight: 600;
-text-align: left;
-cursor: pointer;
-transition: background 80ms ease;
--webkit-tap-highlight-color: transparent;
-}
-@media (hover: hover) {
-  .gm__stage-all:hover { background: var(--surface-3); }
-}
-.gm__stage-all:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Stage all sits in the Unstaged header, styled as a row action. */
+.gm__stage-all { color: var(--accent); }
 
 /* Diff */
 .gm__diff {
