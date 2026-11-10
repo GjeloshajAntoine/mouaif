@@ -39,6 +39,11 @@ function fail(code, message) {
 function isObject(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
 
 // ---- The per-extension store -------------------------------------------------
+//
+// Rows are keyed by an owner, not the bare extension id: `app:<id>` for an
+// app extension, `project:<id>:<project dir>` for a project one. A project
+// file with the same id as an app extension (it takes its place there) must
+// never read or wipe the values the app extension stored, such as tokens.
 
 const CREATE = `
   CREATE TABLE IF NOT EXISTS extension_store (
@@ -53,8 +58,19 @@ function store() {
   if (db) return db;
   const d = require('./settings.js').getDb();
   d.exec(CREATE);
+  // Rows written before owners were scoped belong to app extensions (ids
+  // never contain ':').
+  d.exec(`UPDATE OR IGNORE extension_store SET extension_id = 'app:' || extension_id WHERE instr(extension_id, ':') = 0;
+    DELETE FROM extension_store WHERE instr(extension_id, ':') = 0;`);
   db = d;
   return d;
+}
+
+// storeOwner({ scope, extensionId, projectDir }) -> the store key of that extension.
+function storeOwner({ scope, extensionId, projectDir }) {
+  if (scope !== 'project') return 'app:' + extensionId;
+  const canonical = require('./settings.js').canonicalProjectDir(projectDir) || String(projectDir || '');
+  return 'project:' + extensionId + ':' + canonical;
 }
 
 function storeGet(extensionId, key) {
@@ -82,8 +98,9 @@ function storeSet(extensionId, key, value) {
     ON CONFLICT(extension_id, key) DO UPDATE SET value = excluded.value`).run(extensionId, key, text);
 }
 
-function removeExtensionStore(extensionId) {
-  try { store().prepare('DELETE FROM extension_store WHERE extension_id = ?').run(extensionId); } catch { /* store down */ }
+// removeExtensionStore(owner) — an owner from storeOwner().
+function removeExtensionStore(owner) {
+  try { store().prepare('DELETE FROM extension_store WHERE extension_id = ?').run(owner); } catch { /* store down */ }
 }
 
 // ---- Running -------------------------------------------------------------------
@@ -101,7 +118,7 @@ function result(data, clientAction) {
 }
 
 // runHostTool(mount, name, args) -> CallToolResult (+ clientAction)
-// mount: a surface mount { kind: 'surface', projectDir, chatId, extensionId, permissions }
+// mount: a surface mount { kind: 'surface', scope, projectDir, chatId, extensionId, permissions }
 function runHostTool(mount, name, args) {
   if (!mount || mount.kind !== 'surface') throw fail('EMCP_VISIBILITY', 'mouaif/ tools are only for extension views');
   if (typeof name !== 'string' || !name.startsWith(PREFIX)) throw fail('EBADINPUT', 'not a mouaif/ tool');
@@ -143,12 +160,12 @@ function runHostTool(mount, name, args) {
   }
   if (tool === 'settings.get') {
     if (a.key !== undefined && typeof a.key !== 'string') throw fail('EBADINPUT', 'key must be a string');
-    return result({ value: storeGet(mount.extensionId, a.key) });
+    return result({ value: storeGet(storeOwner(mount), a.key) });
   }
   // settings.set
   if (typeof a.key !== 'string' || !a.key || a.key.length > 128) throw fail('EBADINPUT', 'key (1–128 characters) is required');
   if (a.value === undefined) throw fail('EBADINPUT', 'value is required (null deletes the key)');
-  storeSet(mount.extensionId, a.key, a.value);
+  storeSet(storeOwner(mount), a.key, a.value);
   return result({ ok: true });
 }
 
@@ -164,4 +181,4 @@ function hostEventsWanted(projectDir) {
   return out;
 }
 
-module.exports = { PREFIX, TOOLS, runHostTool, hostEventsWanted, removeExtensionStore, _storeGet: storeGet };
+module.exports = { PREFIX, TOOLS, runHostTool, hostEventsWanted, storeOwner, removeExtensionStore, _storeGet: storeGet };

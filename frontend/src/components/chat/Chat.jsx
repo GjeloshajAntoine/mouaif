@@ -754,7 +754,8 @@ h(HooksDock, { projectDir, chatId }),
 // The project's hooks while they wait for a review (docs/features/hooks.md).
 h(ProjectHooksBar, { projectDir }),
 // Extension views docked above the composer (docs/features/extensions.md).
-h(ExtensionDocks, { projectDir, chatId }),
+h(ExtensionDocks, { projectDir, chatId,
+  onAuthorize: (request, signal) => authorizationCard({ ...request, signal }, projectDir, chatId, refs) }),
 // Context extension views gave the model, and whether it is sent yet.
 h(AppContextBar, { projectDir, chatId }),
 h('div', { class: 'chat-view__composer-row' },

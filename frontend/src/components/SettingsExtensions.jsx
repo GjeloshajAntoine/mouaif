@@ -143,9 +143,13 @@ export function SettingsExtensionsView() {
       if (on) await api('PUT', '/api/extensions/' + ext.id, { enabled: true });
       else await api('DELETE', '/api/extensions/' + ext.id);
       setStatus({ text: on ? ext.name + ' is on' : ext.name + ' removed', kind: 'ok' });
-    } catch (e) { setStatus({ text: e.message, kind: 'error' }); }
-    setPending(null);
-    reload();
+      setPending(null);
+      reload();
+    } catch (e) {
+      // Keep the reviewed manifest visible so a transient failure can be
+      // retried without importing the file again.
+      setStatus({ text: e.message, kind: 'error' });
+    }
   }
 
   const app = data ? data.app : [];

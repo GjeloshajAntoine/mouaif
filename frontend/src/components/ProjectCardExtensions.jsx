@@ -9,17 +9,25 @@ import { useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../api.js';
 import { safeMode } from '../theme/runtime.js';
 
+const EXTENSIONS_CHANGED = 'mouaif:extensions-changed';
+
 export function ProjectCardExtensions({ projectDir }) {
   const [list, setList] = useState([]);
   const [open, setOpen] = useState(null);
   const [Sheet, setSheet] = useState(null);
+  const [refresh, setRefresh] = useState(0);
   useEffect(() => {
-    if (safeMode || !projectDir) return undefined;
+    if (safeMode || !projectDir) { setList([]); return undefined; }
     let stopped = false;
     fetchJson('/api/extensions/surfaces?projectDir=' + encodeURIComponent(projectDir) + '&slot=project.card')
       .then((r) => { if (!stopped && r.status === 200) setList(r.body.surfaces || []); }, () => {});
     return () => { stopped = true; };
-  }, [projectDir]);
+  }, [projectDir, refresh]);
+  useEffect(() => {
+    const bump = () => setRefresh((n) => n + 1);
+    window.addEventListener(EXTENSIONS_CHANGED, bump);
+    return () => window.removeEventListener(EXTENSIONS_CHANGED, bump);
+  }, []);
   useEffect(() => {
     if (!open || Sheet) return;
     import('./chat/ExtensionSheet.jsx').then((m) => setSheet(() => m.ExtensionSheet), () => setOpen(null));

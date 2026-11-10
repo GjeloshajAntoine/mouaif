@@ -178,8 +178,7 @@ const CREATE = `
     manifest    TEXT NOT NULL,
     enabled     INTEGER NOT NULL,
     imported_at INTEGER NOT NULL,
-    server_id   TEXT,
-    position    INTEGER NOT NULL
+    server_id   TEXT
   )
 `;
 let db = null;
@@ -187,12 +186,19 @@ function store() {
   if (db) return db;
   const d = require('./settings.js').getDb();
   d.exec(CREATE);
+  // Stores from before extensions listed in rowid order carry an unused column
+  // that is NOT NULL, so an import would fail on it.
+  if (d.prepare("PRAGMA table_info('extension')").all().some((c) => c.name === 'position')) {
+    d.exec('ALTER TABLE extension DROP COLUMN position');
+  }
   db = d;
   return d;
 }
 
+// First-import order: re-importing an id updates its row in place, so it keeps
+// its place in the list.
 function appRows() {
-  try { return store().prepare('SELECT * FROM extension ORDER BY position, imported_at').all(); }
+  try { return store().prepare('SELECT * FROM extension ORDER BY rowid').all(); }
   catch { return []; }
 }
 
@@ -213,9 +219,20 @@ function parseRow(row) {
 function summary(ext) {
   return {
     permissions: ext.permissions.map((p) => ({ id: p, text: PERMISSIONS[p] })),
-    server: ext.server ? (ext.server.ref ? { ref: ext.server.ref } : { registers: ext.server.name, command: ext.server.command || null, url: ext.server.url || null, args: ext.server.args || [] }) : null,
+    server: ext.server ? (ext.server.ref ? { ref: ext.server.ref } : {
+      registers: ext.server.name,
+      command: ext.server.command || null,
+      url: ext.server.url || null,
+      args: ext.server.args || [],
+      envKeys: Object.keys(ext.server.env || {}).sort(),
+      cwd: ext.server.cwd || null,
+      transport: ext.server.transport || null,
+      headerKeys: Object.keys(ext.server.headers || {}).sort()
+    }) : null,
     hooks: ext.hooks,
-    ui: ext.ui.map((u) => ({ id: u.id, slot: u.slot, title: u.title, source: u.resourceUri || 'inline html' }))
+    // A renderer's tool patterns: it sees those calls' arguments and results.
+    ui: ext.ui.map((u) => Object.assign({ id: u.id, slot: u.slot, title: u.title, source: u.resourceUri || 'inline html' },
+      u.match ? { tools: u.match.tool.slice() } : {}))
   };
 }
 
@@ -227,10 +244,9 @@ function importApp(raw) {
   const ext = validate(raw, { scope: 'app' });
   const existing = appRow(ext.id);
   if (existing) unregisterServer(existing);
-  const position = existing ? existing.position : appRows().reduce((m, r) => Math.max(m, r.position), -1) + 1;
-  store().prepare(`INSERT INTO extension (id, manifest, enabled, imported_at, server_id, position) VALUES (?, ?, 0, ?, NULL, ?)
+  store().prepare(`INSERT INTO extension (id, manifest, enabled, imported_at, server_id) VALUES (?, ?, 0, ?, NULL)
     ON CONFLICT(id) DO UPDATE SET manifest = excluded.manifest, enabled = 0, imported_at = excluded.imported_at, server_id = NULL`)
-    .run(ext.id, JSON.stringify(raw), Date.now(), position);
+    .run(ext.id, JSON.stringify(raw), Date.now());
   return { extension: viewApp(appRow(ext.id)), summary: summary(ext), replaced: !!existing };
 }
 
@@ -266,8 +282,11 @@ function removeApp(id) {
   if (!row) return false;
   unregisterServer(row);
   store().prepare('DELETE FROM extension WHERE id = ?').run(id);
-  // Its mouaif/settings.* values go with it.
-  try { require('./extension-host-tools.js').removeExtensionStore(id); } catch { /* store down */ }
+  // Its mouaif/settings.* values go with it (a project extension's are its own).
+  try {
+    const hostTools = require('./extension-host-tools.js');
+    hostTools.removeExtensionStore(hostTools.storeOwner({ scope: 'app', extensionId: id }));
+  } catch { /* store down */ }
   return true;
 }
 
@@ -340,10 +359,9 @@ function projectFiles(projectDir) {
     h.update('extension\n' + (item.raw ? projectHooks.canonical(item.raw) : text) + '\n');
     const files = [];
     for (const hook of (item.ext ? item.ext.hooks : [])) {
-      if (hook.handler.kind !== 'command' || !hook.handler.command) continue;
-      for (const rel of projectHooks.referencedFiles(projectDir, hook.handler.command)) if (!files.includes(rel)) files.push(rel);
+      for (const rel of projectHooks.hookFiles(projectDir, hook)) if (!files.includes(rel)) files.push(rel);
     }
-    for (const rel of files.slice(0, 20)) {
+    for (const rel of files) {
       try { h.update('file ' + rel + '\n'); h.update(fs.readFileSync(path.join(projectDir, rel))); h.update('\n'); }
       catch { h.update('missing ' + rel + '\n'); }
     }
@@ -404,12 +422,13 @@ function serverSlug(projectDir, ext, row) {
 
 // active(projectDir) -> [{ ext, scope, serverSlug }] — enabled app extensions
 // not switched off here, then trusted project extensions not switched off.
-// A project file shadows an app extension with the same id.
-function active(projectDir) {
+// A trusted project extension takes the place of an app extension with the
+// same id. An untrusted, changed or broken file does not, so dropping a file
+// in a repository cannot switch off one of your extensions.
+function active(projectDir, project = projectFiles(projectDir)) {
   const off = projectDir ? projectOff(projectDir) : new Set();
   const out = [];
-  const project = projectDir ? projectFiles(projectDir) : [];
-  const projectIds = new Set(project.map((x) => x.id));
+  const projectIds = new Set(project.filter((x) => x.trusted && x.ext).map((x) => x.id));
   for (const row of appRows()) {
     if (row.enabled !== 1 || off.has(row.id) || projectIds.has(row.id)) continue;
     const { ext } = parseRow(row);
@@ -422,7 +441,10 @@ function active(projectDir) {
   return out;
 }
 
-// Small per-project cache: hooks run on every tool call.
+// Small per-project cache: hooks run on every tool call. It only spares the app
+// side (rows, project switches, server slugs). Project files and their trust are
+// read on every lookup, because a tool call can edit a script and trigger it at
+// once; a project with no extensions pays one failed readdir.
 const cache = new Map();
 const CACHE_MS = 2000;
 
@@ -430,10 +452,12 @@ const CACHE_MS = 2000;
 // `<extension>/<hook>`, `extension` set, and mcp hooks bound to the server.
 function runtimeHooks(projectDir) {
   const key = projectDir || '';
+  const project = projectFiles(projectDir);
+  const state = project.map((x) => x.id + ':' + x.hash + ':' + x.trusted).join('|');
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
+  if (hit && hit.state === state && Date.now() - hit.at < CACHE_MS) return hit.value;
   const value = { app: [], project: [] };
-  for (const { ext, scope, serverSlug: slug } of active(projectDir)) {
+  for (const { ext, scope, serverSlug: slug } of active(projectDir, project)) {
     for (const hook of ext.hooks) {
       const h = Object.assign({}, hook, { id: ext.id + '/' + hook.id, extension: ext.id });
       if (scope === 'project') h.scope = 'project';
@@ -441,7 +465,7 @@ function runtimeHooks(projectDir) {
       value[scope].push(h);
     }
   }
-  cache.set(key, { at: Date.now(), value });
+  cache.set(key, { at: Date.now(), state, value });
   return value;
 }
 

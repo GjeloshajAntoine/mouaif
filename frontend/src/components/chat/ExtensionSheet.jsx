@@ -14,7 +14,7 @@ import { PuzzleIcon } from './ExtensionDocks.jsx';
 import { registerSurface, unregisterSurface } from './extensionEvents.js';
 import './extension-ui.css';
 
-export function ExtensionSheet({ projectDir, chatId, surface, onClose }) {
+export function ExtensionSheet({ projectDir, chatId, surface, onClose, onAuthorize }) {
   const sheetRef = useModal({ onClose: () => { if (onClose) onClose(); } });
   const id = surface.extensionId + '/' + surface.surfaceId;
   const bridge = useRef(null);
@@ -41,7 +41,8 @@ export function ExtensionSheet({ projectDir, chatId, surface, onClose }) {
       h('button', { type: 'button', class: 'btn ext-sheet__close', onClick: onClose, 'aria-label': 'Close ' + surface.title }, 'Close')),
     h('div', { class: 'ext-sheet__body' },
       h(McpAppFrame, { projectDir, chatId, callId: 'sheet:' + id,
-        surface: { extensionId: surface.extensionId, surfaceId: surface.surfaceId, slot: 'chat.sheet',
-          projectName: (activeProject.value && activeProject.value.name) || '' },
-        onBridge: (b) => { bridge.current = b; } }))));
+      surface: { extensionId: surface.extensionId, surfaceId: surface.surfaceId, slot: 'chat.sheet',
+      projectName: (activeProject.value && activeProject.value.name) || '' },
+      onAuthorize,
+      onBridge: (b) => { bridge.current = b; } }))));
 }

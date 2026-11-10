@@ -71,10 +71,11 @@ Each `ui` entry is a **view**: a small web page (an MCP App) that mouaif runs sa
 
 - **`chat.dock`**: a bar above the message box in every chat where the extension is on, showing the view's title and a badge the view can set. **Open** shows the view under the bar, up to 30% of the screen height and taller if you drag its corner. The bar remembers whether you left it open, and `"collapsed": "open"` starts it open.
 - **`chat.sheet`**: an entry in the chat's file menu (next to custom actions) that opens the view in a bottom sheet. The view runs while the sheet is open.
-- **`tool.renderer`** (with `"match": { "tool": ["shell", "mcp__github__*"] }`): replaces the body of matching tool cards, built when you expand the card. The view receives the call's arguments and result through the standard MCP Apps notifications, so an existing MCP App works as a renderer unchanged. A native tool's JSON result arrives as `structuredContent`. The ordinary result stays under **Raw result**. A renderer sees the arguments and results of the tools it matches, and the permission screen says so.
+- **`tool.renderer`** (with `"match": { "tool": ["shell", "mcp__github__*"] }`): replaces the body of matching tool cards, built when you expand the card. The view receives the call's arguments and result through the standard MCP Apps notifications, so an existing MCP App works as a renderer unchanged. A native tool's JSON result arrives as `structuredContent`. The ordinary result stays under **Raw result**. A renderer sees the arguments and results of the tools it matches, and the permission screen lists those tools (or says **Every tool call** for `*`).
 - **`settings.page`**: a page at `#/settings/extensions/<id>/<surface>`, linked from the extension's card in Settings → Extensions. It runs in the active project, with no chat.
 - **`project.card`**: a chip under the chats of every project where the extension is on. Tapping it opens the view in a sheet, with no chat.
 - Only **two** docked views or renderers run at once in a tab: opening a third closes the one you used least recently (a renderer then shows **Show …** to bring it back). A view also closes when the tab is hidden and offers **Retry** when you come back. Each view is a browser process, and mouaif's host is small.
+- Views load through the app's own port, so a Docker install has nothing extra to publish.
 - `?safe` in the address shows no extension views.
 
 A view receives the active theme through the MCP Apps host context: the standard style variables (`--color-background-primary`, `--color-text-primary`, `--font-sans`, `--border-radius-md`, …) mapped from the mouaif theme, plus `theme` (`light` or `dark`, from the theme's background). It is updated when you switch themes. `hostContext.mouaif` carries `slot`, `extensionId`, `surfaceId`, `chatId`, `projectName` and the raw mouaif tokens (`--bg`, `--surface`, `--fg`, `--accent`, …).
@@ -94,7 +95,7 @@ It can also call **host tools**: ordinary MCP `tools/call` requests whose name s
 | `mouaif/chat.badge` `{ text, tone? }` | none | Sets the dock chip's badge (up to 8 characters, empty clears it), tone `info`, `ok`, `warn` or `error` |
 | `mouaif/chat.open_sheet` `{ surfaceId }` | none | Opens one of the same extension's sheets |
 | `mouaif/settings.get` `{ key? }` | `storage` | Reads the extension's own stored values (one key or all) |
-| `mouaif/settings.set` `{ key, value }` | `storage` | Stores a JSON value (`null` deletes it). This is the extension's own store, 64 KB per extension, not mouaif's settings, and it is deleted with the extension. |
+| `mouaif/settings.set` `{ key, value }` | `storage` | Stores a JSON value (`null` deletes it). This is the extension's own store, 64 KB per extension, not mouaif's settings, and it is deleted with the extension. A project extension has its own store, even when it shares an app extension's id. |
 
 In an inline view: `await window.mouaifApp.callServerTool({ name: 'mouaif/chat.badge', arguments: { text: '2 fail', tone: 'error' } })`.
 

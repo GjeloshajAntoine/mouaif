@@ -29,7 +29,7 @@ const APP_FILE = path.join('scripts', 'long-running-agent-mockup', 'agent-panel.
 const appSource = fs.readFileSync(path.join(process.cwd(), APP_FILE), 'utf8');
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-agent-panel-'));
-const sandbox = createSandboxService({ host: '127.0.0.1' });
+const sandbox = createSandboxService();
 const makeHtml = () => renderHtml(appSource, 'html', 'Agent run control');
 
 const bundle = await build({ stdin: { resolveDir: process.cwd(), loader: 'jsx', contents: `
@@ -59,6 +59,7 @@ const appMessages = [];
 const server = http.createServer(async (req, res) => {
   const json = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
   let raw = ''; for await (const chunk of req) raw += chunk;
+  if (req.url.startsWith('/api/mcp/apps/sandbox/')) return sandbox.handleProxy(req, res, req.url.slice('/api/mcp/apps/sandbox/'.length));
   if (req.url === '/api/mcp/apps/mount') {
     const ticket = await sandbox.issue(base, buildPolicy({}, base));
     return json(200, { enabled: true, id: 'fixture', title: 'Agent run control', html: makeHtml(), ...ticket, csp: {},

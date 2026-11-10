@@ -48,8 +48,35 @@ async function testValidation() {
   assert.throws(() => extensions.validate(manifest({ big: 'x'.repeat(1024 * 1024) })), /1 MiB/);
   const ext = extensions.validate(manifest({ server: { ref: 'srv' }, hooks: [{ id: 'm', event: 'tool.before', handler: { kind: 'mcp', tool: 'ci_summary' } }] }));
   assert.equal(ext.hooks[0].handler.server, undefined);
+  const inlineSummary = extensions.summary(extensions.validate(manifest({ server: {
+    name: 'summary-server', command: 'node', args: ['server.js'], env: { API_TOKEN: 'secret' },
+    cwd: '/tmp/project', transport: 'stdio', headers: { Authorization: 'secret' }
+  } })));
+  assert.deepEqual(inlineSummary.server.envKeys, ['API_TOKEN']);
+  assert.deepEqual(inlineSummary.server.headerKeys, ['Authorization']);
+  assert.equal(JSON.stringify(inlineSummary).includes('secret'), false);
+  // The permission screen names the tools a renderer sees.
+  const rendererSummary = extensions.summary(extensions.validate(manifest({ ui: [
+    { id: 'r', slot: 'tool.renderer', title: 'R', html: '<p>r</p>', match: { tool: ['shell', 'mcp__gh__*'] } }] })));
+  assert.deepEqual(rendererSummary.ui[0].tools, ['shell', 'mcp__gh__*']);
   // Bare mcp hooks name their server.
   assert.throws(() => hooks.normalizeHook({ id: 'm', event: 'tool.before', handler: { kind: 'mcp', tool: 'x' } }), /server/);
+}
+
+// A store from before the list order moved to rowid gets its NOT NULL `position`
+// dropped, and the list keeps first-import order through a re-import.
+async function testListOrder() {
+  const d = settings.getDb();
+  d.exec(`CREATE TABLE extension (id TEXT PRIMARY KEY, manifest TEXT NOT NULL, enabled INTEGER NOT NULL,
+    imported_at INTEGER NOT NULL, server_id TEXT, position INTEGER NOT NULL)`);
+  d.prepare('INSERT INTO extension VALUES (?, ?, 0, 1, NULL, 0)').run('order-a', JSON.stringify(manifest({ id: 'order-a' })));
+  extensions.importApp(manifest({ id: 'order-b' }));
+  extensions.importApp(manifest({ id: 'order-c' }));
+  assert.equal(d.prepare('PRAGMA table_info(extension)').all().some((c) => c.name === 'position'), false);
+  extensions.importApp(manifest({ id: 'order-a' }));
+  const ids = extensions.list(projectDir).app.map((e) => e.id);
+  assert.deepEqual(ids, ['order-a', 'order-b', 'order-c']);
+  for (const id of ids) extensions.removeApp(id);
 }
 
 async function testAppRegistry() {
@@ -161,15 +188,26 @@ async function testProjectExtensions() {
   assert.equal(out.notes[0].scope, 'project');
   assert.match(out.context, /project-extension-context/);
   // Editing the script it runs makes it inert again.
+  // Straight away, with the hook cache still warm: a tool call can edit a script
+  // and trigger it in the same moment.
   fs.writeFileSync(path.join(projectDir, 'tools', 'ctx.sh'), 'echo changed\n');
-  extensions.clearCache();
+  assert.equal((await hooks.runHooks('tool.before', { tool: 'shell', args: {} }, ctx)).notes.length, 0, 'changed script: inert at once');
   listed = extensions.list(projectDir).project;
   assert.equal(listed.find((x) => x.id === 'repo-policy').changed, true);
   assert.equal((await hooks.runHooks('tool.before', { tool: 'shell', args: {} }, ctx)).notes.length, 0);
-  // A project extension shadows an app extension with the same id.
+  // An untrusted (here: changed) project file does not take the place of an
+  // app extension with the same id: a repository cannot switch yours off.
   extensions.importApp(manifest({ id: 'repo-policy' }));
   extensions.setAppEnabled('repo-policy', true);
-  assert.equal((await hooks.runHooks('tool.before', { tool: 'shell', args: {} }, ctx)).notes.length, 0);
+  out = await hooks.runHooks('tool.before', { tool: 'shell', args: {} }, ctx);
+  assert.equal(out.notes.length, 1);
+  assert.notEqual(out.notes[0].scope, 'project');
+  assert.match(out.context, /from the extension/);
+  // Once trusted, it does.
+  extensions.trustProject(projectDir, 'repo-policy', extensions.list(projectDir).project.find((x) => x.id === 'repo-policy').hash);
+  out = await hooks.runHooks('tool.before', { tool: 'shell', args: {} }, ctx);
+  assert.deepEqual(out.notes.map((n) => n.scope), ['project']);
+  assert.doesNotMatch(out.context, /from the extension/);
   extensions.removeApp('repo-policy');
   extensions.revokeProject(projectDir, 'repo-policy');
   // A project extension cannot register a server.
@@ -253,8 +291,22 @@ async function testSurfaces() {
     assert.equal(r.body.enabled, true);
     assert.match(r.body.html, /dock view/);
     assert.equal(r.body.surface.slot, 'chat.dock');
-    assert.notEqual(r.body.origin, base);
+    assert.equal(r.body.origin, 'null');
     const dock = r.body;
+    // No slot: every active view, for the page's one shared request.
+    assert.deepEqual((await get('/api/extensions/surfaces' + q)).body.surfaces.map((x) => x.surfaceId).sort(), ['dock', 'page', 'sheet']);
+    // The inline SDK makes a mount large, so it is compressed for clients that accept it.
+    {
+      const mountWith = (encoding) => fetch(base + '/api/mcp/apps/mount', { method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept-Encoding': encoding },
+        body: JSON.stringify({ projectDir, chatId: chat.id, extensionId: 'ci-ui', surfaceId: 'dock' }) });
+      const packed = await mountWith('gzip');
+      assert.equal(packed.headers.get('content-encoding'), 'gzip');
+      assert.match((await packed.json()).html, /dock view/);
+      const plain = await mountWith('identity');
+      assert.equal(plain.headers.get('content-encoding'), null);
+      assert.match((await plain.json()).html, /dock view/);
+    }
     // A chat slot needs a chat; a settings page does not.
     assert.equal((await post('/api/mcp/apps/mount', { projectDir, extensionId: 'ci-ui', surfaceId: 'dock' })).status, 400);
     r = await post('/api/mcp/apps/mount', { projectDir, extensionId: 'ci-ui', surfaceId: 'page' });
@@ -344,7 +396,15 @@ async function testHostToolsAndEvents() {
     assert.deepEqual((await post('/api/mcp/apps/' + page.id + '/host', { name: 'mouaif/settings.get', arguments: {} })).body.structuredContent.value, { branch: { name: 'main' } });
     assert.equal((await post('/api/mcp/apps/' + page.id + '/host', { name: 'mouaif/chat.recent', arguments: {} })).status, 400);
     // Another extension cannot see this one's storage; deleting it clears it.
-    assert.deepEqual(hostTools._storeGet('other'), {});
+    assert.deepEqual(hostTools._storeGet('app:other'), {});
+    assert.deepEqual(hostTools._storeGet('app:ci-host'), { branch: { name: 'main' } });
+    // A project extension with the same id has its own store: it can neither
+    // read nor overwrite what the app extension stored.
+    const asProject = { kind: 'surface', scope: 'project', projectDir, chatId: null, extensionId: 'ci-host', permissions: ['storage'] };
+    assert.deepEqual(hostTools.runHostTool(asProject, 'mouaif/settings.get', {}).structuredContent.value, {});
+    hostTools.runHostTool(asProject, 'mouaif/settings.set', { key: 'branch', value: 'from-repo' });
+    assert.deepEqual(hostTools._storeGet('app:ci-host'), { branch: { name: 'main' } });
+    assert.equal(hostTools.runHostTool(asProject, 'mouaif/settings.get', { key: 'branch' }).structuredContent.value, 'from-repo');
 
     // Host events: a turn streams host_event frames for the declared events only.
     const upstream = http.createServer((req, res) => {
@@ -372,7 +432,10 @@ async function testHostToolsAndEvents() {
     assert.ok(!quiet.body.includes('host_event'), 'no views declared events: no frames');
     upstream.close();
     extensions.removeApp('ci-host');
-    assert.deepEqual(hostTools._storeGet('ci-host'), {}, 'deleting the extension clears its storage');
+    assert.deepEqual(hostTools._storeGet('app:ci-host'), {}, 'deleting the extension clears its storage');
+    const projectOwner = hostTools.storeOwner({ scope: 'project', extensionId: 'ci-host', projectDir });
+    assert.deepEqual(hostTools._storeGet(projectOwner), { branch: 'from-repo' }, 'but not a project extension’s');
+    hostTools.removeExtensionStore(projectOwner);
   } finally {
     await new Promise((r) => app.close(r));
     await mcp.stopAll();
@@ -508,6 +571,12 @@ async function testModelContext() {
     await fetch(base + '/api/extensions/context?projectDir=' + encodeURIComponent(projectDir) + '&chatId=' + chat.id, { method: 'DELETE' });
     assert.deepEqual(appContext.list(projectDir, chat.id), []);
     appContext.set(src, { content: [{ type: 'text', text: 'again' }] });
+    // A snapshot alone does not mark it sent (a refused turn keeps it pending).
+    const snap = appContext.snapshot(projectDir, chat.id);
+    assert.ok(snap && appContext.snapshot(projectDir, chat.id), 'still pending until markSent');
+    appContext.markSent(projectDir, chat.id, snap.sent);
+    assert.equal(appContext.snapshot(projectDir, chat.id), null, 'marked sent');
+    appContext.set(src, { content: [{ type: 'text', text: 'again, changed' }] });
     extensions.setAppEnabled('tickets', false);
     assert.deepEqual(appContext.list(projectDir, chat.id), [], 'an extension that is off gives no context');
     assert.equal(appContext.snapshot(projectDir, chat.id), null);
@@ -527,6 +596,7 @@ process.on('exit', (code) => {
 
 async function main() {
   await testValidation();
+  await testListOrder();
   await testAppRegistry();
   await testInlineServerAndMcpHooks();
   await testProjectExtensions();
