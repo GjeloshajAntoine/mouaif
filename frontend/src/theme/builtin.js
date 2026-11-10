@@ -31,18 +31,13 @@ export const COLOR_TOKENS = [
 
 const FLAT_BACKGROUND = 'html, body { background: var(--bg); }';
 
-// Paper grain + long horizontal fibres as a tileable SVG noise texture.
-// `data:` images are allowed by the page CSP (`img-src 'self' data:`).
-const PAPER_GRAIN = 'url("data:image/svg+xml,' + encodeURIComponent(
-  "<svg xmlns='http://www.w3.org/2000/svg' width='260' height='260'>"
-  + "<filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/>"
-  + "<feColorMatrix values='0 0 0 0 0.33 0 0 0 0 0.22 0 0 0 0 0.07 0 0 0 1.3 -0.58'/></filter>"
-  + "<filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.018 0.55' numOctaves='2' seed='7' stitchTiles='stitch'/>"
-  + "<feColorMatrix values='0 0 0 0 0.45 0 0 0 0 0.32 0 0 0 0 0.1 0 0 0 0.7 -0.33'/></filter>"
-  + "<rect width='100%' height='100%' filter='url(#g)'/>"
-  + "<rect width='100%' height='100%' filter='url(#f)'/></svg>"
-) + '")';
-
+// Parchment's paper textures: small tileable PNGs in frontend/public/themes/,
+// made by scripts/make-parchment-textures.py. They are pre-rendered rather
+// than SVG `feTurbulence`, which Chrome recomputes on every repaint. The URL
+// is relative so it resolves against the app page wherever it is served.
+// PNGs are cached as immutable, so bump `v` when the files change.
+const PAPER_GRAIN = 'url("themes/parchment-grain.png?v=1")';
+const PAPER_MOTTLE = 'url("themes/parchment-mottle.png?v=1")';
 const REDUCED_MOTION_OFF = (selector) =>
   `@media (prefers-reduced-motion: reduce) { ${selector} { animation: none !important; } }`;
 
@@ -152,62 +147,82 @@ ${REDUCED_MOTION_OFF('body::before')}
   {
     id: 'parchment',
     name: 'Parchment',
-    note: 'yellowed paper · fountain-pen ink',
+    note: 'aged paper · iron-gall ink',
     base: 'light',
     vars: {
-      '--bg': '#ecdcab',
-      '--surface': '#f7ecc8',
-      '--surface-2': '#efe0b3',
-      '--surface-3': '#e5d29d',
-      '--border': 'rgba(110, 78, 18, 0.18)',
-      '--border-strong': '#c9ae6e',
-      '--fg': '#2f2414',
-      '--fg-soft': '#4f3f24',
-      '--muted': '#7a6640',
-      '--muted-2': '#9e8a5f',
-      '--accent': '#284a80',
-      '--accent-soft': 'rgba(40, 74, 128, 0.12)',
-      '--accent-press': '#1e3a66',
-      '--accent-hi': '#3a5f9c',
-      '--accent-hi-2': '#587bb6',
-      '--on-accent': '#fbf3d8',
-      '--success': '#3b6a28',
-      '--success-soft': 'rgba(59, 106, 40, 0.13)',
-      '--warning': '#8a5800',
-      '--warning-soft': 'rgba(138, 88, 0, 0.13)',
-      '--danger': '#9e2f1f',
-      '--danger-soft': '#efcfb6',
-      '--font-sans': 'ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif',
+      '--bg': '#e8d9b5',
+      '--surface': '#f7efdc',
+      '--surface-2': '#f0e5cb',
+      '--surface-3': '#e7d8b6',
+      '--border': 'rgba(96, 66, 22, 0.16)',
+      '--border-strong': '#c9b083',
+      '--fg': '#2a1f12',
+      '--fg-soft': '#4a3a25',
+      '--muted': '#6d5b40',
+      '--muted-2': '#927f5f',
+      '--accent': '#2d4a78',
+      '--accent-soft': 'rgba(45, 74, 120, 0.11)',
+      '--accent-press': '#22395f',
+      '--accent-hi': '#3f5f94',
+      '--accent-hi-2': '#6480b0',
+      '--on-accent': '#f9f2e0',
+      '--success': '#3d6a2a',
+      '--success-soft': 'rgba(61, 106, 42, 0.12)',
+      '--warning': '#8a5600',
+      '--warning-soft': 'rgba(138, 86, 0, 0.12)',
+      '--danger': '#9a2b1b',
+      '--danger-soft': '#f1d6c3',
+      '--font-sans': '"Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Noto Serif", ui-serif, serif',
       '--r-sm': '2px',
       '--r-md': '3px',
-      '--r-lg': '5px',
-      '--shadow-sm': '0 1px 1px rgba(90, 60, 10, 0.14), 0 3px 8px -3px rgba(90, 60, 10, 0.22)',
-      '--shadow-md': '0 2px 3px rgba(90, 60, 10, 0.12), 0 8px 18px -6px rgba(90, 60, 10, 0.28)',
-      '--shadow-lg': '0 4px 6px rgba(90, 60, 10, 0.12), 0 16px 32px -10px rgba(90, 60, 10, 0.32)'
+      '--r-lg': '4px',
+      '--shadow-sm': '0 1px 1px rgba(80, 52, 12, 0.10), 0 2px 6px -2px rgba(80, 52, 12, 0.18)',
+      '--shadow-md': '0 1px 2px rgba(80, 52, 12, 0.10), 0 6px 16px -6px rgba(80, 52, 12, 0.26)',
+      '--shadow-lg': '0 2px 4px rgba(80, 52, 12, 0.10), 0 14px 30px -10px rgba(80, 52, 12, 0.32)'
     },
     css: `
-${FLAT_BACKGROUND}
-/* Grain, fibres and aged edges over the whole page: one static fixed layer. */
-body::after {
+/* The paper lies behind the app: tone, mottling, foxing, grain and darker,
+   handled edges on one static fixed layer under everything, so no texture
+   ever sits on top of the text. */
+html { background: var(--bg); }
+body, .app__shell, .app__main--flush { background: transparent; }
+body::before {
   content: '';
   position: fixed;
   inset: 0;
-  z-index: 2147483000;
+  z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(130% 95% at 50% 42%, transparent 58%, rgba(130, 85, 15, 0.22) 100%),
-    ${PAPER_GRAIN} 0 0 / 260px 260px;
+    radial-gradient(140% 110% at 50% 40%, transparent 50%, rgba(120, 76, 20, 0.16) 82%, rgba(92, 54, 10, 0.34) 100%),
+    ${PAPER_GRAIN} 0 0 / 128px 128px,
+    ${PAPER_MOTTLE} 0 0 / 640px 640px,
+    radial-gradient(90% 70% at 45% 35%, rgba(255, 248, 226, 0.55), transparent 75%),
+    var(--bg);
 }
-/* Cards read as separate sheets lying on the page. */
+/* Cards are fresher sheets laid on the page: a lighter tone, the same grain
+   at half strength, and edges that darken a touch. */
 .group__list, .project-card, .theme-card, .chat-msg__body, .dictation__card, .settings-themes__notice {
-  background-image: linear-gradient(172deg, rgba(255, 252, 238, 0.55), rgba(255, 252, 238, 0) 42%, rgba(140, 100, 30, 0.06));
-  border: 1px solid rgba(120, 88, 25, 0.22);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), var(--shadow-sm);
+  background-image:
+    ${PAPER_GRAIN},
+    linear-gradient(170deg, rgba(255, 252, 240, 0.6), rgba(255, 252, 240, 0) 45%, rgba(150, 110, 40, 0.05));
+  background-size: 128px 128px, auto;
+  border: 1px solid rgba(110, 80, 30, 0.2);
+  box-shadow: inset 0 0 18px rgba(150, 108, 40, 0.09), var(--shadow-sm);
 }
+/* Your own messages read as a note written in blue ink on a tinted slip,
+   not a solid slab of colour. */
 .chat-msg--user .chat-msg__body {
-  background-image: linear-gradient(172deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 50%);
+  background-color: #f3ecd9;
+  background-image:
+    ${PAPER_GRAIN},
+    linear-gradient(170deg, rgba(255, 252, 240, 0.55), rgba(150, 110, 40, 0.04));
+  color: #1f3355;
+  border: 1px solid rgba(45, 74, 120, 0.28);
+  border-left: 3px solid rgba(45, 74, 120, 0.7);
 }
-::selection { background: rgba(40, 74, 128, 0.2); }
+.chat-msg--user .chat-msg__body a { color: inherit; }
+body { text-rendering: optimizeLegibility; font-variant-ligatures: common-ligatures; }
+::selection { background: rgba(45, 74, 120, 0.18); }
 `
   },
   {
@@ -256,7 +271,7 @@ body::after {
   {
     id: 'crt',
     name: 'CRT',
-    note: 'phosphor glow · heavy scanlines',
+    note: 'phosphor glow · scanlines',
     base: 'dark',
     vars: {
       '--bg': '#020602',
@@ -265,10 +280,10 @@ body::after {
       '--surface-3': '#112311',
       '--border': 'rgba(92, 255, 122, 0.16)',
       '--border-strong': '#1f4d26',
-      '--fg': '#b8ffb4',
-      '--fg-soft': '#8fe38c',
-      '--muted': '#72c46f',
-      '--muted-2': '#4a824a',
+      '--fg': '#c6ffc2',
+      '--fg-soft': '#9cec98',
+      '--muted': '#76c873',
+      '--muted-2': '#4f8a4f',
       '--accent': '#5cff7a',
       '--accent-soft': 'rgba(92, 255, 122, 0.16)',
       '--accent-press': '#45e061',
@@ -277,21 +292,32 @@ body::after {
       '--on-accent': '#021a06',
       '--success': '#5cff7a',
       '--warning': '#ffcf4d',
-      '--danger': '#ff5c5c',
+      '--danger': '#ff6b6b',
       '--font-sans': 'var(--font-mono)',
       '--r-sm': '0px',
       '--r-md': '1px',
       '--r-lg': '2px'
     },
     css: `
-html, body { background: radial-gradient(120% 90% at 50% 45%, #072207 0%, var(--bg) 70%); }
+html, body { background: radial-gradient(120% 90% at 50% 45%, #082608 0%, var(--bg) 72%); }
 .app__shell, .app__main--flush { background: transparent; }
-/* Phosphor bloom on every glyph. */
-body { text-shadow: 0 0 2px rgba(92, 255, 122, 0.6), 0 0 10px rgba(92, 255, 122, 0.28); }
+/* Phosphor bloom: a tight halo thickens each stroke so the scanlines below
+   cross the glyphs without cutting them apart, and a wider one glows. */
+body { text-shadow: 0 0 1px rgba(140, 255, 150, 0.6), 0 0 6px rgba(92, 255, 122, 0.3); }
 .btn--primary, .app__tab.is-active .app__tab-icon, .seg__item--on .seg__pill, .theme-card.is-selected {
   box-shadow: 0 0 6px rgba(92, 255, 122, 0.55), 0 0 18px rgba(92, 255, 122, 0.25);
 }
-/* Heavy scanlines, RGB sub-pixel mask and tube vignette, with a faint flicker. */
+/* Your messages glow as an outlined phosphor block instead of a solid one:
+   dark text on solid green is what the scanlines hurt most. */
+.chat-msg--user .chat-msg__body {
+  background: rgba(92, 255, 122, 0.09);
+  color: var(--fg);
+  border: 1px solid rgba(92, 255, 122, 0.55);
+  box-shadow: 0 0 10px rgba(92, 255, 122, 0.2), inset 0 0 14px rgba(92, 255, 122, 0.1);
+}
+/* Scanlines and a tube vignette over the whole screen, with a faint
+   flicker. The lines are fine (one dark pixel in three) and half-dark, so
+   they read as a screen texture and the text stays legible. */
 body::after {
   content: '';
   position: fixed;
@@ -299,9 +325,8 @@ body::after {
   z-index: 2147483000;
   pointer-events: none;
   background:
-    radial-gradient(125% 100% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.7) 100%),
-    repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.62) 0 2px, rgba(0, 0, 0, 0) 2px 4px),
-    repeating-linear-gradient(to right, rgba(255, 0, 0, 0.05) 0 1px, rgba(0, 255, 0, 0.03) 1px 2px, rgba(0, 0, 255, 0.05) 2px 3px);
+    radial-gradient(130% 105% at 50% 50%, transparent 62%, rgba(0, 0, 0, 0.55) 100%),
+    repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.34) 0 1px, rgba(0, 0, 0, 0) 1px 3px);
   animation: mouaif-crt-flicker 0.16s steps(2) infinite;
 }
 /* A bright band rolling down the tube. */
@@ -314,9 +339,9 @@ body::before {
   height: 28vh;
   z-index: 2147483001;
   pointer-events: none;
-  background: linear-gradient(to bottom, rgba(92, 255, 122, 0), rgba(92, 255, 122, 0.09) 55%, rgba(180, 255, 190, 0.16) 60%, rgba(92, 255, 122, 0));
+  background: linear-gradient(to bottom, rgba(92, 255, 122, 0), rgba(92, 255, 122, 0.06) 55%, rgba(180, 255, 190, 0.11) 60%, rgba(92, 255, 122, 0));
   will-change: transform;
-  animation: mouaif-crt-roll 6.5s linear infinite;
+  animation: mouaif-crt-roll 7s linear infinite;
 }
 @keyframes mouaif-crt-roll {
   from { transform: translate3d(0, -30vh, 0); }
@@ -324,7 +349,7 @@ body::before {
 }
 @keyframes mouaif-crt-flicker {
   from { opacity: 1; }
-  to   { opacity: 0.88; }
+  to   { opacity: 0.9; }
 }
 @media (prefers-reduced-motion: reduce) {
   body::after { animation: none !important; }

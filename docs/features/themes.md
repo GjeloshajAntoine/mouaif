@@ -4,7 +4,7 @@
 
 Themes change how the whole app looks: colours, corners, type, and anything CSS can reach. A custom theme can also run its own JavaScript for animations and effects such as a pointer glow, a starfield, or page transitions.
 
-mouaif ships seven built-in themes:
+mouaif ships six built-in themes:
 
 | Theme | Base | Look |
 | --- | --- | --- |
@@ -12,9 +12,9 @@ mouaif ships seven built-in themes:
 | OLED | dark | true black surfaces |
 | Aurora | dark | teal and violet, with a slow drifting glow behind the app |
 | Paper | light | warm paper with a terracotta accent |
-| Parchment | light | yellowed paper: grain and fibres over the page, cards that sit like separate sheets, serif type, fountain-pen blue ink |
+| Parchment | light | aged paper: soft mottling, foxing spots, fine grain and darker edges behind the app, cards that sit like lighter sheets, serif type, dark brown ink with blue-ink accents. The texture stays under the text. |
 | Mono | dark | terminal green, monospace type, sharp corners, scanlines |
-| CRT | dark | a phosphor tube: glowing text, heavy scanlines, an RGB sub-pixel mask, a dark vignette, a faint flicker and a bright band rolling down the screen |
+| CRT | dark | a phosphor tube: glowing text, fine scanlines over the whole screen, a dark vignette, a faint flicker and a bright band rolling down the screen. Your messages are outlined in green rather than filled, so the scanlines don't hide them. |
 
 With reduced motion turned on, Aurora's drift and CRT's flicker and rolling band stop.
 
