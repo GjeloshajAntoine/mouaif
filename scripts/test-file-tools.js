@@ -119,6 +119,12 @@ function writeFile(p, content) {
   assert(r1d.ok === true && r1d.result.body === 'dots', 'read_file reads a ..-prefixed file name');
   const r1dw = await files.runFileTool('write_file', { projectDir: root, args: { path: '...draft/x.md', content: 'x' } });
   assert(r1dw.ok === true, 'write_file writes under a ...-prefixed folder');
+  for (const self of ['.', './', root]) {
+    const r1r = await files.runFileTool('read_file', { projectDir: root, args: { path: self } });
+    assert(r1r.ok === false && r1r.result.error.code === 'ENOTFILE', 'read_file calls ' + JSON.stringify(self) + ' the project folder, not an escape');
+  }
+  const r1rw = await files.runFileTool('write_file', { projectDir: root, args: { path: '.', content: 'x' } });
+  assert(r1rw.ok === false && r1rw.result.error.code === 'ENOTFILE', 'write_file refuses the project folder as not a file');
   fs.rmSync(path.join(root, '..notes.md'));
   fs.rmSync(path.join(root, '...draft'), { recursive: true });
 

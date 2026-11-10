@@ -135,7 +135,10 @@ function toRelPath(root, p) {
     const canonicalRel = path.relative(root, canonical);
     if (!relEscapes(canonicalRel)) rel = canonicalRel;
   }
-  if (!rel || relEscapes(rel)) {
+  // The project folder itself is inside the project, just not a file. Calling
+  // it an escape sent the model looking for a path problem it did not have.
+  if (!rel) throw err('ENOTFILE', 'Not a file: ' + p + ' is the project folder', { path: p });
+  if (relEscapes(rel)) {
     throw err('EOUTSIDE_PROJECT', 'Path escapes the project root', { path: p });
   }
   return rel.split(path.sep).join('/');
