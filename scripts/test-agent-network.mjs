@@ -194,5 +194,21 @@ check('vertical layout is one row per agent, children indented under their paren
   assert.equal(new Set(tall.nodes.map((n) => n.y)).size, tall.nodes.length, 'one agent per row');
 });
 
+check('a subagent\'s shell commands never add agents', () => {
+  // src/ai-stream.js forwards a nested command's output keyed by the
+  // command's own call id; each approved command used to add a node.
+  const net = createAgentNetwork();
+  ingestStreamEvent(net, null, 'tool_call', { id: 'c1', name: 'subagent', args: { task: 'Build', agent: 'builder' } });
+  ingestStreamEvent(net, 'c1', 'start', { agent: 'builder' });
+  for (const sh of ['sh1', 'sh2', 'sh3']) {
+    ingestStreamEvent(net, null, 'subagent_event', { parentCallId: 'c1', kind: 'tool_call', data: { id: sh, name: 'shell', args: { cmd: 'ls' } } });
+    ingestStreamEvent(net, null, 'subagent_event', { parentCallId: 'c1', kind: 'subagent_event', data: { parentCallId: sh, kind: 'shell_output', data: { id: sh, stream: 'stdout', delta: 'a\n' } } });
+    ingestStreamEvent(net, null, 'subagent_event', { parentCallId: 'c1', kind: 'tool_result', data: { id: sh, name: 'shell', ok: true } });
+  }
+  ingestStreamEvent(net, null, 'subagent_event', { parentCallId: 'c1', kind: 'usage_update', data: { totalCost: 0.01 } });
+  assert.equal(agentCount(net), 1);
+  assert.deepEqual([...net.nodes.keys()], [ROOT, 'c1']);
+});
+
 console.log(passed + ' checks, ' + failed + ' failed');
 if (failed) process.exit(1);

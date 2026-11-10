@@ -22,6 +22,9 @@ const TEXT_LIMIT = 140;
 const STREAM_PULSE_MS = 1400;
 
 const TERMINAL = new Set(['done', 'failed', 'cancelled']);
+// Live frames that only an agent's own turn emits (src/ai-stream.js forwards
+// them as subagent_event). shell_output, usage_update and the like are not.
+const AGENT_FRAMES = new Set(['start', 'tool_call', 'tool_result', 'message', 'reasoning', 'image', 'assistant_turn_end']);
 // 'ended' is the soft terminal state of a delegation whose turn finished
 // without telling us how it went (a background child nobody polled). Any
 // later report still overrides it.
@@ -385,6 +388,11 @@ export function ingestStreamEvent(net, parentCallId, kind, data) {
   const owner = parentCallId ? String(parentCallId) : ROOT;
   const d = data && typeof data === 'object' ? data : {};
   if (kind === 'subagent_event') return ingestStreamEvent(net, d.parentCallId || owner, d.kind, d.data);
+  // Only an agent's own turn proves `owner` is an agent. Other nested frames
+  // are keyed by a tool call: a subagent's shell / group_cli output carries
+  // the command's call id as its parentCallId, so creating a node for it
+  // added a phantom agent for every command (each approved one, typically).
+  if (!AGENT_FRAMES.has(kind)) return [];
   if (owner !== ROOT && !net.nodes.has(owner)) upsertNode(net, owner, ROOT, { label: 'Subagent' });
   if (kind === 'tool_call') return noteToolCall(net, owner, d, true);
   if (kind === 'tool_result') return noteToolResult(net, owner, d, true);

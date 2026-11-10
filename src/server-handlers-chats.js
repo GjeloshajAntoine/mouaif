@@ -970,9 +970,12 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
   } catch { /* a broken hook store never blocks a prompt */ }
   // Model context extension views set (src/app-context.js): the entries that
   // changed since last sent ride on this prompt, labelled like hook context.
+  // They are marked sent only once the prompt row is stored (below).
+  let appContextSent = null;
   try {
     const app = require('./app-context.js').snapshot(projectDir, chatId);
     if (app) {
+      appContextSent = app.sent;
       promptHooks = promptHooks || { notes: [] };
       promptHooks.notes = (promptHooks.notes || []).concat(app.notes);
       promptHooks.context = promptHooks.context ? promptHooks.context + '\n' + app.context : app.context;
@@ -992,6 +995,9 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
   const userClientId = messages.normalizeClientId(body && body.clientId) || messages.newClientId('u');
   try { userMsg = messages.appendMessage(projectDir, chatId, { role: 'user', content, attachments, clientId: userClientId, origin: internal.origin, hooks: promptHooks }); }
   catch (e) { return sendJSON(res, 400, { error: e.message }); }
+  if (appContextSent) {
+    try { require('./app-context.js').markSent(projectDir, chatId, appContextSent); } catch { /* best-effort */ }
+  }
   // Read the full transcript once and reuse across the title-derivation
   // check and the upstream message assembly below. Two separate
   // listMessages() calls would read SQLite or the JSON file twice
