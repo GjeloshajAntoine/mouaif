@@ -8,13 +8,13 @@ MCP Apps are interactive HTML tool views inside the conversation, as described b
 
 1. MCP Apps are always available for compatible project MCP tools; there is no project enable/disable switch. Legacy `mcpApps.enabled` values are ignored.
 2. Start the relevant MCP server using its Settings lifecycle control. Restart servers connected before this update so they receive the Apps capability at initialization.
-3. Call a tool declaring `_meta.ui.resourceUri`. Expand its completed tool card to load the app beside the ordinary text/image result; mounted MCP App cards stay pinned at the bottom of the transcript as new messages arrive.
+3. Call a tool declaring `_meta.ui.resourceUri`. Expand its completed tool card to load the app beside the ordinary text/image result. The latest mounted MCP App stays pinned at the bottom of the transcript as new messages arrive; earlier ones go back to their place in the chat and keep running there. Opening an app older than the pinned one runs it in its chat position.
 4. Interact with the view. App tool calls use the server's Off/Ask/Allow policy; Ask displays the app/server identity and arguments on a normal approval card.
 5. Use **Fullscreen** / **Inline** (or press **Escape**) for the mobile sheet, **Close** to revoke a view, or **Retry** after closure, tab hiding, a resource change or initialization failure.
 
 App frames and sandbox wrappers have transparent backgrounds: unpainted app areas show the chat backdrop in inline mode. An app's own background is preserved; fullscreen retains its normal sheet backdrop. Transparency does not change sandbox isolation or permissions.
 
-The host supports both **direct HTTP** (using an app-managed second listener on an ephemeral port) and **HTTPS / reverse-proxy** deployments (serving the single-use outer sandbox proxy at `/api/mcp/apps/sandbox/:token` with `Content-Security-Policy: sandbox allow-scripts` so it runs in an opaque `null` origin without needing an extra browser-facing port). Unsupported app policies, stopped servers and initialization failures keep the ordinary tool result instead. The main app's port remains 5732 by default.
+Views need no port but the app's own, over HTTP or HTTPS and behind a reverse proxy. A Docker install only has to publish the app port (`5732` by default). The single-use outer sandbox proxy is served at `/api/mcp/apps/sandbox/:token` with `Content-Security-Policy: sandbox allow-scripts`, so it runs in an opaque `null` origin. Unsupported app policies, stopped servers and initialization failures keep the ordinary tool result instead. The main app's port remains 5732 by default.
 
 **App text messages are automatic:** a view can send `ui/message` with user text to its bound chat, starting a normal AI turn without another confirmation. The transcript labels the message with its app/server. This can consume provider credits; use interactive views only from servers you trust to initiate prompts. Disable their source tools through the existing tool permissions when needed. Existing tool approvals still apply to the AI's actions.
 
@@ -22,7 +22,7 @@ Only user-role text is accepted (up to 16 blocks and 16 KiB). Messages cannot se
 
 Camera, microphone, geolocation, clipboard, external links, downloads and model-context writes are not granted. Image/audio/resource messages remain unsupported.
 
-For local single-file apps in the current chat or a request-to-development-chat workflow, see [On-the-fly MCP Apps](./on-the-fly-mcp-apps.md). On-the-fly apps reuse this host and its sandbox/messaging restrictions without registering an MCP server or tool.
+For local single-file apps in the current chat or a request-to-development-chat workflow, see [On-the-fly MCP Apps](./on-the-fly-mcp-apps.md). Those apps can read their data from [chat artifacts](./chat-artifacts.md). On-the-fly apps reuse this host and its sandbox/messaging restrictions without registering an MCP server or tool.
 
 ## Official reference
 
@@ -32,10 +32,10 @@ The installed official SDK is pinned to `@modelcontextprotocol/ext-apps@2.0.3`, 
 
 ## Security and supported behavior
 
-- The outer proxy has a different origin from the app. Its inner app frame has an opaque origin and cannot read host DOM, cookies or storage, navigate the parent, or remove the outer sandbox.
+- The outer proxy has an opaque origin, so it is cross-origin to the app even though it shares the port. Its inner app frame has an opaque origin and cannot read host DOM, cookies or storage, navigate the parent, or remove the outer sandbox.
 - HTTP-header CSP defaults deny network connections. Validated public HTTPS resources and HTTPS/WSS connections can be allowed only when declared by the app. Host/private origins, wildcard rules, CSP fragments, nested frames, dedicated app domains and external base URIs are rejected in this initial host.
-- The isolated listener serves only single-use, host-bound proxy tickets, no app API, session-cookie setting, service worker or HTML resource routes. App HTML arrives over a source-and-origin-checked message channel; proxy responses are `no-store`. Reload requires a fresh mount.
-- **Different ports do not isolate cookies.** `HttpOnly` prevents JavaScript reads, not browser transmission: same-host sandbox requests can carry main-app cookies. The trusted listener ignores cookie/auth headers and does not reflect them into HTML, responses or bridge messages. Separate-hostname HTTPS hosting with a reviewed cookie policy remains required before production rollout; prefer a separate registrable domain.
+- The sandbox route serves only single-use, host-bound proxy tickets, and sets no cookies. App HTML arrives over a source-and-origin-checked message channel; proxy responses are `no-store`. Reload requires a fresh mount.
+- **The proxy request carries the app's cookies.** The browser sends them when it loads the frame, which is also what lets the route pass the access login. The route does not reflect cookie or auth headers into HTML, responses or bridge messages. Once loaded, the proxy and the view have opaque origins: they cannot read cookies, and their default CSP denies network requests. Separate-hostname HTTPS hosting with a reviewed cookie policy remains required before production rollout; prefer a separate registrable domain.
 - Every operation rechecks the live server generation, registered server, source-tool visibility/resource URI, tool Off settings and chat existence. Invalid mounts revoke their ticket and pending approvals; late tool results are not returned to a revoked app. APIs pin the mount's exact host origin, reject null/cross-site browser requests, and accept only the documented HTTP methods. No-Origin non-browser CLI access retains the ordinary access policy.
 - AppBridge performs initialization. Tool input is delivered before the original result. Unknown/unimplemented requests are rejected; capabilities are not advertised merely because the overview lists them.
 - Mount identities come from persisted tool call/result rows. The app cannot select another project, chat or server, or nominate its approval call ID. Only raw tools with app visibility on its own server are callable, through existing per-chat/per-tool authorization.

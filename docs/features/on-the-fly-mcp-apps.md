@@ -10,13 +10,14 @@ Create an interactive single-file app view inside the current chat from inline H
 
 Ask the assistant to create or update an interactive app. The native **`create_mcp_app`** tool lives in the **mouaif** tool family and accepts:
 
-- `source` plus `filename` (`.html`, `.htm`, `.js`, or `.mjs`): writes a uniquely named source file and renders the interactive app view directly inside the current chat's tool card (without registering a project MCP server or MCP tool).
+- `source` plus `filename` (`.html`, `.htm`, `.js`, or `.mjs`): stores the source as an [artifact of the chat](./chat-artifacts.md), under a unique name, and renders the interactive app view directly inside the current chat's tool card (without registering a project MCP server or MCP tool).
 - `path`: renders an existing file relative to the original project folder (not the chat's alternate working folder) directly inside the current chat's tool card, or reloads an already-mounted app card for that `path` in place (without registering a project MCP server or MCP tool).
 - `path` plus `source`: updates an existing project-relative `.html`, `.htm`, `.js`, or `.mjs` app file in place (such as the `path` returned by an earlier `create_mcp_app` call) and automatically reloads its mounted app card in the current chat without creating a duplicate iframe.
+- `path` plus `relink`: changes only which [chat artifacts](./chat-artifacts.md) the app links, for example `{ "sales.json": "sales-q2.json" }`, and reloads it. `path` can also be `artifact:<name>`.
 - `message`: pushes a message from the agent to the mounted app view in the current chat using the official `AppBridge` `sendToolInput` / `sendToolResult` notifications (`ui/notifications/tool-input` and `ui/notifications/tool-result`).
 - `request`: prepares a separate development chat with an unsent draft. This mode does not generate source, register a server, start an AI response, or spend credits.
 
-`name` is optional. File creation, import, and in-place updates always require an explicit approval, even when the family or tool is **Allow**. **Off** hides and blocks it. Denying approval writes no file. No tool permissions or project MCP servers are changed.
+`name` is optional. File creation, import, and in-place source updates always require an explicit approval, even when the family or tool is **Allow**. A `relink` follows the tool's ordinary permission, because it can only change which artifact the app reads. **Off** hides and blocks it. Denying approval writes no file. No tool permissions or project MCP servers are changed.
 
 ```json
 {
@@ -26,7 +27,7 @@ Ask the assistant to create or update an interactive app. The native **`create_m
 }
 ```
 
-The successful creation tool card automatically expands, opens the app view immediately in the current chat, and stays pinned at the bottom of the transcript as later messages and tool calls arrive. Only the latest app stays there: when a newer app is created (or an older one is updated in place), the previous app card goes back to its chronological place in the chat. Moving a card reloads its app view. Its result includes `name` and `path`. To update an existing app in place, call `create_mcp_app` with `path` (from the earlier creation result) and the updated `source` (or edit the file and call `create_mcp_app` with `path`); the existing mounted app card reloads in place with `updated: true` instead of opening a second iframe. Inside the app:
+The successful creation tool card automatically expands, opens the app view immediately in the current chat, and stays pinned at the bottom of the transcript as later messages and tool calls arrive. Only the latest app stays there: when a newer MCP App opens (or an older one is updated in place), the previous app card goes back to its chronological place in the chat, where it keeps running. Moving a card keeps its running view, including its state; a browser without `moveBefore` (Chrome before 133, for example) reloads the view instead. Its result includes `name` and `path`. To update an existing app in place, call `create_mcp_app` with `path` (from the earlier creation result) and the updated `source` (or edit the file and call `create_mcp_app` with `path`); the existing mounted app card reloads in place with `updated: true` instead of opening a second iframe. Inside the app:
 
 - **App → Agent (`ui/message`)**: await `window.mouaifAppReady` and call `window.mouaifApp.sendMessage({ role: 'user', content: [{ type: 'text', text: '...' }] })`.
 - **Agent → App (`ui/notifications/tool-input` & `ui/notifications/tool-result`)**: register `window.mouaifApp.addEventListener('toolresult', params => ...)` (or `window.addEventListener('mouaif-app-message', e => ...)`), which receives `{ content: [{ type: 'text', text }], structuredContent: { message, name } }` whenever the agent calls `create_mcp_app` with `message`.
@@ -53,7 +54,7 @@ This separates app development from your current feature conversation. Multiple 
 3. Tap **Add app**. Uploaded source is validated and saved under `.mouaif/mcp-apps/`; an existing path is validated in place. No MCP server or MCP tool is registered.
 4. Ask a chat to call `create_mcp_app` with that `path` to open the interactive app view in the conversation.
 
-HTML must be self-contained, with inline CSS and browser JavaScript. Browser-JS files receive a mobile page shell and a `<main id="app">` mount point. External imports, CDN assets, Node APIs and network requests are not supported by this zero-network view. JavaScript source is never executed on the Node server.
+HTML must be self-contained, with inline CSS and browser JavaScript, apart from data it links with `artifact:<name>` ([Chat artifacts](./chat-artifacts.md)). Browser-JS files receive a mobile page shell and a `<main id="app">` mount point. External imports, CDN assets, Node APIs and network requests are not supported by this zero-network view. JavaScript source is never executed on the Node server.
 
 The frame and generated browser-JS shell are transparent by default. Request drafts ask for transparent `html`/`body` backgrounds unless the request needs an opaque background. For an imported HTML app, leave its backgrounds unpainted or use `html, body { background: transparent; }` to show the chat backdrop. Author-selected backgrounds are not overridden. Fullscreen keeps its sheet backdrop, and sandbox permissions remain unchanged.
 
@@ -75,7 +76,7 @@ document.querySelector('#explain').onclick = async () => {
 
 App-authored user messages automatically start a normal response in the bound chat and can consume provider credits. All [MCP Apps limitations and trust warnings](./mcp-apps.md) still apply, including the initial direct-HTTP/second-port deployment restriction. Adding a file does not register a server, weaken tool permissions, or grant device/network access.
 
-Edit a referenced file and close/retry its view in the chat card to reload it; there is no file watcher or hot-reload protocol. Uploaded files are copies, not links to the phone's original file. `.mouaif/` may be Git-ignored; keep deliberately versioned apps in a regular project directory and reference their paths.
+Edit a referenced file and close/retry its view in the chat card to reload it. Only an app kept as a chat artifact, or a linked artifact it reads, reloads by itself when it changes. Uploaded files are copies, not links to the phone's original file. `.mouaif/` may be Git-ignored; keep deliberately versioned apps in a regular project directory and reference their paths.
 
 ## HTTP interface
 

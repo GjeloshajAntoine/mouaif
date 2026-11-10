@@ -4,7 +4,7 @@ import { fetchJson } from '../../api.js';
 import { useModal } from '../../hooks/useModal.js';
 import { boundedHeight, connectMcpApp, containerDimensionsFor } from './mcpAppBridge.js';
 import { THEME_PAINTED, surfaceHostContext, themeHostContext } from './appHostContext.js';
-import { performHostAction, APP_CONTEXT_CHANGED } from './extensionEvents.js';
+import { performHostAction, APP_CONTEXT_CHANGED, ARTIFACTS_CHANGED } from './extensionEvents.js';
 import './mcp-app.css';
 
 // `surface` ({ extensionId, surfaceId, slot, projectName }) mounts an
@@ -176,6 +176,12 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
       method: 'POST', signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
     });
     let closing = false;
+    let frameEl = null;
+    let frameLoads = 0;
+    // The frame loading a second time means it was reloaded (a browser without
+    // moveBefore moved its card): the ticket is spent and the bridge is talking
+    // to the old window, so the view needs a fresh mount to run again.
+    const onFrameLoad = () => { if (++frameLoads > 1 && active) setGeneration(n => n + 1); };
     const fail = async error => {
     if (!active || closing) return;
     closing = true;
@@ -244,9 +250,12 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
         try {
           let response = await post('/call', body, signal);
           if (response.status === 409 && response.body.code === 'EAUTH_REQUIRED') {
-            const decision = await authorize.current(response.body.request, signal);
-            if (decision === 'deny' || !active || signal.aborted) throw new Error('App tool call denied or cancelled');
-            response = await post('/call', body, signal);
+          if (typeof authorize.current !== 'function') {
+          throw new Error('This app tool call needs approval, but no approval UI is available here');
+          }
+          const decision = await authorize.current(response.body.request, signal);
+          if (decision === 'deny' || !active || signal.aborted) throw new Error('App tool call denied or cancelled');
+          response = await post('/call', body, signal);
           }
           if (response.status !== 200) throw new Error(response.body.error || 'App tool call failed');
           return response.body;
@@ -257,14 +266,27 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
     session.current = bridge;
     if (!surface) registerActiveAppSession(projectDir, chatId, callId, resolvedTitle, bridge, resolvedPath);
     else if (bridgeRef.current) bridgeRef.current(bridge, mount);
-    frame.current.src = mount.url;
+    frameEl = frame.current;
+    frameEl.addEventListener('load', onFrameLoad);
+    frameEl.src = mount.url;
     }
     else bridge.close();
     }).catch(fail);
-    const poll = setInterval(async () => {
-    try { const result = await post('/status', {}); if (result.status !== 200) await fail(new Error(result.body.error)); }
+    const checkStatus = async () => {
+    try {
+      const result = await post('/status', {});
+      if (result.status !== 200) await fail(new Error(result.body.error));
+      // The app's file or a linked artifact changed: mount it again with the new data.
+      else if (active && mount.revision && result.body.revision !== mount.revision) setGeneration(n => n + 1);
+    }
     catch (error) { if (active) await fail(error); }
-    }, 5000);
+    };
+    const poll = setInterval(checkStatus, 5000);
+    // A change made in this page does not wait for the next poll.
+    const onArtifactsChanged = event => {
+      if (mount.revision && event.detail?.projectDir === projectDir && event.detail?.chatId === chatId) void checkStatus();
+    };
+    window.addEventListener(ARTIFACTS_CHANGED, onArtifactsChanged);
     // An extension view follows the active theme.
     const onTheme = () => {
       if (!surface || !session.current) return;
@@ -274,7 +296,9 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
     window.addEventListener(THEME_PAINTED, onTheme);
     return () => {
     active = false; closeView.current = null; clearTimeout(timeout); clearInterval(poll); ctl.abort();
+    frameEl?.removeEventListener('load', onFrameLoad);
     window.removeEventListener(THEME_PAINTED, onTheme);
+    window.removeEventListener(ARTIFACTS_CHANGED, onArtifactsChanged);
     if (surface && bridgeRef.current) bridgeRef.current(null);
     if (!surface) unregisterActiveAppSession(callId, session.current);
     window.removeEventListener('pagehide', onPageHide);

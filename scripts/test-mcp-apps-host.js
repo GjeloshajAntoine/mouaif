@@ -73,7 +73,9 @@ const post = async (route, body = {}) => {
     assert.equal(mounted.status, 200, JSON.stringify(mounted.body));
     const mount = mounted.body;
     assert.equal(mount.enabled, true);
-    assert.notEqual(mount.origin, base);
+    // The view needs no port but the app's, and its proxy has an opaque origin.
+    assert.equal(mount.origin, 'null');
+    assert.ok(mount.url.startsWith(base + '/api/mcp/apps/sandbox/'), mount.url);
     assert.deepEqual(mount.arguments, { sample: true });
     assert.equal((await fetch(mount.url)).status, 403);
     assert.equal(await raw(mount.url, { Referer: base + '/', Host: 'spoofed.example' }, 'GET'), 403);
@@ -81,12 +83,12 @@ const post = async (route, body = {}) => {
     const proxy = await fetch(mount.url, { headers: { Referer: base + '/', Cookie: 'mouaif_session=' + secret, Authorization: 'Bearer ' + secret } });
     assert.equal(proxy.status, 200);
     assert.match(proxy.headers.get('content-security-policy'), /frame-ancestors/);
+    assert.match(proxy.headers.get('content-security-policy'), /; sandbox allow-scripts$/);
     assert.equal(proxy.headers.get('cache-control'), 'no-store');
     assert.equal(proxy.headers.get('set-cookie'), null);
     assert.equal((await proxy.text()).includes(secret), false);
     assert.equal(JSON.stringify([...proxy.headers]).includes(secret), false);
     assert.equal((await fetch(mount.url, { headers: { Referer: base + '/' } })).status, 403, 'ticket cannot be replayed');
-    assert.equal((await fetch(mount.origin + '/api/settings')).status, 404);
     const httpsApp = createServer(0, { publicOrigin: 'https://apps.example.com' });
     await new Promise(resolve => httpsApp.listen(0, '127.0.0.1', resolve));
     try {

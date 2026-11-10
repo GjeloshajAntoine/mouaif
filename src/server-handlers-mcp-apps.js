@@ -1,5 +1,7 @@
 'use strict';
 const crypto = require('node:crypto');
+const zlib = require('node:zlib');
+const { promisify } = require('node:util');
 const chats = require('./chats.js');
 const messages = require('./messages.js');
 const mcp = require('./mcp.js');
@@ -7,10 +9,32 @@ const apps = require('./mcp-apps.js');
 const authz = require('./tools/authorization.js');
 const { sendJSON, readJsonOr400, expectedOrigin, runningChats, runningKey } = require('./server-shared.js');
 const { buildPolicy, createSandboxService } = require('./mcp-apps-sandbox.js');
+const { pickEncoding } = require('./server-web-static.js');
 const { err } = require('./util.js');
 
-function createMcpAppsHost(options = {}, lifecycle = {}) {
-  const sandbox = createSandboxService(options);
+const gzip = promisify(zlib.gzip);
+const brotli = promisify(zlib.brotliCompress);
+const COMPRESS_MOUNT_FROM = 16 * 1024;
+
+// A single-file view carries the MCP Apps SDK inline (about 420 KB) because it
+// has no network to fetch it with, so its mount response is worth compressing.
+async function sendMount(req, res, data) {
+  const json = JSON.stringify(data);
+  const encoding = Buffer.byteLength(json) >= COMPRESS_MOUNT_FROM ? pickEncoding(req, '.json') : null;
+  if (!encoding) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(json);
+    return;
+  }
+  const body = encoding === 'br'
+    ? await brotli(json, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5, [zlib.constants.BROTLI_PARAM_LGWIN]: 20 } })
+    : await gzip(json, { level: 6 });
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Encoding': encoding, Vary: 'Accept-Encoding' });
+  res.end(body);
+}
+
+function createMcpAppsHost(lifecycle = {}) {
+  const sandbox = createSandboxService();
   const mounts = new Map();
   const messageLimits = new Map(); // project/chat scoped; remount cannot bypass rate limits
   function dispose(id, abandoned) {
@@ -203,7 +227,7 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
     const body = await readJsonOr400(req, res);
       if (!body) return;
       if (parsed.pathname === '/api/mcp/apps/mount' && req.method === 'POST' && body.extensionId !== undefined) {
-        return sendJSON(res, 200, await mountSurface(body, origin));
+        return await sendMount(req, res, await mountSurface(body, origin));
       }
       if (parsed.pathname === '/api/mcp/apps/mount' && req.method === 'POST') {
         const { projectDir, chatId, callId } = body;
@@ -221,10 +245,20 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
         if (created?.ok !== true || !created.path || created.chatId) return sendJSON(res, 200, { enabled: false });
         if (authz.effectiveConfig(projectDir, call.name, chatId).mode === 'off') throw err('ETOOL_DISABLED', 'MCP tool is disabled');
         const instantApps = require('./instant-mcp-apps.js');
-        const root = instantApps.projectRoot(projectDir);
-        const { source, kind } = instantApps.readSource(root, created.path);
+        const artifacts = require('./artifacts.js');
+        let app;
+        try { app = instantApps.readAppSource(projectDir, chatId, created.path); }
+        catch (e) {
+          if (e.code === 'ENOENT' || e.code === 'ENOTFOUND') throw err('EMCP_NOTFOUND', 'This app’s file was renamed or deleted');
+          throw e;
+        }
+        const { source, kind } = app;
         const appName = created.name || created.server?.name || call.args?.name || 'On-the-fly app';
-        const html = instantApps.renderHtml(source, kind, appName);
+        // Read the revision before the data, so a write in between still reloads.
+        const ownName = created.path.startsWith(artifacts.LINK_PREFIX) ? artifacts.checkName(created.path) : null;
+        const watched = [...(ownName ? [ownName] : []), ...(kind === 'html' ? artifacts.listLinks(source) : [])];
+        const revision = watched.length ? artifacts.revision(projectDir, chatId, watched) : null;
+        const html = instantApps.renderHtml(source, kind, appName, { link: linked => artifacts.resolveLinks(projectDir, chatId, linked) });
         const policy = buildPolicy({ csp: { connectDomains: [], resourceDomains: [] } }, origin);
         if (mounts.size >= 64) throw err('EMCP_APP_LIMIT', 'Too many open MCP Apps');
         const ticket = await sandbox.issue(origin, policy);
@@ -233,14 +267,14 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
         throw err('EMCP_APP_LIMIT', 'Too many open MCP Apps');
         }
         const id = crypto.randomBytes(24).toString('base64url');
-        const mount = { id, hostOrigin: origin, projectDir, chatId, creationTool: call.name,
+        const mount = { id, hostOrigin: origin, projectDir, chatId, creationTool: call.name, watched,
         title: appName, ticket, expires: Date.now() + 30 * 60 * 1000, lease: Date.now() + 20000, requests: new Map() };
         mounts.set(id, mount);
         validate(mount);
         sandbox.bind(ticket.token, () => { validate(mount); });
-        return sendJSON(res, 200, { enabled: true, id, url: ticket.url, origin: ticket.origin,
+        return await sendMount(req, res, { enabled: true, id, url: ticket.url, origin: ticket.origin,
         title: mount.title, html, csp: policy.csp, permissions: {},
-        arguments: {}, result: created });
+        arguments: {}, result: created, revision });
         }
         let parsedTool = mcp.parseServerSlugAndToolName(call.name);
         if (!parsedTool) throw err('EBADINPUT', 'Not an MCP tool call');
@@ -273,7 +307,7 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
         mounts.set(id, mount);
         validate(mount); // resource read / listener startup may race revocation
         sandbox.bind(ticket.token, () => { validate(mount); });
-        return sendJSON(res, 200, { enabled: true, id, url: ticket.url, origin: ticket.origin,
+        return await sendMount(req, res, { enabled: true, id, url: ticket.url, origin: ticket.origin,
           title: mount.title, html: resource.text, csp: policy.csp, permissions: {},
           arguments: call.args || {}, result: toolResult });
       }
@@ -286,6 +320,10 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
       const session = validate(mount);
       if (match[2] === 'status') {
       mount.lease = Date.now() + 20000;
+      // An app with artifacts learns here that its file or data changed.
+      if (mount.watched?.length) {
+        return sendJSON(res, 200, { ok: true, revision: require('./artifacts.js').revision(mount.projectDir, mount.chatId, mount.watched) });
+      }
       return sendJSON(res, 200, { ok: true });
       }
       // ui/update-model-context from an extension view with model.context (src/app-context.js).
@@ -400,7 +438,7 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
       return sendJSON(res, status, { error: e.message, code: e.code || 'EMCP_APP' });
     }
   }
-  async function close() { clearInterval(timer); messageLimits.clear(); for (const id of mounts.keys()) dispose(id); await sandbox.close(); }
+  async function close() { clearInterval(timer); messageLimits.clear(); for (const id of mounts.keys()) dispose(id); sandbox.close(); }
   return { handle, close, sandbox, mounts };
 }
 module.exports = { createMcpAppsHost };

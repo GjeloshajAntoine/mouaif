@@ -11,7 +11,7 @@ const { findChrome } = require('./lib/capture-fixture.js');
 import { connectAppCdp } from './lib/mcp-apps-cdp.mjs';
 const { createSandboxService, buildPolicy } = require('../src/mcp-apps-sandbox.js');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-apps-browser-'));
-const sandbox = createSandboxService({ host: '127.0.0.1' });
+const sandbox = createSandboxService();
 const appBundle = await build({ stdin: { resolveDir: process.cwd(), loader: 'js', contents: `
   import { App } from '@modelcontextprotocol/ext-apps';
   const app = new App({ name: 'Official SDK fixture', version: '1' }, { availableDisplayModes: ['inline', 'fullscreen'] });
@@ -49,16 +49,10 @@ const server = http.createServer(async (req, res) => {
   let body = '';
   for await (const chunk of req) body += chunk;
   if (req.url?.startsWith('/api/mcp/apps/sandbox/')) {
-    return (server._samePortSandbox || sandbox).handleProxy(req, res, req.url.slice('/api/mcp/apps/sandbox/'.length));
+    return sandbox.handleProxy(req, res, req.url.slice('/api/mcp/apps/sandbox/'.length));
   }
   if (req.url === '/api/mcp/apps/mount') {
     mountCount++;
-    if (mountCount === 2) {
-      const samePortSandbox = createSandboxService({ samePort: true });
-      ticket = await samePortSandbox.issue(base, buildPolicy({}, base));
-      server._samePortSandbox = samePortSandbox;
-      return json(200, { enabled: true, id: 'fixture', title: 'SDK fixture', html, url: ticket.url, origin: ticket.origin, csp: {}, arguments: { value: 7 }, result: { content: [{ type: 'text', text: 'original result' }] } });
-    }
     ticket = await sandbox.issue(base, buildPolicy({}, base));
     return json(200, { enabled: true, id: 'fixture', title: 'SDK fixture', html, url: ticket.url, origin: ticket.origin, csp: {}, arguments: { value: 7 }, result: { content: [{ type: 'text', text: 'original result' }] } });
   }

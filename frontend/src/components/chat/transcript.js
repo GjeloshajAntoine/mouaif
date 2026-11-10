@@ -195,6 +195,22 @@ function transcriptInsert(refs, node) {
   refs._lastInsertedRow = node;
 }
 
+// moveTranscriptNode(host, node, ref)
+//
+// Reposition a row already on screen. `moveBefore` keeps a mounted MCP App's
+// iframe running. `insertBefore` reloads it, and since its sandbox ticket is
+// single-use, McpAppFrame then has to take a fresh mount, which loses the app's
+// state, so that is only the fallback for browsers without `moveBefore`.
+function moveTranscriptNode(host, node, ref) {
+  if (typeof host.moveBefore === 'function' && node.isConnected && host.isConnected) {
+    try {
+      host.moveBefore(node, ref);
+      return;
+    } catch { /* fall back to a plain move */ }
+  }
+  host.insertBefore(node, ref);
+}
+
 // renderImageAttachments(host, attachments)
 //
 // A user turn's image attachments render as a wrapped thumbnail grid. Each
@@ -3031,6 +3047,7 @@ function renderTranscriptBackfill(state, refs, chunk) {
   // strand the backfill anchor for the rest of the session.
   refs._suspendScrollPin = false;
 }
+  pinLatestAppAfterOlderRows(refs);
 
   // Keep the viewport stable: if the user was pinned to the bottom stay
   // there; otherwise preserve their reading position by compensating
@@ -3129,7 +3146,7 @@ for (let i = tail.length - 1; i >= 0; i--) {
 const card = tail[i];
 const next = card.nextElementSibling === undefined ? (card.nextSibling || null) : card.nextElementSibling;
 if (card.parentNode !== el || next !== cursor) {
-el.insertBefore(card, cursor);
+moveTranscriptNode(el, card, cursor);
 }
 cursor = card;
 }
@@ -3408,60 +3425,89 @@ function findExistingMcpAppCard(refs, rawR, currentCard) {
   return null;
 }
 
-// hasMcpCreatedCard(refs, except) -> bool
-//
-// Whether the transcript already holds another on-the-fly app card.
-function hasMcpCreatedCard(refs, except) {
-  const el = refs && refs.transcript && refs.transcript.current;
-  if (!el) return false;
-  for (const child of el.children) {
-    if (child !== except && child.dataset && child.dataset.mcpAppPath) return true;
-  }
-  return false;
-}
-
 // unpinMcpAppCard(card, el)
 //
 // A newer app took the bottom slot: drop this card's bottom pin and put it
-// back at its chronological place in the chat. It keeps its path and name so
-// a later `create_mcp_app` update still finds it.
+// back at its chronological place in the chat, where its view keeps running. An
+// on-the-fly card keeps its path and name so a later `create_mcp_app` update
+// still finds it.
 function unpinMcpAppCard(card, el) {
   if (card.dataset) delete card.dataset.mcpAppCard;
   restoreSubagentCardToSlot(card, el);
 }
 
+// recordMcpAppSlot(card)
+//
+// Remember where a card sits in the conversation before it moves to the bottom:
+// the row above it, and the row below it for a card with nothing above it yet.
+function recordMcpAppSlot(card) {
+  ensureSubagentSlotMarker(card);
+  const next = card.nextElementSibling;
+  const isRow = next && !isRunningSubagentCard(next) && !isMcpAppCard(next) && !isOverlayCard(next) && !isLiveAssistantRow(next);
+  card._slotNext = isRow ? next : null;
+}
+
+// isOlderThanPinnedApp(refs, card) -> bool
+//
+// Whether `card` sits above the chat slot of the app holding the bottom, so it
+// is the older of the two. An app pinned from a slot that is gone counts as
+// older than anything.
+function isOlderThanPinnedApp(refs, card) {
+  const el = refs && refs.transcript && refs.transcript.current;
+  if (!el) return false;
+  const children = Array.from(el.children);
+  const pinned = children.find((child) => child !== card && isMcpAppCard(child));
+  if (!pinned || !pinned._slotRecorded) return false;
+  const index = children.indexOf(card);
+  const prevIndex = pinned._slotPrev ? children.indexOf(pinned._slotPrev) : -1;
+  if (prevIndex >= 0) return index <= prevIndex;
+  const nextIndex = pinned._slotNext ? children.indexOf(pinned._slotNext) : -1;
+  return nextIndex >= 0 && index < nextIndex;
+}
+
+// pinLatestAppAfterOlderRows(refs)
+//
+// Settle the bottom slot after a pass painted older rows above an anchor. An app
+// already holding it is newer than anything such a pass paints. Otherwise the
+// slot goes to the newest created app on screen, which is the last in chat order.
+function pinLatestAppAfterOlderRows(refs) {
+  const el = refs.transcript.current;
+  if (!el) return;
+  let latest = null;
+  for (const child of el.children) {
+    if (isMcpAppCard(child)) return;
+    if (child.dataset && child.dataset.mcpAppPath) latest = child;
+  }
+  if (latest) pinMcpAppCardToBottom(refs, latest);
+}
+
 // pinMcpAppCardToBottom(refs, card)
 //
-// Mark `card` as an interactive MCP App card and ensure it sits in the
-// bottom-pinned slot (after regular transcript rows, before any overlay
-// card). If `card` is already in that slot, no DOM mutation occurs so an
-// already-mounted iframe is not reloaded.
+// Mark `card` as an interactive MCP App card and give it the bottom-pinned slot
+// (after regular transcript rows, before any overlay card). MCP Apps take turns:
+// only the latest stays at the bottom, and every other one goes back to the slot
+// it was pinned from. If `card` is already in that slot, no DOM mutation occurs.
 function pinMcpAppCardToBottom(refs, card) {
   if (!card) return;
   const el = refs && refs.transcript && refs.transcript.current;
-  // On-the-fly apps (they carry a path) take turns: only the latest stays at
-  // the bottom. Remember where this card sits in the conversation before it
-  // moves, and send every other pinned one back to the slot it was pinned from.
-  const isCreated = !!(card.dataset && card.dataset.mcpAppPath);
-  if (isCreated && el && card.parentNode === el && !isMcpAppCard(card)) ensureSubagentSlotMarker(card);
+  if (el && card.parentNode === el && !isMcpAppCard(card)) recordMcpAppSlot(card);
   if (card.dataset) card.dataset.mcpAppCard = '1';
   if (card.classList) card.classList.add('tool-card--mcp-app');
   if (!el || card.parentNode !== el) return;
-  if (isCreated) {
-    for (const child of Array.from(el.children)) {
-      if (child !== card && isMcpAppCard(child) && child.dataset.mcpAppPath) unpinMcpAppCard(child, el);
-    }
+  // Older rows still to come are inserted above this anchor, so it can't leave
+  // for the bottom with the card.
+  if (refs._insertAnchor === card) refs._insertAnchor = card.nextElementSibling || null;
+  for (const child of Array.from(el.children)) {
+    if (child !== card && isMcpAppCard(child)) unpinMcpAppCard(child, el);
   }
-  const overlayAnchor = firstOverlayCard(el);
   let needsMove = false;
   let seenCard = false;
   for (const child of el.children) {
     if (child === card) { seenCard = true; continue; }
-    if (!seenCard) continue;
-    if (!isMcpAppCard(child) && !isOverlayCard(child)) { needsMove = true; break; }
+    if (seenCard && !isOverlayCard(child)) { needsMove = true; break; }
   }
   if (needsMove) {
-    el.insertBefore(card, overlayAnchor);
+    moveTranscriptNode(el, card, firstOverlayCard(el));
     afterTranscriptAppend(refs, false);
   }
 }
@@ -3669,7 +3715,7 @@ export function reconcileTranscriptRows(state, refs, order) {
       cursor = node.nextElementSibling;
       continue;
     }
-    el.insertBefore(node, cursor);
+    moveTranscriptNode(el, node, cursor);
     cursor = node.nextElementSibling;
   }
 
@@ -3683,7 +3729,7 @@ export function reconcileTranscriptRows(state, refs, order) {
       cursor = child.nextElementSibling;
       continue;
     }
-    el.insertBefore(child, cursor);
+    moveTranscriptNode(el, child, cursor);
     cursor = child.nextElementSibling;
   }
 
@@ -3695,7 +3741,7 @@ export function reconcileTranscriptRows(state, refs, order) {
       cursor = node.nextElementSibling;
       continue;
     }
-    el.insertBefore(node, cursor);
+    moveTranscriptNode(el, node, cursor);
     cursor = node.nextElementSibling;
   }
 
@@ -3710,7 +3756,7 @@ export function reconcileTranscriptRows(state, refs, order) {
       cursor = node.nextElementSibling;
       continue;
     }
-    el.insertBefore(node, cursor);
+    moveTranscriptNode(el, node, cursor);
     cursor = node.nextElementSibling;
   }
 

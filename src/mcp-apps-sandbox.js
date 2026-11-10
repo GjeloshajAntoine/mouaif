@@ -1,6 +1,5 @@
 'use strict';
 
-const http = require('node:http');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -57,14 +56,14 @@ function buildPolicy(ui, hostOrigin) {
   return { csp, header, permissions: {} };
 }
 
-// One listener per app HTTP server. It has no API routes, session cookies,
-// CORS, service worker or resource HTML endpoint. Tickets expire on teardown.
-// For HTTPS/reverse-proxy deployments, single-use tickets can also be served
-// via handleProxy() with `Content-Security-Policy: sandbox allow-scripts` so
-// the outer proxy gets an opaque (`null`) origin without an extra port.
-function createSandboxService(options = {}) {
+// Single-use tickets for the trusted outer proxy, served on the app's own port
+// at /api/mcp/apps/sandbox/:token, so an install only has to publish that port.
+// `Content-Security-Policy: sandbox allow-scripts` gives the proxy an opaque
+// (`null`) origin: unlike a sibling port, it shares neither cookies nor a site
+// with the app. Tickets expire on teardown.
+function createSandboxService() {
   const tickets = new Map();
-  function serveTicket(req, res, token, opaqueSandbox = false) {
+  function handleProxy(req, res, token) {
     const ticket = tickets.get(token);
     if (req.method !== 'GET' || !ticket || ticket.expires < Date.now()) {
       res.writeHead(404, { 'Cache-Control': 'no-store' }); res.end(); return;
@@ -88,12 +87,9 @@ function createSandboxService(options = {}) {
       res.writeHead(404, { 'Cache-Control': 'no-store' }); res.end(); return;
     }
     ticket.used = true; // reload/navigation requires a fresh mount
-    const cspHeader = opaqueSandbox
-    ? ticket.policy.header + '; sandbox allow-scripts'
-    : ticket.policy.header;
     res.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8',
-      'Content-Security-Policy': cspHeader,
+      'Content-Security-Policy': ticket.policy.header + '; sandbox allow-scripts',
       'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), clipboard-write=(), display-capture=()',
       'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'no-referrer'
@@ -103,10 +99,6 @@ function createSandboxService(options = {}) {
     + 'const EXPECTED_HOST_ORIGIN=' + JSON.stringify(ticket.hostOrigin) + ';\n'
     + fs.readFileSync(path.join(__dirname, 'mcp-apps-sandbox-proxy.js'), 'utf8') + '</script>');
   }
-  const server = http.createServer((req, res) => {
-    serveTicket(req, res, req.url?.slice(1), false);
-  });
-  let starting;
   async function issue(hostOrigin, policy) {
     const host = new URL(hostOrigin);
     if (host.protocol !== 'http:' && host.protocol !== 'https:') {
@@ -115,34 +107,13 @@ function createSandboxService(options = {}) {
     for (const [token, ticket] of tickets) if (ticket.expires < Date.now()) tickets.delete(token);
     if (tickets.size >= 64) throw err('EMCP_APP_LIMIT', 'Sandbox ticket limit reached');
     const token = crypto.randomBytes(24).toString('base64url');
-    if (host.protocol === 'https:' || options.samePort) {
     tickets.set(token, { hostOrigin, host: host.host, policy, used: false, expires: Date.now() + 30 * 60 * 1000 });
     return { token, url: hostOrigin + '/api/mcp/apps/sandbox/' + token, origin: 'null' };
-    }
-    if (!starting) starting = new Promise((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(options.port || 0, options.host || '0.0.0.0', () => {
-        server.off('error', reject); server.unref(); resolve();
-      });
-    });
-    await starting;
-    if (tickets.size >= 64) throw err('EMCP_APP_LIMIT', 'Sandbox ticket limit reached');
-    const sandboxOrigin = 'http://' + host.hostname + ':' + server.address().port;
-    if (sandboxOrigin === hostOrigin) throw err('EMCP_APP_ORIGIN', 'Sandbox and host origins must differ');
-    tickets.set(token, { hostOrigin, host: new URL(sandboxOrigin).host, policy, used: false, expires: Date.now() + 30 * 60 * 1000 });
-    return { token, url: sandboxOrigin + '/' + token, origin: sandboxOrigin };
-  }
-  function handleProxy(req, res, token) {
-    serveTicket(req, res, token, true);
   }
   function bind(token, validate) { tickets.get(token).validate = validate; }
   function revoke(token) { tickets.delete(token); }
-  async function close() {
-    tickets.clear();
-    server.closeAllConnections();
-    if (server.listening) await new Promise(resolve => server.close(resolve));
-  }
-  return { issue, handleProxy, bind, revoke, close, server };
+  function close() { tickets.clear(); }
+  return { issue, handleProxy, bind, revoke, close };
 }
 
 module.exports = { approvedDomains, buildPolicy, createSandboxService };

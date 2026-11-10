@@ -1,4 +1,4 @@
-// Trusted outer proxy, served by the isolated sandbox listener or sandboxed HTTPS route.
+// Trusted outer proxy, served with CSP `sandbox allow-scripts` by the sandbox route.
 (() => {
   if (window.parent === window) return;
   const hostOrigin = typeof EXPECTED_HOST_ORIGIN === 'string' && EXPECTED_HOST_ORIGIN

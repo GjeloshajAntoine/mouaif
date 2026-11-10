@@ -12,7 +12,7 @@ const { findChrome } = require('./lib/capture-fixture.js');
 const { renderHtml } = require('../src/instant-mcp-apps.js');
 const { createSandboxService, buildPolicy } = require('../src/mcp-apps-sandbox.js');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-instant-ui-'));
-const sandbox = createSandboxService({ host: '127.0.0.1' });
+const sandbox = createSandboxService();
 let currentLabel = 'initialized';
 const makeHtml = () => renderHtml(`
   document.querySelector('#app').innerHTML = '<p id="ready">waiting</p><p id="incoming"></p><button id="message">Send text</button>';
@@ -29,7 +29,7 @@ const makeHtml = () => renderHtml(`
 const bundle = await build({ stdin: { resolveDir: process.cwd(), loader: 'jsx', contents: `
   import { h, render } from 'preact';
   import { InstantMcpApp } from './frontend/src/components/settings/InstantMcpApp.jsx';
-  import { appendMessageToTranscript, appendToolCallCard, appendToolResultCard } from './frontend/src/components/chat/transcript.js';
+  import { appendMessageToTranscript, appendToolCallCard, appendToolResultCard, prependOlderTranscript, renderTranscript } from './frontend/src/components/chat/transcript.js';
   render(h(InstantMcpApp, { projectDir: '/fixture', onImported: () => window.imported = true }), document.querySelector('#form'));
   const root = document.querySelector('#frame');
   const refs = { transcript: { current: root }, pinnedToBottom: { current: false }, pendingCount: { current: 0 },
@@ -53,6 +53,61 @@ const bundle = await build({ stdin: { resolveDir: process.cwd(), loader: 'jsx', 
       result: { ok: true, name: 'Second app', path: 'second.js', content: [{ type: 'text', text: 'ready' }] } }, refs);
     appendMessageToTranscript({ role: 'assistant', content: 'Second app is ready', ts: new Date().toISOString() }, false, refs, { chat: {} });
   };
+  // Any MCP App, not only on-the-fly ones: a server tool's card mounts its view
+  // when it is expanded.
+  window.addServerAppTool = id => {
+    appendToolCallCard({ id, name: 'mcp__srv__view', args: {} }, refs);
+    appendToolResultCard({ id, name: 'mcp__srv__view', ok: true, result: { content: [{ type: 'text', text: 'ok' }] } }, refs);
+    appendMessageToTranscript({ role: 'assistant', content: 'After ' + id, ts: new Date().toISOString() }, false, refs, { chat: {} });
+  };
+  // Rows of a persisted chat, for the paths that paint history.
+  const rowText = id => ({ role: 'assistant', content: 'Row ' + id, ts: '2026-01-01T00:00:00.000Z', seq: id });
+  const appRows = id => [
+    { role: 'tool', phase: 'call', toolCallId: id, name: 'create_mcp_app', args: { name: id }, ts: '2026-01-01T00:00:00.000Z' },
+    { role: 'tool', phase: 'result', toolCallId: id, name: 'create_mcp_app', ok: true, args: { name: id },
+      content: JSON.stringify({ ok: true, name: id, path: id + '.js' }), ts: '2026-01-01T00:00:00.000Z' }
+  ];
+  const historyRoot = id => {
+    const host = document.createElement('div');
+    host.id = id;
+    document.body.appendChild(host);
+    return { transcript: { current: host }, pinnedToBottom: { current: false }, pendingCount: { current: 0 },
+      jumpBtn: { current: null }, usageSummary: { current: null }, setupCard: { current: null }, systemPromptCard: { current: null },
+      toolsCard: { current: null }, skillsCard: { current: null }, agentFilesCard: { current: null },
+      mcpAppContext: { projectDir: '/fixture', chatId: 'chat' } };
+  };
+  const historyState = messages => ({ messages, chat: {}, props: { projectDir: '/fixture', chatId: 'chat' } });
+  // Two apps in one older page, oldest first, with nothing newer on screen.
+  window.prependTwoApps = () => {
+    const page = historyRoot('prepend');
+    appendMessageToTranscript({ role: 'assistant', content: 'Tail row', ts: '2026-01-01T00:00:00.000Z' }, false, page, { chat: {} });
+    prependOlderTranscript(historyState([]), page, [...appRows('page-a'), rowText('between'), ...appRows('page-b')]);
+    prependOlderTranscript(historyState([]), page, [...appRows('page-older')]);
+    window.prependPage = page;
+  };
+  window.createOnPrependPage = () => {
+    appendToolCallCard({ id: 'page-live', name: 'create_mcp_app', args: { name: 'live' } }, window.prependPage);
+    appendToolResultCard({ id: 'page-live', name: 'create_mcp_app', ok: true, result: { ok: true, name: 'live', path: 'live.js' } }, window.prependPage);
+  };
+  // An app that opens its page: it has nothing above it until an older page
+  // lands, and must still go back between that page and the rows below it.
+  window.prependFirstRowApp = () => {
+    const page = historyRoot('first-row');
+    appendMessageToTranscript({ role: 'assistant', content: 'Tail row', ts: '2026-01-01T00:00:00.000Z' }, false, page, { chat: {} });
+    prependOlderTranscript(historyState([]), page, [...appRows('first-a')]);
+    prependOlderTranscript(historyState([]), page, [rowText('older')]);
+    appendToolCallCard({ id: 'first-live', name: 'create_mcp_app', args: { name: 'live' } }, page);
+    appendToolResultCard({ id: 'first-live', name: 'create_mcp_app', ok: true, result: { ok: true, name: 'live', path: 'live2.js' } }, page);
+  };
+  // A long chat: both apps sit in the backfilled history, above the tail.
+  window.renderLongChat = () => {
+    const page = historyRoot('backfill');
+    const messages = [];
+    for (let i = 0; i < 5; i++) messages.push(rowText(1000 + i));
+    messages.push(...appRows('fill-a'), rowText(1100), ...appRows('fill-b'));
+    for (let i = 0; i < 60; i++) messages.push(rowText(2000 + i));
+    renderTranscript(historyState(messages), page);
+  };
   appendToolCallCard({ id: 'native-create', name: 'create_mcp_app', args: { name: 'Single-file app', filename: 'app.js' } }, refs);
   appendToolResultCard({ id: 'native-create', name: 'create_mcp_app', ok: true,
     result: { ok: true, name: 'Single-file app', path: 'app.js', content: [{ type: 'text', text: 'ready' }] } }, refs);
@@ -68,6 +123,7 @@ const imports = [], requests = [], appMessages = [], mounts = [];
 const server = http.createServer(async (req, res) => {
   const json = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
   let raw = ''; for await (const chunk of req) raw += chunk;
+  if (req.url.startsWith('/api/mcp/apps/sandbox/')) return sandbox.handleProxy(req, res, req.url.slice('/api/mcp/apps/sandbox/'.length));
   if (req.url === '/api/mcp/apps/import') {
     imports.push(JSON.parse(raw)); return json(201, { name: 'On-the-fly app', path: 'counter.js' });
   }
@@ -188,6 +244,68 @@ try {
   assert.equal(await cdp.evaluate("document.querySelector('#frame').lastElementChild === document.querySelector('[data-tool-id=\"second-create\"]')"), true, 'newest app card takes the bottom slot');
   assert.equal(await cdp.evaluate("[...document.querySelector('#frame').children].filter(c => c.dataset.mcpAppCard).length"), 1, 'only the latest app card stays pinned');
   assert.equal(await cdp.evaluate("[...document.querySelector('#frame').children].indexOf(window.nativeCard) < [...document.querySelector('#frame').children].findIndex(c => c.textContent.includes('App is ready below'))"), true, 'older app card is back in its chat position, before the messages that followed it');
+  // Every app keeps running, wherever its card sits.
+  const frameChildren = "[...document.querySelector('#frame').children]";
+  const pinnedIds = "[...document.querySelector('#frame').children].filter(c => c.dataset.mcpAppCard).map(c => c.dataset.toolId)";
+  const framesSettled = async (count, label) => {
+    let state;
+    for (let i = 0; i < 200; i++) {
+      state = await cdp.evaluate("({ frames: document.querySelectorAll('#frame .mcp-app iframe').length, busy: document.querySelectorAll('#frame .mcp-app [role=status]').length, retry: document.querySelectorAll('#frame .mcp-app__btn--retry').length })");
+      if (state.frames === count && state.busy === 0 && state.retry === 0) return;
+      await sleep(50);
+    }
+    assert.fail(label + ': ' + JSON.stringify(state));
+  };
+  await framesSettled(2, 'both apps run after the older one went back to the chat');
+  assert.equal(mounts.length, 3, 'moving the older card keeps its running view, with no new mount');
+  assert.equal(await appEvaluate("document.querySelector('#ready').textContent"), 'reloaded-v2', 'older app is the same running view');
+  const messagesBefore = appMessages.length;
+  await appEvaluate("document.querySelector('#message').click()");
+  for (let i = 0; appMessages.length === messagesBefore && i < 100; i++) await sleep(50);
+  assert.equal(appMessages.length, messagesBefore + 1, 'older app can still talk to the host from its chat position');
+  // A server app follows the same rule: the latest expanded one takes the bottom.
+  await cdp.evaluate("window.addServerAppTool('server-older'); window.addServerAppTool('server-newer')");
+  await cdp.evaluate("document.querySelector('[data-tool-id=\"server-newer\"] .tool-card__head').click()");
+  await framesSettled(3, 'server app runs');
+  assert.deepEqual(await cdp.evaluate(pinnedIds), ['server-newer'], 'a server app takes the bottom from an on-the-fly app');
+  assert.equal(await cdp.evaluate("document.querySelector('#frame').lastElementChild.dataset.toolId"), 'server-newer', 'latest server app sits at the bottom');
+  assert.equal(await cdp.evaluate(frameChildren + ".findIndex(c => c.dataset.toolId === 'second-create') < " + frameChildren + ".findIndex(c => c.textContent.includes('Second app is ready'))"), true, 'the app it replaced is back in chat order');
+  await cdp.evaluate("document.querySelector('[data-tool-id=\"server-older\"] .tool-card__head').click()");
+  await framesSettled(4, 'older server app runs too');
+  assert.deepEqual(await cdp.evaluate(pinnedIds), ['server-newer'], 'opening an older app does not take the bottom from a newer one');
+  assert.equal(await cdp.evaluate(frameChildren + ".findIndex(c => c.dataset.toolId === 'server-older') < " + frameChildren + ".findIndex(c => c.textContent.includes('After server-older'))"), true, 'the older app runs from its chat position');
+  assert.equal(await cdp.evaluate("getComputedStyle(document.querySelector('[data-tool-id=\"second-create\"]')).contentVisibility"), 'visible', 'an app in chat order is never skipped as an off-screen row');
+  // Browsers without moveBefore reload a moved iframe; its ticket is spent, so
+  // the view takes a fresh mount rather than staying blank.
+  const mountsBefore = mounts.length;
+  await cdp.evaluate("window.savedMoveBefore = Element.prototype.moveBefore; delete Element.prototype.moveBefore; window.addServerAppTool('server-latest')");
+  await cdp.evaluate("document.querySelector('[data-tool-id=\"server-latest\"] .tool-card__head').click()");
+  for (let i = 0; mounts.length < mountsBefore + 2 && i < 200; i++) await sleep(50);
+  assert.equal(mounts.length, mountsBefore + 2, 'a reloaded view takes a fresh mount');
+  assert.equal(mounts.at(-1).callId, 'server-newer', 'the fresh mount is for the moved card');
+  await framesSettled(5, 'a reloaded view runs again');
+  await cdp.evaluate("Element.prototype.moveBefore = window.savedMoveBefore");
+  assert.deepEqual(await cdp.evaluate(pinnedIds), ['server-latest'], 'latest app holds the bottom');
+  // History: the newest app wins however its page was painted.
+  const orderOf = host => "[...document.querySelector('#" + host + "').children].map(c => c.dataset.toolId || c.textContent.trim().split('\\n')[0])";
+  const indexIn = (order, needle) => order.findIndex(entry => String(entry).includes(needle));
+  await cdp.evaluate('window.prependTwoApps()');
+  let order = await cdp.evaluate(orderOf('prepend'));
+  assert.equal(order.at(-1), 'page-b', 'newest app of an older page takes the bottom, not the first: ' + JSON.stringify(order));
+  assert.deepEqual(await cdp.evaluate("[...document.querySelectorAll('#prepend > [data-mcp-app-card]')].map(c => c.dataset.toolId)"), ['page-b'], 'only one app of the page is pinned');
+  assert(indexIn(order, 'page-older') < indexIn(order, 'page-a') && indexIn(order, 'page-a') < indexIn(order, 'Tail row'), 'older apps stay in chat order: ' + JSON.stringify(order));
+  await cdp.evaluate('window.createOnPrependPage()');
+  order = await cdp.evaluate(orderOf('prepend'));
+  assert.equal(order.at(-1), 'page-live', 'a live app takes the bottom');
+  assert(indexIn(order, 'page-b') < indexIn(order, 'Tail row') && indexIn(order, 'page-a') < indexIn(order, 'page-b'), 'the app it replaced returns to its chat slot: ' + JSON.stringify(order));
+  await cdp.evaluate('window.prependFirstRowApp()');
+  order = await cdp.evaluate(orderOf('first-row'));
+  assert(indexIn(order, 'older') < indexIn(order, 'first-a') && indexIn(order, 'first-a') < indexIn(order, 'Tail row'), 'an app that opened its page returns below older rows: ' + JSON.stringify(order));
+  await cdp.evaluate('window.renderLongChat()');
+  for (let i = 0; i < 100 && await cdp.evaluate("document.querySelector('#backfill').children.length") < 68; i++) await sleep(50);
+  order = await cdp.evaluate(orderOf('backfill'));
+  assert.equal(order.at(-1), 'fill-b', 'latest app of a long chat takes the bottom: ' + JSON.stringify(order));
+  assert(indexIn(order, 'Row 1004') < indexIn(order, 'fill-a') && indexIn(order, 'fill-a') < indexIn(order, 'Row 1100') && indexIn(order, 'Row 1100') < indexIn(order, 'Row 2000'), 'backfilled rows stay in order around the pinned app: ' + JSON.stringify(order));
   await cdp.evaluate("const upload=document.querySelector('#instant-mcp-app-file');const data=new DataTransfer();data.items.add(new File(['document.body.textContent=\"Uploaded\";'],'upload.js'));upload.files=data.files;upload.dispatchEvent(new Event('change',{bubbles:true}));");
   await sleep(50);
   await cdp.evaluate("document.querySelector('.instant-mcp-app button').click()");
