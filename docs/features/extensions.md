@@ -26,9 +26,9 @@ Open **Settings → App defaults → Extensions** (`#/settings/extensions`).
 A repository can ship extensions as `.mouaif/extensions/<id>.mouaif-extension.json`. They behave like [project hooks](hooks.md#project-hooks):
 
 - They stay **off** until you review them. The **Project … off** bar in the project's chats and **Settings → Extensions → This project** both offer **Trust and turn on**.
-- Trust is tied to a fingerprint (a sha256 hash) of the file and of every project script its command hooks run. Any change turns the extension off again.
+- Trust is tied to a fingerprint (a sha256 hash) of the file and of every project script its command hooks run. Any change turns the extension off again, from the next hook on.
 - A project extension can use an MCP server the project already configures (`server.ref`), but cannot register one.
-- A project extension with the same `id` as an installed one takes its place in that project.
+- Once you trust it, a project extension with the same `id` as an installed one takes its place in that project. A file you haven't trusted (or that changed since) doesn't, so a repository can't switch off one of your extensions. The two keep separate storage.
 
 ### The file
 
