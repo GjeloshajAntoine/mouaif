@@ -37,6 +37,26 @@ function fireTurnError(t) {
   }, { projectDir: t.projectDir, chatId: t.chatId, cwd: t.cwd }).catch(() => null);
 }
 
+// fireSubagentEnd(ctx, s) -> Promise<{ notes, context? } | null>
+//
+// A delegated run finished, at any depth (`depth` says how deep). Its caller
+// waits for this unless the run was cancelled, so a hook's context reaches the
+// parent with the result. Fired by src/tools/subagent-orchestration.js through
+// the `onEnd` src/ai-stream.js gives it.
+//
+// s: { row, exec, state, task, background, origin }
+async function fireSubagentEnd(ctx, { row, exec, state, task, background, origin }) {
+  const result = (exec && exec.result) || {};
+  const outcome = await hooks.runHooks('subagent.end', {
+    origin: hookOriginOf(origin), callId: row.callId, agent: row.agent || null, task: task || '', background: !!background,
+    state, ok: !!(exec && exec.ok), text: typeof result.text === 'string' ? result.text : '', error: result.error || null,
+    model: (result.model && result.model.id) || row.modelId || null, depth: row.depth, parentCallId: row.parentCallId || null,
+    groupId: row.groupId || null, memberId: row.memberId || null, durationMs: Date.now() - row.startedAt
+  }, ctx).catch(() => null);
+  if (!outcome || !outcome.notes.length) return null;
+  return outcome.context ? { notes: outcome.notes, context: outcome.context } : { notes: outcome.notes };
+}
+
 // fireTurnEnd(t, { startTurn, isRunning }) -> Promise<{ followUp: 'started' | 'limit' | 'busy' | 'failed' | null }>
 //
 // t: { projectDir, chatId, cwd, origin, modelId, providerId, sessionToken,
@@ -86,4 +106,4 @@ async function fireTurnEnd(t, { startTurn, isRunning } = {}) {
   return { followUp: 'failed' };
 }
 
-module.exports = { MAX_FOLLOW_UPS, fireTurnStart, fireTurnError, fireTurnEnd };
+module.exports = { MAX_FOLLOW_UPS, fireTurnStart, fireTurnError, fireSubagentEnd, fireTurnEnd };

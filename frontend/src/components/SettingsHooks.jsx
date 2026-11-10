@@ -156,6 +156,7 @@ function samplePayload(hook) {
     case 'turn.start': return { model: 'test-model', provider: 'test', thinkingLevel: '' };
     case 'turn.end': return { text: 'Test answer from Settings.', usage: null, cost: null, toolCount: 1, followUpDepth: 0 };
     case 'turn.error': return { code: 'EUPSTREAM', message: 'Test error from Settings', stopped: false };
+    case 'subagent.end': return { callId: 'test', agent: null, task: 'Test task from Settings', background: false, state: 'completed', ok: true, text: 'Test result from Settings.', error: null, model: 'test-model', depth: 1, parentCallId: null, groupId: null, memberId: null, durationMs: 1200 };
     case 'attention': return { kind: 'tool_authorization', tool: 'shell' };
     default: {
       const tool = (hook.match && hook.match.tool && hook.match.tool[0] && !hook.match.tool[0].includes('*')) ? hook.match.tool[0] : 'shell';

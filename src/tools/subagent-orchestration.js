@@ -114,6 +114,7 @@ class Scope {
       row.rootId = this.root.rootId || (this.root.rootId = randomUUID());
       row.scope = this; this.root.allRuns.set(id, row);
       row.complete = complete;
+      row.onEnd = meta.onEnd || null;
       this.groups.bind(pair, row);
       if (pair) row.state = pair.member.state;
       this.runs.set(id, row);
@@ -132,20 +133,37 @@ class Scope {
     }).then(async (exec) => {
     if (row.childScope) await row.childScope.finish();
     if (row.finalized) return row.exec;
+    // A finished run waits for its subagent.end hooks, so what they add arrives
+    // with the result and its state stays "running" until then. A cancelled one
+    // does not wait: its turn is ending. Shutdown may finalize the row meanwhile.
+    const stateNow = this.settledState(row, exec);
+    const ending = this.fireEnd(row, exec, stateNow);
+    const end = stateNow === 'cancelled' ? null : await ending;
+    if (row.finalized) return row.exec;
     row.finalized = true;
     row.exec = exec;
       row.finishedAt = Date.now();
-      const member = row.groupId && this.groups.member(row.groupId, row.memberId).member;
-      row.state = member?.state === 'blocked' ? 'blocked' : row.controller.signal.aborted ? 'cancelled' : exec.ok ? 'completed' : 'failed';
+      row.state = this.settledState(row, exec);
       this.groups.settle(row, row.state);
       this.undelivered(row);
       row.modelId = exec.result?.model?.id || row.modelId || null;
       exec.result = Object.assign({}, exec.result, { rootId: row.rootId, parentCallId: row.parentCallId, depth: row.depth, callId: id, state: row.state, groupId: row.groupId || null, memberId: row.memberId || null, published: row.published.slice() });
       exec.content = JSON.stringify(exec.result);
+      if (end) exec.subagentEnd = end;
       complete(exec);
       return exec;
     });
     return row;
+  }
+  settledState(row, exec) {
+    const member = row.groupId && this.groups.member(row.groupId, row.memberId).member;
+    return member?.state === 'blocked' ? 'blocked' : row.controller.signal.aborted ? 'cancelled' : exec.ok ? 'completed' : 'failed';
+  }
+  // Tell subagent.end hooks, once per run. Never rejects.
+  fireEnd(row, exec, state) {
+    if (!row.onEnd || row.endFired) return Promise.resolve(null);
+    row.endFired = true;
+    return Promise.resolve().then(() => row.onEnd(row, exec, state)).catch(() => null);
   }
   get(id) {
     const row = this.runs.get(id);
@@ -249,7 +267,8 @@ class Scope {
       groupId: row.groupId || null, memberId: row.memberId || null, workspace: row.workspace,
       startedAt: row.startedAt, elapsedMs: (row.finishedAt || Date.now()) - row.startedAt,
       lastLine: row.lines.at(-1)?.text || '', published: row.published.slice(),
-      ...(row.exec ? { ok: row.exec.ok, text: String(row.exec.result?.text || '').slice(0, 16384), error: row.exec.result?.error } : {}) };
+      ...(row.exec ? { ok: row.exec.ok, text: String(row.exec.result?.text || '').slice(0, 16384), error: row.exec.result?.error } : {}),
+      ...(row.exec?.subagentEnd?.context ? { hookContext: row.exec.subagentEnd.context } : {}) };
   }
   dispatch(name, args, author, workspace) {
     if (this.closed || this.signal?.aborted) throw error('EABORTED', 'parent turn has ended');
@@ -362,6 +381,7 @@ class Scope {
       row.finalized = true; row.state = 'cancelled'; this.undelivered(row);
       const result = { callId: row.callId, rootId: row.rootId, parentCallId: row.parentCallId, depth: row.depth, state: 'cancelled', groupId: row.groupId || null, memberId: row.memberId || null, published: row.published.slice(), error: { code: 'ESHUTDOWN_TIMEOUT', message: 'child did not settle within shutdown budget' } };
       row.exec = { ok: false, result, content: JSON.stringify(result) };
+      this.fireEnd(row, row.exec, 'cancelled');
       row.complete(row.exec);
     }
     if (this.signal) this.signal.removeEventListener('abort', this.abort);

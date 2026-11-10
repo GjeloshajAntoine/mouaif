@@ -9,6 +9,7 @@ export const EVENT_LABELS = {
   'turn.start': 'Turn starts',
   'turn.end': 'Turn finished',
   'turn.error': 'Turn failed or stopped',
+  'subagent.end': 'Subagent finished',
   attention: 'Before a notification'
 };
 export const TOOL_EVENTS = ['tool.before', 'tool.after'];
@@ -29,6 +30,7 @@ export function matchSummary(hook) {
   if (bits.length) return bits.join(' · ');
   if (hook.event === 'prompt.submit') return 'every prompt';
   if (hook.event === 'attention') return 'every notification';
+  if (hook.event === 'subagent.end') return 'every subagent';
   return TOOL_EVENTS.includes(hook.event) ? 'every tool' : 'every turn';
 }
 

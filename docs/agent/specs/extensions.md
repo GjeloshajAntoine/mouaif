@@ -177,7 +177,7 @@ extension `user` (app) / `project` (project) / `chat` so there is one code path.
 | `turn.error` | when a run fails or is stopped | observe | error code/message, stopped-by-user flag |
 | `compact.before` | before tool-feedback compaction | observe, add context | chat id, size |
 | `attention` | when `attention-push.js` would notify (approval waiting, ask_user, done) | observe, suppress push | kind, tool |
-| `subagent.end` | a delegated run finished | observe | child id, outcome |
+| `subagent.end` | a delegated run finished, at any depth | add context (a finished run waits for it; a cancelled one does not) | call id, agent, task, state, answer text (capped), depth, group |
 
 `observe` hooks run asynchronously and never delay the chat. Hooks on the other events run
 inline and are awaited, within their timeout.
@@ -244,7 +244,7 @@ Which fields count, per event:
 | `block` | `prompt.submit`, `tool.before` | Prompt: not appended, the composer gets the reason back (`409 EHOOK_BLOCKED`). Tool: the model gets `{ ok:false, code:"EHOOK_BLOCKED", reason }` as the tool result, so it can adapt. |
 | `ask` | `tool.before` | Calls `authorize({ …, forcePrompt: true })`: the approval card appears even for Allow tools, with the hook's `reason` shown on it. Allow-session grants do not skip it. |
 | `updatedArgs` | `tool.before` | Replaces args (shallow merge). The gate and the card see the **new** args; the card marks "changed by hook <name>" with a before/after diff. |
-| `context` | `prompt.submit`, `tool.before`, `tool.after`, `compact.before` | Added to what the model sees, wrapped as untrusted data (§4.5). |
+| `context` | `prompt.submit`, `tool.before`, `tool.after`, `subagent.end`, `compact.before` | Added to what the model sees, wrapped as untrusted data (§4.5). |
 | `notice` | all | A small chip in the transcript (see §4.7). |
 | `followUp` | `turn.end` | Queues one follow-up user turn (§4.6). |
 | `redact` | `tool.after` | Regex replacements (gate regex worker, max 8) on the result **text the model sees**. The stored result and the card keep the original, marked "redacted for the model by <hook>". A hook cannot replace a result wholesale, so the transcript stays truthful. |
@@ -485,7 +485,7 @@ All under the normal session/access gates and same-origin checks.
 | --- | --- | --- |
 | GET | `/api/extensions?projectDir=` | All extensions visible in the project: scope, enabled, trust state, hooks, surfaces. |
 | POST | `/api/extensions` | Import an app-scope extension from a manifest body. Returns the permission summary; `enabled: false` until confirmed. |
-| PUT | `/api/extensions/:id` | Enable/disable (app or `{ projectDir }`), edit hooks, change surface order. |
+| PUT | `/api/extensions/:id` | Enable/disable (app or `{ projectDir }`), edit hooks. |
 | DELETE | `/api/extensions/:id` | Remove an app extension (and an inline server it registered). |
 | POST | `/api/extensions/:id/trust` | `{ projectDir, hash }`: trust a project extension at this content hash. |
 | POST | `/api/extensions/surfaces/mount` | Mint a surface mount (§5.2). Other mount routes are the existing `/api/mcp/apps/:mountId/*`. |
@@ -568,7 +568,7 @@ Each phase is one or more feature commits with docs and tests.
 | 2 | `turn.end` + `followUp` queue, `turn.start`/`turn.error`/`attention`, run log in Settings | A hook keeps the agent going until `npm test` passes, max 3 follow-ups. **Done**. A follow-up is dropped, not queued, when the chat is busy by the time the hooks answer (§4.6). `attention` covers approval, ask_user and completion pushes. |
 | 3 | Per-chat hooks (`chat_hook`, hooks bar/sheet, promote) + `hook_create`/`hook_list`/`hook_delete` | "From now on block force pushes here" adds a chat hook after one forced approval card. **Done**, with these differences: the hooks bar opens a panel above the composer like the webhook bar; scope is `chat` or `app` (`project` waits for phase 4 trust); promote goes to the app only; model scripts are capped at 8 KB so the card shows them whole. Not done: the chat list's **Hooks** filter and row icon. |
 | 4 | `http` + `module` kinds, `redact`, project hooks with hash trust | A repo ships its own policy hooks; a fresh clone shows the review banner instead of running them. **Done**. Model scope `project` and chat → project promote write the project's settings; the new list is trusted only if the old one was. A redaction that times out withholds the result from the model. |
-| 5 | `.mouaif-extension.json` format, registry, import/export, `mcp` kind, Settings → Extensions | One file installs a server + its hooks. **Done**. Project extensions may only `server.ref`; a project file shadows an app extension with the same id; re-import turns an extension off. |
+| 5 | `.mouaif-extension.json` format, registry, import/export, `mcp` kind, Settings → Extensions | One file installs a server + its hooks. **Done**. Project extensions may only `server.ref`; a trusted project file shadows an app extension with the same id (separate storage); re-import turns an extension off. |
 | 6 | Surface mounts (`resourceUri` and inline `html`), `chat.dock` + `chat.sheet`, host theme variables, LRU budget | A CI dock shows red/green above the composer in every theme. **Done**. Mounts go through `POST /api/mcp/apps/mount` with `extensionId`/`surfaceId` (the host owns the sandbox). Theme reaches views as the MCP Apps standard style variables. `displayMode` stays `inline`/`fullscreen` (the SDK's values); the slot is in `hostContext.mouaif.slot`. |
 | 7 | Host tools (`mouaif/*`) with permissions, host event forwarding | The dock updates live on `turn.end` and can insert a fix-it prompt into the composer. **Done**. The SDK has no host `tools/list` hook, so host tools are called by name (documented) rather than listed. Events come from the chat stream (`host_event` frames, unbuffered to followers), not from hooks. |
 | 8 | `settings.page`, `tool.renderer`, `project.card` | A custom renderer for `shell` output, an extension settings page. **Done**. Settings pages run in the active project. Renderers count toward the two-view budget. |

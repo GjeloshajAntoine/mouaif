@@ -675,6 +675,12 @@ async function runSingleToolCall(c, cx) {
     }
   }
 
+  // A waited-for subagent's `subagent.end` hooks already ran; show them on its
+  // card and give the model what they added.
+  if (exec && exec.subagentEnd) {
+    hookNotes.push(...exec.subagentEnd.notes);
+    if (exec.subagentEnd.context) hookContext = hookContext ? hookContext + '\n' + exec.subagentEnd.context : exec.subagentEnd.context;
+  }
   // `tool.after`: may add context for the model, never change the result. A
   // background run's result lands later, outside this call, so it has none.
   if (hooksApply && !exec.backgroundPending && !(opts && opts.signal && opts.signal.aborted)) {
@@ -2046,8 +2052,16 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     let row;
     try {
     row = scope.start(id, args.agent, (run) => runDelegation(run), (exec) => {
-      if (args.background) onEvent('tool_result', { id, name: 'subagent', ok: exec.ok, result: exec.result });
-    }, { groupId: args.groupId, memberId: args.memberId, workspace: workingDir });
+      if (args.background) onEvent('tool_result', { id, name: 'subagent', ok: exec.ok, result: exec.result, hooks: exec.subagentEnd ? hooksMeta(exec.subagentEnd.notes, exec.subagentEnd.context || '') : undefined });
+    }, { groupId: args.groupId, memberId: args.memberId, workspace: workingDir, onEnd: (ended, exec, state) => {
+      const hookCtx = hookContextFor(callOpts);
+      // subagent.end fires at every depth: its payload carries `depth`.
+      hookCtx.nested = false;
+      hookCtx.disabled = !!callOpts.hooksDisabled;
+      // A cancelled run's hook runs on its own, past the turn that is ending.
+      if (state === 'cancelled') hookCtx.signal = null;
+      return require('./hookTurns.js').fireSubagentEnd(hookCtx, { row: ended, exec, state, task: args.task, background: args.background === true, origin: callOpts.hookOrigin });
+    } });
     } catch (e) {
     const result = { error: { code: e.code || 'EBADINPUT', message: e.message } };
     return { ok: false, result, content: JSON.stringify(result) };

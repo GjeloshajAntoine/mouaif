@@ -40,9 +40,10 @@ The hooks in Settings are app-wide: they apply to every project and every chat. 
 | `turn.start` | when a turn is about to call the model | watch |
 | `turn.end` | when a turn finished and was saved | start one follow-up turn |
 | `turn.error` | when a turn failed, or you stopped it | watch |
+| `subagent.end` | when a delegated run finished, at any depth, whether the model waited for it or ran it in the background | add context |
 | `attention` | before a push notification: a tool waiting for approval, a question for you, a finished turn | silence it |
 
-`turn.start`, `turn.end` and `turn.error` hooks run beside the chat: the chat never waits for them. `attention` hooks delay the notification by as long as they take.
+`turn.start`, `turn.end` and `turn.error` hooks run beside the chat: the chat never waits for them. `attention` hooks delay the notification by as long as they take. A subagent stays *running* until its `subagent.end` hooks answer, so their context arrives with its result. A cancelled subagent does not wait: its hooks still run, but what they add goes nowhere.
 
 Tools that never show an approval card run no hooks: progress updates, `list_features` and skill activation. A subagent's tool calls run hooks only when the hook has **Also run for subagents' tool calls** ticked. Commands you run yourself from the composer (`/shell`, `@action`, direct MCP calls) run no hooks: hooks check what the model does. An `@agent` delegation runs hooks on its `subagent` call, and on the delegated model's calls when the hook includes subagents.
 
@@ -116,6 +117,7 @@ The other events send their own fields instead of `tool`, `args` and `content`:
 | `turn.start` | `model`, `provider`, `thinkingLevel` |
 | `turn.end` | `text` (the whole answer as the chat shows it, every part of a turn with tool calls joined by blank lines; past 16 KB its end is kept), `usage`, `cost`, `toolCount`, `followUpDepth` (0 for a turn you started) |
 | `turn.error` | `code`, `message`, `stopped` (true when you pressed Stop) |
+| `subagent.end` | `callId`, `agent`, `task`, `background`, `state` (`completed`, `failed`, `cancelled` or `blocked`), `ok`, `text` (its answer, cut to 16 KB), `error`, `model`, `depth` (1 for a subagent of the chat itself), `parentCallId`, `groupId`, `memberId`, `durationMs` |
 | `attention` | `kind` (`tool_authorization`, `ask_user` or `completion`), `tool` |
 
 `decision` is `continue` (the default), `block` or `ask`. `ask` and `updatedArgs` only count in `tool.before`; `prompt.submit` can only block; `tool.after` can only add context. `updatedArgs` is merged into the call's arguments, and the approval gate, the card and the tool all see the new ones.
