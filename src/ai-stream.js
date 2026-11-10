@@ -2743,6 +2743,7 @@ promptSize: callOpts && callOpts.promptSize,
       return await ft.runFileTool(name, {
       projectDir: workingDir,
       settingsProjectDir: callOpts && callOpts.projectDir,
+      chatId: callOpts && callOpts.chatId,
       args,
       signal: callOpts && callOpts.signal,
       settings: callOpts && callOpts.appSettings,
