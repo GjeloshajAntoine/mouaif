@@ -21,7 +21,7 @@ See [docs/features/cloud-providers.md](./cloud-providers.md) for the four OpenAI
 
 ## Usage
 
-In Settings → Providers, OAuth sign-in selects the account just authenticated, including when other accounts are already saved. Tap **Save** (or **Add provider**) to persist the selection. Browser callbacks notify the originating window with a same-origin, state-bound completion message so reauthorizing an existing account also completes immediately; device-code sign-in selects its returned account too.
+In Settings → Providers, OAuth sign-in selects the account just authenticated, including when other accounts are already saved. When adding a provider, finishing sign-in saves it. When editing one, tap **Save** to keep the selection. Browser callbacks notify the originating window with a same-origin, state-bound completion message so reauthorizing an existing account also completes immediately; device-code sign-in selects its returned account too.
 
 ## Behavior
 

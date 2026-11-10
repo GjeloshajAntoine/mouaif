@@ -112,6 +112,7 @@ function check(name, fn) {
   check('providers list, new form and editor', () => {
     eq('#/settings/providers', { name: 'settingsProviders' });
     eq('#/settings/providers/new', { name: 'settingsProviderNew' });
+    eq('#/settings/providers/new/anthropic', { name: 'settingsProviderNew', type: 'anthropic' });
     eq('#/settings/providers/openai', { name: 'settingsProviderEdit', id: 'openai' });
   });
 

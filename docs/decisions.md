@@ -15,8 +15,8 @@ Resolved by `Ask questions for what's missin` on 2026-07-13. These choices are n
 
 ## 3. Providers and models — separate scopes; live list per provider
 
-- A provider connection is `{ id, baseUrl, apiKey, auth, oauthAccount? }` and is persisted in the app SQLite store. It owns transport and credentials.
-- A model is `{ id: slug, provider, label?, contextWindow?, ... }` and is defined in project settings. `provider` references an app-level provider connection.
+- A provider connection is `{ id, type?, name?, baseUrl, apiKey, auth, oauthAccount? }` and is persisted in the app SQLite store. It owns transport and credentials. `type` picks the wire shape, and a record without one has `type === id`, so a type can have several connections and records saved before `type` existed need no migration.
+- A model is `{ id: slug, provider, label?, contextWindow?, ... }` and is defined in project settings. `provider` references an app-level provider connection by its id.
 - Provider credentials are never written to project files. At request time, the server hydrates the selected project model with its matching app-level provider connection.
 - **The chat <select> is populated from a live catalog** that each provider exposes:
   - OpenAI-compatible → `GET {baseUrl}/models` (OpenAI-shaped)
@@ -386,6 +386,7 @@ provider:credHash so a key rotation invalidates the entry.
 
 - The official [MCP Apps overview](https://modelcontextprotocol.io/extensions/apps/overview) is the entry point; its linked AppBridge API and protocol supply wire details. Following the user's rewrite request, SDK installation and isolated-listener deployment were approved. Use official `ext-apps` 2.0.3 at reviewed revision `82221c0c8ce7661efa6771c9d461511b1650495f` (protocol `2026-01-26`), not an independently invented dialect.
 - The app-managed sandbox listener has a distinct origin, serves no app APIs or credentials, applies HTTP-header CSP and relays to an opaque-origin inner frame. Direct HTTP clients must reach its ephemeral port; HTTPS/reverse-proxy deployment is unsupported and preserves ordinary results. Main port remains unchanged.
+- **Changed 2026-11-01:** the listener's random port made views fail on any install that publishes only the app port, including Docker. Every view now uses the same-port route that HTTPS already used, and the listener is gone. An opaque origin is at least as strong as a sibling port, which shares cookies and a site with the app.
 - Project-only opt-in defaults off. Mounts bind to persisted chat tool calls; apps call only app-visible tools on their serving server through the existing authorization gate, using server-generated approval IDs. App `ui/message` user text can automatically start the bound chat's normal AI turn (user-approved behavior), with app attribution and size/rate/busy checks. Other message modalities and links/context/download/device permission capabilities stay denied.
 - Views load on completed result expansion, use mobile inline/fullscreen sizing, bounded initialization/teardown and text/image fallback. No automatic preloading, subscriptions or model-context writes are claimed. Official App SDK browser and Docker regression tests guard interoperability and isolation.
 - Code: [src/server-handlers-mcp-apps.js](../src/server-handlers-mcp-apps.js), [src/mcp-apps-sandbox.js](../src/mcp-apps-sandbox.js), [frontend/src/components/chat/McpAppFrame.jsx](../frontend/src/components/chat/McpAppFrame.jsx). Docs: [MCP Apps](features/mcp-apps.md), [agent notes](agent/features/mcp-apps.md).

@@ -7,7 +7,7 @@ OpenRouter is a single API key that fronts many upstream models (Anthropic, Open
 The provider supports **two ways to authenticate**:
 
 1. **Paste an OpenRouter API key** (issued at [openrouter.ai](https://openrouter.ai/keys)). The key is stored in the app SQLite provider record and never returned to the browser after save.
-2. **Sign in with OpenRouter (PKCE).** The Settings → Providers form now offers a `Sign in with OpenRouter` button. The browser is sent to `https://openrouter.ai/auth?callback_url=...&code_challenge=...&code_challenge_method=S256`, the user authorises the app, OpenRouter redirects back to the loopback, the server exchanges the `code` for a user-controlled OpenRouter API key at `https://openrouter.ai/api/v1/auth/keys`, and the key is stored in the app DB credential table under the `openrouter` namespace. Subsequent chats use that key as a plain Bearer credential.
+2. **Sign in with OpenRouter (PKCE).** Choosing **OpenRouter** under **Sign in with an account** in Settings → Providers offers a `Sign in with OpenRouter` button. The browser is sent to `https://openrouter.ai/auth?callback_url=...&code_challenge=...&code_challenge_method=S256`, the user authorises the app, OpenRouter redirects back to the loopback, the server exchanges the `code` for a user-controlled OpenRouter API key at `https://openrouter.ai/api/v1/auth/keys`, and the key is stored in the app DB credential table under the `openrouter` namespace. Subsequent chats use that key as a plain Bearer credential.
 
 The PKCE flow is the only sign-in option OpenRouter exposes to third-party clients; there is no client_id, no client_secret, no per-app dashboard, and no refresh-token grant. The flow's "OAuth" surface is therefore narrower than Anthropic's or GitHub Copilot's, but it still ships a sign-in button on the provider form so the user can authorise the app in one tap rather than round-tripping through the OpenRouter keys page.
 
@@ -16,11 +16,10 @@ The PKCE flow is the only sign-in option OpenRouter exposes to third-party clien
 ### Add the provider
 
 1. **Settings → Providers → + Add provider.**
-2. Pick **OpenRouter** from the provider dropdown. The default API base URL is `https://openrouter.ai/api/v1` (overridable for self-hosted/proxy setups).
-3. Pick an authentication mode:
-   - **API key** — paste your OpenRouter key. The key lives in the app store (not encrypted by mouaif, see [`app-and-project-settings`](./app-and-project-settings.md)). The apikey path uses app settings rather than the credential table.
-   - **OAuth (PKCE)** — tap **Sign in with OpenRouter** in the provider form. The browser opens `https://openrouter.ai/auth`, the user signs in and grants the request, OpenRouter redirects back to the loopback, and the resulting OpenRouter API key is stored in the app DB credential table under the `openrouter` namespace. The account picker shows a short label derived from the key (e.g. `sk-or-v1-mock-12`) so the user can tell two sign-ins apart without exposing the full secret.
-4. **Save provider.** You can now pick OpenRouter when creating a model on a project.
+2. Choose **OpenRouter** under the way you want to connect. The default address is `https://openrouter.ai/api/v1`, and you can change it under **Advanced** for self-hosted or proxy setups.
+   - **Paste an API key** — paste your OpenRouter key. The key lives in the app store (not encrypted by mouaif, see [`app-and-project-settings`](./app-and-project-settings.md)). The apikey path uses app settings rather than the credential table.
+   - **Sign in with an account** — tap **Sign in with OpenRouter** in the provider form. The browser opens `https://openrouter.ai/auth`, the user signs in and grants the request, OpenRouter redirects back to the loopback, and the resulting OpenRouter API key is stored in the app DB credential table under the `openrouter` namespace. The account picker shows a short label derived from the key (e.g. `sk-or-v1-mock-12`) so the user can tell two sign-ins apart without exposing the full secret.
+3. Tap **Add provider**, or finish signing in. The row shows `Saved · can't be tested`, because OpenRouter's model list is public and doesn't check the key. You can now pick OpenRouter when creating a model on a project.
 
 ### Add a model
 

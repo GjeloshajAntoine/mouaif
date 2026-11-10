@@ -9,9 +9,9 @@ Use Codex through your ChatGPT plan, without an OpenAI API key or a local Codex 
 The chat head's **Balance** chip shows the plan and rate-limit usage (`Codex Plus 5h 62% · 7d 28%`), read from `GET https://chatgpt.com/backend-api/wham/usage` with the stored ChatGPT token. The first percentage is the primary session window; the optional `7d` percentage is the weekly window. ChatGPT plans are subscriptions with no dollar balance, so no currency figure is shown; see [Usage metrics](./usage-metrics.md#account-balance).
 
 1. Enable **Device code authorization** in ChatGPT **Settings → Security**, if your account requires it. A ChatGPT account with Codex access is required; workspace policy may restrict device sign-in.
-2. Open mouaif **Settings → Providers → Add provider** and choose **OpenAI Codex**.
+2. Open mouaif **Settings → Providers → + Add provider** and choose **ChatGPT (Codex)**.
 3. Tap **Sign in with ChatGPT code**, copy the displayed code, and open the ChatGPT sign-in link. Only approve a code you requested yourself.
-4. Return to mouaif, select the signed-in account, and tap **Add provider** (or **Save** when editing). With one account, automatic selection works.
+4. Return to mouaif. The provider is added as soon as you approve. When editing an existing connection, tap **Save**.
 5. Choose a model from the provider's live catalog in a chat, or configure a project model referencing the `codex` provider.
 
 Device sign-in works from a phone, LAN connection, or reverse proxy: it does not redirect to localhost. Codes expire after 15 minutes. Cancel stops the pending sign-in; leaving the provider editor cancels it too.

@@ -498,7 +498,7 @@ async function runSingleToolCall(c, cx) {
   try {
   const selection = require('./agents.js').subagentModelForCall(
   opts && opts.projectDir, opts && opts.chatId, args && args.agent, opts && opts.model);
-  subagentModel = { providerId: selection.model.provider, modelId: selection.model.id, source: selection.source };
+  subagentModel = { providerId: require('./providerConnections.js').connectionIdOf(selection.model), modelId: selection.model.id, source: selection.source };
   } catch (e) { subagentModel = { error: e.message }; }
   }
   if (opts && opts.signal && opts.signal.aborted) throw Object.assign(new Error('aborted'), { code: 'EABORTED' });
@@ -2156,22 +2156,18 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       // Hydrate only the winning identity. Project records contribute safe
       // selection metadata, never the URL/credential of the app connection.
       try {
-      const settingsMod = require('./settings.js');
       const selection = require('./agents.js').subagentModelForCall(
       callOpts && callOpts.projectDir, callOpts && callOpts.chatId, agentName, model, chosenModel);
       if (selection.source !== 'chat model') {
       const rec = selection.model;
-      const app = settingsMod.getApp();
-      const providers = Array.isArray(app.providers) ? app.providers : [];
-      const connection = providers.find((p) => p && p.id === rec.provider);
+      const { findConnection, hydrateModel } = require('./providerConnections.js');
+      const connection = findConnection(rec.provider);
       if (!connection) {
         const r = { error: { code: 'EPROVIDER_NOT_FOUND', message: 'No provider connection for "' + rec.provider + '"' } };
         return { ok: false, content: JSON.stringify(r), result: r };
       }
-      nestedModel = Object.assign({}, connection, projectModelRecord(rec), {
-        provider: rec.provider,
-        auth: connection.auth || 'apikey'
-      });
+      nestedModel = hydrateModel(connection, rec);
+      nestedModel.auth = connection.auth || 'apikey';
       }
       } catch (e) {
       const r = { error: { code: e.code || 'EUNKNOWN_MODEL', message: e.message || String(e) } };
@@ -2183,10 +2179,11 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       if ((agentName || defaultAgent || chosenModel) && nestedModel.provider === 'openrouter'
       && !nestedModel.imageEndpoint) {
       try {
-      const catalog = await require('./modelList.js').liveModelsFor('openrouter', { purpose: 'image' });
+      const connectionId = require('./providerConnections.js').connectionIdOf(nestedModel);
+      const catalog = await require('./modelList.js').liveModelsFor(connectionId, { purpose: 'image' });
       let entry = catalog.models.find((m) => m.id === nestedModel.id);
       if (!entry && !Array.isArray(nestedModel.outputModalities)) {
-        const chatCatalog = await require('./modelList.js').liveModelsFor('openrouter');
+        const chatCatalog = await require('./modelList.js').liveModelsFor(connectionId);
         entry = chatCatalog.models.find((m) => m.id === nestedModel.id);
       }
       if (entry) nestedModel = { ...nestedModel, ...projectModelRecord(entry), provider: nestedModel.provider };
@@ -2314,7 +2311,8 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
         }
       }
 
-      if (opts.nestedSubagent && !chosenModel && (nestedModel.id !== model.id || nestedModel.provider !== model.provider)) {
+      const { connectionIdOf } = require('./providerConnections.js');
+      if (opts.nestedSubagent && !chosenModel && (nestedModel.id !== model.id || connectionIdOf(nestedModel) !== connectionIdOf(model))) {
         const r = { error: { code: 'EDENIED', message: 'recursive agent model pin cannot widen the inherited model; explicit user override required' } };
         return { ok: false, result: r, content: JSON.stringify(r) };
       }

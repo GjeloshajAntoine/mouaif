@@ -16,6 +16,7 @@ const {
 } = require('./server-shared.js');
 const modelList = require('./modelList.js');
 const providerCredit = require('./providerCredit.js');
+const { connectionType, listConnections, providerTypeOf } = require('./providerConnections.js');
 
 async function handleAI(req, res, parsed) {
   const urlPath = parsed.pathname;
@@ -32,7 +33,7 @@ async function handleAI(req, res, parsed) {
       // Thinking options come from the provider when it reports them
       // (per-model on live lists, provider-level otherwise); a
       // user-set model.thinking always wins.
-      const def = ai.ENDPOINTS[m.provider];
+      const def = ai.ENDPOINTS[providerTypeOf(m.provider)];
       const thinking = m.thinking || (def && def.thinkingDescriptor) || null;
       if (thinking) rec.thinking = thinking;
       return rec;
@@ -53,7 +54,7 @@ async function handleAI(req, res, parsed) {
   // reload (the picker's explicit refresh).
   if (urlPath === '/api/ai/models/live' && method === 'GET') {
     const provider = typeof parsed.query.provider === 'string' ? parsed.query.provider : '';
-    if (!provider || !ai.ENDPOINTS[provider]) {
+    if (!provider || !ai.ENDPOINTS[providerTypeOf(provider)]) {
       return sendJSON(res, 400, { error: 'unknown provider', provider });
     }
     // `purpose` selects which slice of the provider's catalog to read:
@@ -102,8 +103,9 @@ async function handleAI(req, res, parsed) {
   // instead of showing a guessed number.
   if (urlPath === '/api/ai/provider-credit' && method === 'GET') {
     const provider = typeof parsed.query.provider === 'string' ? parsed.query.provider : '';
-    const balances = providerCredit.supportsBalance(provider);
-    if (provider !== 'openrouter' && !balances) {
+    const type = providerTypeOf(provider);
+    const balances = providerCredit.supportsBalance(type);
+    if (type !== 'openrouter' && !balances) {
       return sendJSON(res, 200, { provider, supported: false });
     }
     let cred;
@@ -118,8 +120,8 @@ async function handleAI(req, res, parsed) {
     if (balances) {
       // The configured base URL wins: a connection pointed at a self-hosted or
       // gateway endpoint must be asked there, not at api.openai.com.
-      const baseUrl = baseUrlForProvider(provider) || ai.ENDPOINTS[provider].baseUrl;
-      const result = await providerCredit.lookupBalance({ provider, baseUrl, cred });
+      const baseUrl = baseUrlForProvider(provider) || ai.ENDPOINTS[type].baseUrl;
+      const result = await providerCredit.lookupBalance({ provider: type, baseUrl, cred });
       if (!result.ok) {
         if (result.code === 'EUNREACHABLE') {
           return sendJSON(res, 503, { provider, supported: true, error: 'Provider unreachable', code: 'EUNREACHABLE' });
@@ -159,15 +161,18 @@ async function handleAI(req, res, parsed) {
     return sendJSON(res, 200, { provider, supported: true, label: 'Balance', remaining: value, totalCredits: isFinite(totalCredits) ? totalCredits : undefined, totalUsage: isFinite(totalUsage) ? totalUsage : undefined });
   }
 
-  // GET /api/ai/models/providers -> { providers: [{ id }] }
+  // GET /api/ai/models/providers -> { providers: [{ id, type, name? }] }
   // The chat uses this when a project has no model records yet. Returning
   // every configured connection avoids the old "first provider wins"
   // fallback, which silently queried OpenAI when the user wanted OpenRouter.
   if (urlPath === '/api/ai/models/providers' && method === 'GET') {
-    const app = settings.getApp();
-    const providers = (Array.isArray(app.providers) ? app.providers : [])
-      .filter((p) => p && typeof p.id === 'string' && ai.ENDPOINTS[p.id])
-      .map((p) => ({ id: p.id }));
+    const providers = listConnections()
+      .filter((p) => typeof p.id === 'string' && ai.ENDPOINTS[connectionType(p)])
+      .map((p) => {
+        const row = { id: p.id, type: connectionType(p) };
+        if (p.name) row.name = p.name;
+        return row;
+      });
     return sendJSON(res, 200, { providers });
   }
 

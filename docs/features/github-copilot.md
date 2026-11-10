@@ -9,14 +9,14 @@ Chat with the models in your GitHub Copilot plan (GPT, Claude, Gemini) through m
 1. Open **Settings → Providers → + Add provider** and choose **GitHub Copilot**.
 2. Tap **Sign in with GitHub code**. A code like `ABCD-1234` appears; tap it to copy.
 3. Tap **Open github.com/login/device**, paste the code, and approve. Any device works, including another phone or computer.
-4. Come back to mouaif. The form shows `signed in as <login>`. Tap **Save**.
+4. Come back to mouaif. The provider is added as soon as you approve. When editing an existing connection, the form shows `Signed in as <login>`; tap **Save**.
 5. Add a model to a project with provider `github-copilot`, or pick one from the live list in the chat's model picker.
 
-With several GitHub accounts signed in, pick one in **OAuth account** before saving.
+If you've already signed in with GitHub, choose an account under **Account** and tap **Add provider**, or tap **Sign in with another GitHub account**.
 
 ### Advanced: your own OAuth app
 
-The shipped public client works for most accounts. To use your own GitHub OAuth app instead, open **Advanced: custom GitHub OAuth app**, paste its client ID, and tap **Save client ID**.
+The shipped public client works for most accounts. To use your own GitHub OAuth app instead, open **Advanced**, paste its client ID, and tap **Save client ID**.
 
 - The device code sign-in needs **Device Flow** turned on for that app.
 - **Sign in with browser redirect** uses the web flow instead. Register the callback URL shown in the form in the app's settings.

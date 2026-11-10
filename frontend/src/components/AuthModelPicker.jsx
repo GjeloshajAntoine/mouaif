@@ -3,6 +3,7 @@ import { h } from 'preact';
 import { useState, useMemo, useCallback } from 'preact/hooks';
 import { ModelPickerField } from './ModelPickerField.jsx';
 import { ThinkingSelectField } from './ThinkingSelectField.jsx';
+import { providerLabel } from '../api.js';
 import {
 loadPinned, loadRecent, loadRecentFromServer, touchRecent, togglePin,
 migrateProjectScopedBookmarks
@@ -79,7 +80,7 @@ setPinned(loadPinned());
 setRecent(loadRecent(bookmarks));
 }, [bookmarks]);
 const effective = value || initialValue;
-const identity = (m) => m ? m.providerId + ' / ' + m.modelId : 'the chat model';
+const identity = (m) => m ? providerLabel(m.providerId) + ' / ' + m.modelId : 'the chat model';
 const clearLabel = 'Use default: ' + identity(initialValue);
 const pickedModel = effective && models.find((m) => m.id === effective.modelId && m.provider === effective.providerId);
 const differs = effective && chatValue && (effective.modelId !== chatValue.modelId || effective.providerId !== chatValue.providerId);

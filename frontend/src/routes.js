@@ -147,6 +147,10 @@ const ROUTES = [
   // through, so `#/settings/providers/` cannot open a provider named "".
   exact('settings/providers', () => ({ name: 'settingsProviders' })),
   exact('settings/providers/new', () => ({ name: 'settingsProviderNew' })),
+  // The add form with its type chosen: where a redirect sign-in comes back to.
+  prefix('settings/providers/new/', (m) => (
+    m.id ? { name: 'settingsProviderNew', type: decodeId(m.id) } : null
+  )),
   prefix('settings/providers/', (m) => (
     m.id && m.id !== 'new' ? { name: 'settingsProviderEdit', id: decodeId(m.id) } : null
   )),

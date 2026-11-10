@@ -5,6 +5,7 @@
 // reads one proposed command and answers in plain text with a SAFE / CAUTION /
 // DANGER verdict. When shell is set to Ask and `autoAllow` is enabled, a SAFE
 // verdict auto-approves the command (`allow-once`).
+import { providerLabel } from '../../api.js';
 
 // Review modes, mirroring REVIEW_MODES in src/shellReview.js. The settings
 // select is built from this list, so the two surfaces cannot drift.
@@ -55,7 +56,7 @@ export function verdictMeta(verdict) {
 // reviewModelLabel(review) -> 'provider · model'
 function reviewModelLabel(review) {
   const model = (review && review.model) || {};
-  return [model.provider, model.id].filter(Boolean).join(' · ');
+  return [providerLabel(model.provider), model.id].filter(Boolean).join(' · ');
 }
 
 // buildReviewBlock(review) -> HTMLElement | null

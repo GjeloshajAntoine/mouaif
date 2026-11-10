@@ -40,6 +40,7 @@ const transcribe = require('./transcribe.js');
 const modelList = require('./modelList.js');
 const usageMetrics = require('./usage.js');
 const serverShared = require('./server-shared.js');
+const { connectionType, connectionIdOf } = require('./providerConnections.js');
 const KIND_IDS = transcribe.KIND_IDS;
 
 // UNKNOWN_COST — what a run with no usage report, or a model with no pricing,
@@ -68,7 +69,7 @@ function cachedModelRecord(provider, modelId) {
   if (!provider || !modelId) return null;
   for (const purpose of ['transcription', 'chat']) {
     const entry = serverShared.MODEL_LIST_CACHE.get(
-      serverShared.modelListCacheKey(provider, serverShared.credHashFor(provider), purpose)
+      serverShared.modelListCacheKey(provider, serverShared.credHashFor(provider), purpose, serverShared.baseUrlForProvider(provider))
     );
     if (!entry || !Array.isArray(entry.models)) continue;
     const hit = entry.models.find((m) => m && m.id === modelId);
@@ -184,23 +185,30 @@ async function handleTranscribe(req, res, parsed) {
       return sendJSON(res, 422, { error: e.message, code: e.code || 'EBADPROJECT' });
     }
     const all = Array.isArray(resolved.models) ? resolved.models : [];
-    const projectModels = transcribe.transcriptionCandidates(all);
 
     const app = settings.getApp();
-    const connections = Array.isArray(app.providers) ? app.providers : [];
-    const connectedIds = connections.map((p) => p && p.id).filter(Boolean);
+    const connections = (Array.isArray(app.providers) ? app.providers : []).filter(Boolean);
+    const connectedIds = connections.map((p) => p.id).filter(Boolean);
+
+    // The classifiers branch on the wire shape, so they read a row's connection
+    // type. The row itself still answers with the connection id it came from.
+    const shaped = (m) => {
+      const connection = connections.find((p) => p.id === m.provider);
+      return Object.assign({}, m, { providerId: m.provider, provider: connection ? connectionType(connection) : m.provider });
+    };
+    const projectModels = transcribe.transcriptionCandidates(all.filter(Boolean).map(shaped));
 
     // Project models always come first: they are the user's own records, they
     // carry their descriptor, and a hand-configured model must win over the
     // upstream's entry for the same id (see the merge below).
     const rows = projectModels.map((m) => ({
       id: m.id,
-      provider: m.provider || '',
+      provider: m.providerId || '',
       label: m.label || '',
       kind: transcribe.kindForModel(m),
       auth: m.auth || 'apikey',
       source: 'project',
-      connected: connectedIds.includes(m.provider)
+      connected: connectedIds.includes(m.providerId)
     }));
 
     const liveFailures = [];
@@ -226,19 +234,20 @@ async function handleTranscribe(req, res, parsed) {
     // transcribe.audioChatModel) — served over /chat/completions rather than
     // over the endpoint that answers `400 Model … does not exist` for them.
     const reads = [{ purpose: 'transcription' }];
-    if (connectedIds.includes('openrouter')) reads.push({ purpose: 'chat' });
+    if (connections.some((p) => connectionType(p) === 'openrouter')) reads.push({ purpose: 'chat' });
     for (const read of reads) {
       const { list, failures } = await modelList.liveModelsForMany(connectedIds, { force, ...read });
       liveFailures.push(...failures);
       const seen = new Set(rows.map((r) => r.provider + '\u0000' + r.id));
-      for (const m of list) {
+      for (const listed of list) {
+      const m = shaped(listed);
       if (!transcribe.isTranscriptionModel(m)) continue;
-      const key = (m.provider || '') + '\u0000' + m.id;
+      const key = (m.providerId || '') + '\u0000' + m.id;
       if (seen.has(key)) continue;
       seen.add(key);
       const row = {
       id: m.id,
-      provider: m.provider || '',
+      provider: m.providerId || '',
       label: m.label || '',
       kind: transcribe.kindForModel(m),
       auth: 'apikey',
@@ -297,7 +306,7 @@ async function handleTranscribe(req, res, parsed) {
     // picker offered the row on. Without this, an audio chat model the catalog
     // correctly listed would be sent to /audio/transcriptions — the endpoint
     // that answers `400 Model … does not exist` for it.
-    const cached = cachedModelRecord(model.provider, model.id);
+    const cached = cachedModelRecord(connectionIdOf(model), model.id);
     if (cached) {
       model = Object.assign({}, model, {
         inputModalities: cached.inputModalities,
@@ -316,7 +325,7 @@ async function handleTranscribe(req, res, parsed) {
       request = transcribe.buildTranscribeRequest({
         kind,
         model,
-        apiKey: credentialForProvider(model.provider),
+        apiKey: credentialForProvider(connectionIdOf(model)),
         audio: decoded.audio,
         mimeType: body.mimeType || transcribe.mimeTypeFor(body.filename),
         filename: body.filename,
@@ -353,7 +362,7 @@ async function handleTranscribe(req, res, parsed) {
       error: parsedUpstream.error,
       code: parsedUpstream.code,
       upstreamStatus: upstream.status,
-      model: { id: model.id, provider: model.provider },
+      model: { id: model.id, provider: connectionIdOf(model) },
       kind
     });
     }
@@ -382,7 +391,7 @@ async function handleTranscribe(req, res, parsed) {
     }
     return sendJSON(res, 200, {
     text: parsedUpstream.text,
-    model: { id: model.id, provider: model.provider },
+    model: { id: model.id, provider: connectionIdOf(model) },
     kind,
     bytes: decoded.audio.length,
     durationMs: Date.now() - startedAt,

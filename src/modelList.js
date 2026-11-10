@@ -15,6 +15,7 @@
 // unreachable provider must not empty the whole picker.
 
 const { ai, credentialForProvider, baseUrlForProvider, hashShort, modelListCacheKey, MODEL_LIST_CACHE, MODEL_LIST_TTL_MS, MODEL_LIST_TIMEOUT_MS } = require('./server-shared.js');
+const { findConnection, providerTypeOf } = require('./providerConnections.js');
 
 // liveModelsFor(provider, opts) -> { models, fetchedAt, cached }
 //
@@ -47,8 +48,12 @@ const { ai, credentialForProvider, baseUrlForProvider, hashShort, modelListCache
 // Typed errors: `EUNKNOWN_PROVIDER`, `ENO_APIKEY`, `EUNREACHABLE`, `EUPSTREAM`
 // (with `.status`), `ETIMEOUT`. The http-server maps them the same way it
 // always did.
+//
+// `provider` is a connection id. The credential, base URL and cache entry belong
+// to that connection, and its type picks the adapter that reads the list.
 async function liveModelsFor(provider, opts) {
-  if (!provider || !ai.ENDPOINTS[provider]) {
+  const type = providerTypeOf(provider);
+  if (!provider || !ai.ENDPOINTS[type]) {
     const e = new Error('unknown provider');
     e.code = 'EUNKNOWN_PROVIDER';
     throw e;
@@ -61,12 +66,11 @@ async function liveModelsFor(provider, opts) {
   // read the stale stored access token directly and fail with HTTP 401 until
   // the user happened to send a chat (or signed in again). Hydrate the same
   // provider connection through the shared auth path before reading it.
-  if (provider === 'codex') {
-    const settings = require('./settings.js');
-    const connection = (settings.getApp().providers || []).find((p) => p && p.id === provider);
+  if (type === 'codex') {
+    const connection = findConnection(provider);
     if (connection) {
       await require('./ai-endpoints.js').requireApiKey(
-        Object.assign({}, connection, { provider, id: '__catalog__' }), ai.ENDPOINTS[provider]
+        Object.assign({}, connection, { provider: type, id: '__catalog__' }), ai.ENDPOINTS[type]
       );
     }
   }
@@ -103,9 +107,9 @@ async function liveModelsFor(provider, opts) {
     // provider returns null here and the chat list is filtered by the caller
     // instead.
     const sliced = purpose === 'transcription'
-    ? await ai.listTranscriptionModels(provider, cred || null, ac.signal, baseUrl)
-    : (purpose === 'image' ? await ai.listImageModels(provider, cred || null, ac.signal, baseUrl) : null);
-    const models = sliced || await ai.listModels(provider, cred || null, ac.signal, baseUrl);
+    ? await ai.listTranscriptionModels(type, cred || null, ac.signal, baseUrl)
+    : (purpose === 'image' ? await ai.listImageModels(type, cred || null, ac.signal, baseUrl) : null);
+    const models = sliced || await ai.listModels(type, cred || null, ac.signal, baseUrl);
     clearTimeout(timer);
     // Discard the late result: the caller already saw the timeout.
     if (timedOut) {

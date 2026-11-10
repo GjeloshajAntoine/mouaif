@@ -1,38 +1,44 @@
-// mouaif web — SettingsProvidersView + SettingsProviderEditView
+// mouaif web — SettingsProvidersView, SettingsProviderNewView + SettingsProviderEditView
 import { h, Fragment } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { fetchJson, loadApp, saveApp, appProviders, loadAccounts, SETTINGS_PROVIDERS, providerDef, authNsForProvider } from '../api.js';
-import { back } from '../router.js';
+import { fetchJson, loadApp, saveApp, appProviders, loadAccounts, checkConnection, providerDef, connectionType, authNsForProvider } from '../api.js';
+import { baseUrlProblem, keyIsRequired, providerChoice, uniqueName } from '../providerChoices.js';
+import { back, replace } from '../router.js';
+import { SettingsProviderPicker } from './SettingsProviderPicker.jsx';
+
+const HEALTH_STATE = { ok: 'success', error: 'error' };
 
 export function SettingsProvidersView() {
   const [list, setList] = useState(null);
-  const [statusMsg, setStatusMsg] = useState('');
-  const [statusType, setStatusType] = useState('');
+  const [health, setHealth] = useState({});
+  const [loadError, setLoadError] = useState('');
+  const alive = useRef(true);
 
   async function load() {
     try {
       await loadApp({ force: true });
     } catch (e) {
-      setStatusMsg('load failed: ' + e.message);
-      setStatusType('error');
+      setLoadError('Couldn\'t load providers: ' + e.message);
       return;
     }
     const providers = appProviders();
     setList(providers);
-    if (!providers.length) {
-      setStatusMsg('0 providers');
-      setStatusType('');
-    } else {
-      setStatusMsg(providers.length + (providers.length === 1 ? ' provider' : ' providers'));
-      setStatusType('success');
+    // Rows appear at once and each fills in its own status as the answer arrives.
+    for (const connection of providers) {
+      checkConnection(connection).then((result) => {
+        if (alive.current) setHealth((all) => ({ ...all, [connection.id]: result }));
+      });
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    return () => { alive.current = false; };
+  }, []);
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '‹'),
+      h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '←'),
       h('h2', { class: 'view-title' }, 'Providers')
     ),
     // The scroll container. Flush routes (no tab bar) only scroll when
@@ -41,56 +47,77 @@ export function SettingsProvidersView() {
     // container. A bare Fragment left a long provider list clipped with
     // no way to reach it.
     h('section', null,
-    h('p', { class: 'hint hint--compact' }, 'Credentials live in the app store. Each project\'s models reference one of these.'),
+    h('p', { class: 'hint hint--compact' }, 'All your projects share these. Keys stay on the computer running mouaif.'),
     h('ul', { class: 'providers__list', 'aria-label': 'Configured providers' },
       list === null ? null :
-      list.length === 0 ? h('li', { class: 'providers__empty' }, 'No providers yet. Tap "Add provider" to configure your first connection.') :
+      list.length === 0 ? h('li', { class: 'providers__empty' }, 'No providers yet. Add one to start chatting.') :
       list.map(p => {
-        const def = providerDef(p.id);
-        const name = (def && def.label) || p.id;
-        const auth = p.auth || 'apikey';
+        const type = connectionType(p);
+        const def = providerDef(type);
+        const name = p.name || (def && def.label) || p.id;
+        const result = health[p.id];
         const bits = [];
-        if (p.baseUrl) bits.push(p.baseUrl);
-        if (auth === 'oauth') {
-          bits.push('OAuth');
-          if (p.oauthAccount) bits.push('as ' + p.oauthAccount);
-        } else if (p.hasApiKey) {
-          bits.push('key saved');
-        } else {
-          bits.push('no key');
-        }
+        // Tells apart two unnamed connections of the same type.
+        if (!p.name && p.id !== type) bits.push(p.id);
+        if (p.baseUrl && p.baseUrl !== (def && def.defaultBaseUrl)) bits.push(p.baseUrl);
+        if (p.auth === 'oauth' && p.oauthAccount) bits.push(p.oauthAccount);
         return h('li', { class: 'provider-row', key: p.id },
           h('a', { class: 'provider-row__main', href: '#/settings/providers/' + encodeURIComponent(p.id) },
-            h('div', { class: 'provider-row__name' }, name),
-            h('div', { class: 'provider-row__meta' }, bits.join('  ·  ')),
+            h('div', { class: 'provider-row__body' },
+              h('div', { class: 'provider-row__name' }, name),
+              bits.length ? h('div', { class: 'provider-row__meta' }, bits.join('  ·  ')) : null,
+              h('div', { class: 'status provider-row__health', 'data-state': result ? HEALTH_STATE[result.state] : undefined }, result ? result.text : 'Checking…')
+            ),
             h('div', { class: 'provider-row__chev' }, '›')
           )
         );
       })
     ),
     h('div', { class: 'page-bar' },
-      h('span', { class: 'status page-bar__status' + (statusType ? ' status--' + statusType : ''), 'aria-live': 'polite' }, statusMsg),
-      h('a', { href: '#/settings/providers/new', class: 'page-bar__add', 'aria-label': 'Add provider' }, '+')
+      h('span', { class: 'status page-bar__status', 'data-state': loadError ? 'error' : undefined, 'aria-live': 'polite' }, loadError),
+      h('a', { href: '#/settings/providers/new', class: 'page-bar__add page-bar__add--label' }, '+ Add provider')
     )
     )
   );
 }
 
-export function SettingsProviderEditView(props) {
-  const id = props.id || '';
+// #/settings/providers/new asks how to connect. With a choice in the route it
+// opens that choice's form; `key` gives each choice its own form state, so
+// nothing typed for one provider can reach another.
+export function SettingsProviderNewView({ type }) {
+  return providerChoice(type)
+    ? h(SettingsProviderEditView, { key: type, type })
+    : h(SettingsProviderPicker);
+}
 
-  const [currentId, setCurrentId] = useState(id || 'openai-compatible');
+export function SettingsProviderEditView(props) {
+  // `id` is the connection being edited ('' when adding one). `choice` is what
+  // was picked when adding. `currentId` is the connection's type, which picks
+  // its sign-in flow and account list.
+  const id = props.id || '';
+  const choice = id ? null : providerChoice(props.type);
+  const initialType = () => {
+    if (!id) return choice ? choice.type : '';
+    const known = appProviders().find(p => p && p.id === id);
+    return known ? connectionType(known) : id;
+  };
+  const startingUrl = (pid) => {
+    if (choice && choice.baseUrl !== undefined) return choice.baseUrl;
+    const d = providerDef(pid);
+    return (d && d.defaultBaseUrl) || '';
+  };
+
+  const [currentId, setCurrentId] = useState(initialType);
   const [current, setCurrent] = useState(null);
 
   const reservedFor = (pid) => { const d = providerDef(pid); return !!(d && d.reserved); };
-  const [authMode, setAuthMode] = useState(reservedFor(id || 'openai-compatible') ? 'oauth' : 'apikey');
-  const initialBaseUrl = (() => { const d = providerDef(id || 'openai-compatible'); return (d && d.defaultBaseUrl) || ''; })();
-  const [baseUrlVal, setBaseUrlVal] = useState(initialBaseUrl);
+  const [authMode, setAuthMode] = useState(() => choice ? choice.auth : (reservedFor(initialType()) ? 'oauth' : 'apikey'));
+  const [baseUrlVal, setBaseUrlVal] = useState(() => startingUrl(initialType()));
 
+  const [nameVal, setNameVal] = useState('');
   const [apiKeyValue, setApiKeyValue] = useState('');
   const [oauthAccountVal, setOauthAccountVal] = useState('');
   const [copilotClientIdVal, setCopilotClientIdVal] = useState('');
-  const [oauthAccountOptions, setOauthAccountOptions] = useState([]);
 
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -105,8 +132,27 @@ export function SettingsProviderEditView(props) {
   const [copilotStatusType, setCopilotStatusType] = useState('');
 
   const [accountsMap, setAccountsMap] = useState({});
+  const [health, setHealth] = useState(null);
+  const [isChecking, setIsChecking] = useState(false);
 
-  const currentDef0 = () => providerDef(currentId);
+  // A sign-in can finish long after it started, so it reads these rather than
+  // the values from when it began, and stops if you have left the form.
+  const alive = useRef(true);
+  const latest = useRef({});
+  latest.current = { name: nameVal, baseUrl: baseUrlVal, key: apiKeyValue };
+  useEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
+
+  async function runCheck(connection, { force = false } = {}) {
+    setIsChecking(true);
+    const result = await checkConnection(connection, { force });
+    if (!alive.current) return result;
+    setHealth(result);
+    setIsChecking(false);
+    return result;
+  }
 
   async function load() {
     let app;
@@ -116,7 +162,7 @@ export function SettingsProviderEditView(props) {
       nextAccounts = await loadAccounts({ force: true });
       setAccountsMap(nextAccounts);
     } catch (e) {
-      setStatusMsg('load failed: ' + e.message);
+      setStatusMsg('Couldn\'t load this provider: ' + e.message);
       setStatusType('error');
       return;
     }
@@ -127,74 +173,65 @@ export function SettingsProviderEditView(props) {
       return;
     }
     setCurrent(found || null);
-    
+    const pid = found ? connectionType(found) : currentId;
+    setCurrentId(pid);
+    setNameVal((found && found.name) || '');
+
     if (app && app.app && app.app.githubCopilot && app.app.githubCopilot.clientId) {
       setCopilotClientIdVal(app.app.githubCopilot.clientId);
     } else {
       setCopilotClientIdVal('');
     }
 
-    setAuthMode(resolveAuthMode(currentId, found));
-    setBaseUrlVal(nextBaseUrl(currentId, found, (found && found.baseUrl) || ''));
+    setAuthMode(choice ? choice.auth : resolveAuthMode(pid, found));
+    setBaseUrlVal((found && found.baseUrl) || startingUrl(pid));
 
-    syncOauthAccountOptions(currentId, nextAccounts, found);
+    syncOauthAccount(pid, nextAccounts, found);
     setApiKeyValue('');
-    
+
     setStatusMsg('');
     setStatusType('');
+    if (found) runCheck(found);
   }
 
   const oauthCapable = (pid) => { const d = providerDef(pid); return !!(d && (d.oauth || d.reserved)); };
 
   function resolveAuthMode(pid, record) {
     if (reservedFor(pid)) return 'oauth';
-    if (record && record.id === pid && record.auth === 'oauth' && oauthCapable(pid)) return 'oauth';
-    if (record && record.id === pid && record.auth === 'apikey') return 'apikey';
+    if (record && connectionType(record) === pid && record.auth === 'oauth' && oauthCapable(pid)) return 'oauth';
     return 'apikey';
   }
 
-  function syncOauthAccountOptions(pid = currentId, accs = accountsMap, record = current) {
-    const ns = authNsForProvider(pid);
-    const list = (accs[ns] || []).slice();
-    let opts = [];
-    let newVal = '';
-    
-    if (list.length === 0) {
-      opts.push({ value: '', text: '— no accounts yet; sign in below —', disabled: true });
-    } else if (list.length === 1) {
-      opts.push({ value: '', text: '(auto — ' + list[0] + ')' });
-    } else {
-      opts.push({ value: '', text: '(pick an account)', disabled: true });
-    }
-    for (const a of list) {
-      opts.push({ value: a, text: a });
-    }
-    setOauthAccountOptions(opts);
-    
-    const cur = (record && record.oauthAccount) || '';
-    if (cur && list.includes(cur)) newVal = cur;
-    setOauthAccountVal(newVal);
+  function syncOauthAccount(pid = currentId, accs = accountsMap, record = current) {
+    const list = accs[authNsForProvider(pid)] || [];
+    const saved = (record && record.oauthAccount) || '';
+    if (saved && list.includes(saved)) setOauthAccountVal(saved);
+    else setOauthAccountVal(list.length === 1 ? list[0] : '');
   }
 
-  function nextBaseUrl(pid, record, currentVal) {
-    const def = providerDef(pid);
-    const configured = (record && record.id === pid) ? record : null;
-    const target = (configured && configured.baseUrl) || (def && def.defaultBaseUrl) || '';
-    const cur = (currentVal || '').trim();
-    const known = SETTINGS_PROVIDERS.map(p => p.defaultBaseUrl).filter(Boolean);
-    return (!cur || known.includes(cur)) ? target : cur;
+  // Signing in when adding is the whole job, so it creates the connection. When
+  // editing, the rest of the form may have unsaved changes, so Save stays yours.
+  function finishSignIn(account) {
+    if (id) {
+      setSignInStatusMsg('Signed in as ' + account + '. Tap Save to use this account.');
+      setSignInStatusType('success');
+      return;
+    }
+    setSignInStatusMsg('Signed in as ' + account + '.');
+    setSignInStatusType('success');
+    save({ account });
   }
 
   async function startSignIn() {
     const provider = currentId;
     const def = providerDef(provider);
-    if (!def) { setSignInStatusMsg('unknown provider'); setSignInStatusType('error'); return; }
+    if (!def) { setSignInStatusMsg('Unknown provider.'); setSignInStatusType('error'); return; }
     if (!oauthCapable(provider)) {
-      setSignInStatusMsg(def.label + ' does not support OAuth sign-in; use an API key.');
+      setSignInStatusMsg(def.label + ' doesn\'t offer sign-in. Use an API key.');
       setSignInStatusType('error');
       return;
     }
-    setSignInStatusMsg('starting sign-in…');
+    setSignInStatusMsg('Starting sign-in…');
     setSignInStatusType('busy');
     let r;
     try {
@@ -203,10 +240,10 @@ export function SettingsProviderEditView(props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ redirectUri: new URL('/oauth/callback', window.location.href).toString() })
       });
-    } catch (err) { setSignInStatusMsg('network error'); setSignInStatusType('error'); return; }
-    if (r.status !== 200) { setSignInStatusMsg('HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : '')); setSignInStatusType('error'); return; }
+    } catch (err) { setSignInStatusMsg('Network error. Try again.'); setSignInStatusType('error'); return; }
+    if (r.status !== 200) { setSignInStatusMsg('Sign-in failed: ' + ((r.body && r.body.error) || 'HTTP ' + r.status)); setSignInStatusType('error'); return; }
     const authorizeUrl = r.body.authorizeUrl;
-    
+
     let completedAccount = '';
     let win;
     const onCompletion = (event) => {
@@ -220,11 +257,11 @@ export function SettingsProviderEditView(props) {
     win = window.open(authorizeUrl, '_blank');
     if (!win) {
       window.removeEventListener('message', onCompletion);
-      try { sessionStorage.setItem('oauthPending', JSON.stringify({ provider, started: Date.now() })); } catch (_) { }
+      try { sessionStorage.setItem('oauthPending', JSON.stringify({ provider, connection: id, choice: props.type, started: Date.now() })); } catch (_) { }
       window.location.href = authorizeUrl;
       return;
     }
-    setSignInStatusMsg('waiting for ' + def.label + ' to redirect back…');
+    setSignInStatusMsg('Waiting for you to finish signing in with ' + def.label + '…');
     setSignInStatusType('busy');
 
     const before = new Set((accountsMap[authNsForProvider(provider)] || []).slice());
@@ -232,17 +269,17 @@ export function SettingsProviderEditView(props) {
     try {
     while (Date.now() - start < 5 * 60 * 1000) {
       await new Promise(r => setTimeout(r, 1500));
+      if (!alive.current) return;
       try {
       const next = await loadAccounts({ force: true });
+      if (!alive.current) return;
       setAccountsMap(next);
       const list = (next[authNsForProvider(provider)] || []);
       const fresh = list.filter(a => !before.has(a));
       const account = completedAccount || fresh[0];
       if (account && list.includes(account)) {
-        syncOauthAccountOptions(provider, next, current);
         setOauthAccountVal(account);
-        setSignInStatusMsg('signed in as ' + account + ' — tap Save');
-        setSignInStatusType('success');
+        finishSignIn(account);
         return;
       }
       } catch { /* keep polling */ }
@@ -250,7 +287,7 @@ export function SettingsProviderEditView(props) {
     } finally {
     window.removeEventListener('message', onCompletion);
     }
-    setSignInStatusMsg('timed out. Start sign-in again.');
+    setSignInStatusMsg('Sign-in timed out. Start it again.');
     setSignInStatusType('error');
   }
 
@@ -275,14 +312,14 @@ export function SettingsProviderEditView(props) {
     const request = { id: null, endpoint: deviceEndpoint };
     deviceIdRef.current = request;
     setDeviceStarting(true);
-    setSignInStatusMsg('asking ' + deviceService + ' for a code…');
+    setSignInStatusMsg('Asking ' + deviceService + ' for a code…');
     setSignInStatusType('busy');
     let r;
     try { r = await fetchJson(deviceEndpoint, { method: 'POST' }); }
     catch (err) {
       if (deviceIdRef.current !== request) return;
       deviceIdRef.current = null;
-      setSignInStatusMsg('network error'); setSignInStatusType('error'); return;
+      setSignInStatusMsg('Network error. Try again.'); setSignInStatusType('error'); return;
     } finally { if (deviceIdRef.current === request || deviceIdRef.current === null) setDeviceStarting(false); }
     if (deviceIdRef.current !== request) {
       if (r.status === 200 && r.body?.id) fetchJson(deviceEndpoint + '?id=' + encodeURIComponent(r.body.id), { method: 'DELETE' }).catch(() => {});
@@ -290,12 +327,12 @@ export function SettingsProviderEditView(props) {
     }
     if (r.status !== 200) {
       deviceIdRef.current = null;
-      setSignInStatusMsg((r.body && r.body.error) || ('HTTP ' + r.status)); setSignInStatusType('error'); return;
+      setSignInStatusMsg((r.body && r.body.error) || ('Sign-in failed (HTTP ' + r.status + ').')); setSignInStatusType('error'); return;
     }
     const flow = r.body;
     deviceIdRef.current = { id: flow.id, endpoint: deviceEndpoint };
     setDeviceFlow(flow);
-    setSignInStatusMsg('enter the code on ' + deviceService + ', then come back here');
+    setSignInStatusMsg('Enter the code on ' + deviceService + ', then come back here.');
     setSignInStatusType('busy');
     while (deviceIdRef.current?.id === flow.id && Date.now() < flow.expiresAt + 5000) {
       await new Promise((res) => setTimeout(res, 2000));
@@ -321,13 +358,11 @@ export function SettingsProviderEditView(props) {
         try {
           const next = await loadAccounts({ force: true });
           setAccountsMap(next);
-          syncOauthAccountOptions(currentId, next, current);
-          setOauthAccountVal(st.body.account);
         } catch { /* the list refreshes on the next load */ }
-        setSignInStatusMsg('signed in as ' + st.body.account + ' — tap Save');
-        setSignInStatusType('success');
+        setOauthAccountVal(st.body.account);
+        finishSignIn(st.body.account);
       } else {
-        setSignInStatusMsg(st.body.error || ('sign-in ' + st.body.status));
+        setSignInStatusMsg(st.body.error || ('Sign-in ' + st.body.status + '.'));
         setSignInStatusType('error');
       }
       return;
@@ -350,57 +385,68 @@ export function SettingsProviderEditView(props) {
 
   async function copyDeviceCode() {
     if (!deviceFlow) return;
-    try { await navigator.clipboard.writeText(deviceFlow.userCode); setSignInStatusMsg('code copied — paste it on ' + deviceService); }
+    try { await navigator.clipboard.writeText(deviceFlow.userCode); setSignInStatusMsg('Code copied. Paste it on ' + deviceService + '.'); }
     catch { /* clipboard blocked; the code is on screen */ }
   }
 
   async function saveCopilotClientId() {
     const value = copilotClientIdVal.trim();
-    setCopilotStatusMsg('saving…');
+    setCopilotStatusMsg('Saving…');
     setCopilotStatusType('busy');
     try {
       await saveApp({ githubCopilot: { clientId: value || null } });
-      setCopilotStatusMsg(value ? 'saved — you can sign in now.' : 'cleared (using default).');
+      setCopilotStatusMsg(value ? 'Saved. You can sign in now.' : 'Cleared. Using the default.');
       setCopilotStatusType('success');
     } catch (e) {
-      setCopilotStatusMsg('save failed: ' + e.message);
+      setCopilotStatusMsg('Couldn\'t save: ' + e.message);
       setCopilotStatusType('error');
     }
   }
 
-  async function save() {
+  function refuse(message) {
+    setStatusMsg(message);
+    setStatusType('error');
+    setIsSaving(false);
+  }
+
+  async function save({ account: signedInAccount } = {}) {
     setIsSaving(true);
-    setStatusMsg('saving…');
+    setStatusMsg('Saving…');
     setStatusType('busy');
     const providerId = currentId;
     const def = providerDef(providerId);
     const auth = (def && def.reserved) ? 'oauth' : authMode;
-    const base = (baseUrlVal || '').trim();
-    const key = apiKeyValue.trim();
-    const account = oauthAccountVal.trim();
+    const urlRequired = !!((choice && choice.urlRequired) || !(def && def.defaultBaseUrl));
+    const typed = (latest.current.baseUrl || '').trim();
+    const key = (latest.current.key || '').trim();
+    const account = (signedInAccount || oauthAccountVal).trim();
 
-    if (auth === 'oauth') {
+    if (!reservedFor(providerId)) {
+      const problem = baseUrlProblem(typed, { required: urlRequired });
+      if (problem) return refuse(problem);
+    }
+    // Clearing the URL returns it to the provider's own address.
+    const base = typed || (def && def.defaultBaseUrl) || '';
+
+    if (auth === 'oauth' && !signedInAccount) {
       let accs = accountsMap;
       try {
         accs = await loadAccounts({ force: true });
         setAccountsMap(accs);
       } catch { /* fall through */ }
       const list = accs[authNsForProvider(providerId)] || [];
-      if (!list.length) { setStatusMsg('sign in to ' + providerId + ' first'); setStatusType('error'); setIsSaving(false); return; }
-      if (list.length > 1 && !account) { setStatusMsg('pick which signed-in account to use'); setStatusType('error'); setIsSaving(false); return; }
+      if (!list.length) return refuse('Sign in to ' + def.label + ' first.');
+      if (list.length > 1 && !account) return refuse('Choose which account to use.');
     }
-    // Local OpenAI-shaped servers (llama.cpp's llama-server, LM Studio, a
-    // local Ollama at /v1) take no key. A provider that marks its key
-    // optional lets the user save a keyless connection; the server then
-    // sends no Authorization header. Hosted endpoints still require a key.
-    const keyOptional = !!(def && (def.keyOptional || providerId === 'ollama'));
-    if (auth === 'apikey' && !keyOptional && !key && !(current && current.hasApiKey)) {
-    setStatusMsg('API key is required for ' + providerId);
-    setStatusType('error');
-    setIsSaving(false);
-    return;
+    if (auth === 'apikey' && keyIsRequired(providerId, base) && !key && !(current && current.hasApiKey)) {
+      return refuse('Paste your API key.');
     }
-    const body = { id: providerId, auth };
+    // Adding sends only the type, so a second connection of a type gets its own
+    // id instead of overwriting the first.
+    const body = id ? { id, auth } : { type: providerId, auth };
+    const preset = !id && choice && choice.presetName;
+    const taken = appProviders().map(p => p && p.name).filter(Boolean);
+    body.name = latest.current.name.trim() || (preset ? uniqueName(preset, taken) : '');
     if (base) body.baseUrl = base;
     if (auth === 'apikey' && key) body.apiKey = key;
     if (auth === 'oauth' && account) body.oauthAccount = account;
@@ -411,147 +457,177 @@ export function SettingsProviderEditView(props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
-    } catch (err) { setStatusMsg('network error'); setStatusType('error'); setIsSaving(false); return; }
+    } catch (err) { return refuse('Network error. Try again.'); }
+    if (r.status !== 200) return refuse('Couldn\'t save: ' + ((r.body && r.body.error) || 'HTTP ' + r.status));
+
+    // A provider that can't be used shouldn't look finished. It stays saved, and
+    // you land on its edit form with the reason, so fixing it can't add a duplicate.
+    const saved = r.body.provider;
+    setStatusMsg('Checking the connection…');
+    setStatusType('busy');
+    const result = await runCheck(saved, { force: true });
+    if (!alive.current) return;
     setIsSaving(false);
-    if (r.status !== 200) { setStatusMsg('HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : '')); setStatusType('error'); return; }
-    setStatusMsg('saved ' + providerId);
-    setStatusType('success');
+    if (result.state === 'error') {
+      if (!id) { replace('settings/providers/' + encodeURIComponent(saved.id)); return; }
+      setCurrent(saved);
+      setApiKeyValue('');
+      setStatusMsg('');
+      setStatusType('');
+      return;
+    }
     back('settings/providers');
   }
 
   async function deleteProvider() {
     if (!id) return;
-    if (!confirm('Delete provider "' + id + '"? Models in your projects that reference it will stop working until you re-add it.')) return;
+    if (!confirm('Delete provider "' + ((current && current.name) || id) + '"? Models in your projects that use it will stop working until you add it again.')) return;
     setIsDeleting(true);
-    setStatusMsg('deleting…');
+    setStatusMsg('Deleting…');
     setStatusType('busy');
     let r;
     try {
       r = await fetchJson('/api/settings/app/providers/' + encodeURIComponent(id), { method: 'DELETE' });
-    } catch (err) { setStatusMsg('network error'); setStatusType('error'); setIsDeleting(false); return; }
-    if (r.status !== 200) { setStatusMsg('HTTP ' + r.status); setStatusType('error'); setIsDeleting(false); return; }
+    } catch (err) { setStatusMsg('Network error. Try again.'); setStatusType('error'); setIsDeleting(false); return; }
+    if (r.status !== 200) { setStatusMsg('Couldn\'t delete (HTTP ' + r.status + ').'); setStatusType('error'); setIsDeleting(false); return; }
     back('settings/providers');
   }
 
   useEffect(() => { load(); }, [id]);
   useEffect(() => {
-    setCurrentId(id || 'openai-compatible');
+    setCurrentId(initialType());
     setCurrent(null);
+    setHealth(null);
   }, [id]);
 
-  const def = currentDef0();
-  const titleText = id ? ((def && def.label) || id) : 'Add provider';
+  const def = providerDef(currentId);
+  const titleText = id ? ((current && current.name) || (def && def.label) || id) : (choice ? choice.label : 'Add provider');
   const reserved = !!(def && def.reserved);
   const canOAuth = oauthCapable(currentId);
   const effAuth = reserved ? 'oauth' : (canOAuth ? authMode : 'apikey');
-  const singleAuth = reserved || !canOAuth;
-  const hide = (cond) => 'row' + (cond ? ' is-hidden' : '');
+  const accounts = accountsMap[authNsForProvider(currentId)] || [];
+  const hasAccounts = accounts.length > 0;
+  const hintText = (choice && choice.hint) || (def && def.hint) || '';
+  // An empty address falls back to the default, unless this choice has you give one.
+  const keyRequired = keyIsRequired(currentId, baseUrlVal || (choice && choice.urlRequired ? '' : (def && def.defaultBaseUrl)));
+  const signInButtonClass = hasAccounts ? 'btn' : 'btn btn--primary';
+  // Nothing to submit until there is an account: signing in is the action.
+  const showSubmit = !!id || effAuth !== 'oauth' || hasAccounts;
 
-  function onProviderChange(e) {
-    const pid = e.target.value;
-    cancelDeviceSignIn();
-    setCurrentId(pid);
-    setAuthMode(resolveAuthMode(pid, current));
-    setBaseUrlVal((cur) => nextBaseUrl(pid, current, cur));
-    syncOauthAccountOptions(pid, accountsMap, current);
-  }
-
-  const showKeyHint = authMode === 'apikey' && current && current.hasApiKey;
-
-  return h(Fragment, null,
-    h('div', { class: 'view-head' },
-      h('a', { href: '#/settings/providers', class: 'view-back', 'aria-label': 'Back to providers' }, '←'),
-      h('h2', { class: 'view-title' }, titleText)
-    ),
-    h('section', null,
-      def && def.hint
-        ? h('p', { class: reserved ? 'notice notice--auth' : 'hint hint--compact' }, def.hint)
-        : null,
-      h('div', { class: 'row' },
-        h('label', { class: 'label', for: 'sp-id' }, 'Provider'),
-        h('select', { class: 'input', id: 'sp-id', disabled: !!id, value: currentId, onChange: onProviderChange },
-          SETTINGS_PROVIDERS.map(p => h('option', { value: p.id, key: p.id }, p.label))
-        )
-      ),
-      h('div', { class: hide(reserved) + ' row--base' },
-        h('label', { class: 'label', for: 'sp-base' }, 'API base URL'),
-        h('input', { class: 'input', id: 'sp-base', type: 'url', placeholder: 'https://api.openai.com/v1',
-          value: baseUrlVal, onInput: (e) => setBaseUrlVal(e.target.value) })
-      ),
-      h('div', { class: hide(singleAuth) },
-        h('label', { class: 'label', for: 'sp-auth' }, 'Authentication'),
-        h('select', { class: 'input', id: 'sp-auth', value: effAuth,
-          onChange: (e) => { setAuthMode(e.target.value); } },
-          h('option', { value: 'apikey' }, 'API key'),
-          canOAuth ? h('option', { value: 'oauth' }, 'OAuth') : null
-        )
-      ),
-      h('div', { class: hide(!reserved) + ' row__static-wrap' },
-        h('div', { class: 'row__static' },
-          h('span', { class: 'label' }, 'Authentication'),
-          h('span', { class: 'row__static-value' }, 'OAuth (required)'),
-          h('span', { class: 'row__static-note' }, 'This provider only supports OAuth sign-in.')
-        )
-      ),
-      h('div', { class: hide(effAuth !== 'apikey') + ' row--apikey' },
-        h('label', { class: 'label', for: 'sp-key' }, 'Provider API key'),
-        h('input', { class: 'input', id: 'sp-key', type: 'password', placeholder: 'paste key', autocomplete: 'off',
-          value: apiKeyValue, onInput: (e) => setApiKeyValue(e.target.value) })
-      ),
-      h('p', { class: 'hint hint--compact key-hint', hidden: !showKeyHint },
-        showKeyHint ? 'a key is already saved for this provider; leave the field empty to keep it' : ''
-      ),
-      h('div', { class: hide(effAuth !== 'oauth') + ' row--oauth' },
-        h('label', { class: 'label', for: 'sp-account' }, 'OAuth account'),
-        h('select', { class: 'input', id: 'sp-account', value: oauthAccountVal, onChange: (e) => setOauthAccountVal(e.target.value) },
-          oauthAccountOptions.map((opt, i) => h('option', { key: i, value: opt.value, disabled: opt.disabled }, opt.text))
-        )
-      ),
-      def && def.deviceAuth ? h('div', { class: 'row row--oauth row--copilot-device' },
-      h('p', { class: 'hint hint--compact' }, currentId === 'codex'
-      ? 'Enable device code authorization in ChatGPT Settings → Security, then enter the code below. Only approve codes you requested here.'
-      : 'Sign in with a one-time code: works from this phone, a LAN address, or behind a proxy. Needs an active Copilot plan on the GitHub account.'),
+  const nameRow = h('div', { class: 'row' },
+    h('label', { class: 'label', for: 'sp-name' }, 'Name (optional)'),
+    h('input', { class: 'input', id: 'sp-name', type: 'text', maxLength: 80, autocomplete: 'off',
+      placeholder: (choice && choice.presetName) || (def && def.label) || 'e.g. Work account',
+      value: nameVal, onInput: (e) => setNameVal(e.target.value) })
+  );
+  const urlRow = reserved ? null : h('div', { class: 'row row--base' },
+    h('label', { class: 'label', for: 'sp-base' }, choice && choice.local ? 'Server address' : 'API address'),
+    h('input', { class: 'input', id: 'sp-base', type: 'url', autocomplete: 'off',
+      placeholder: (def && (def.defaultBaseUrl || def.urlPlaceholder)) || 'https://api.example.com/v1',
+      value: baseUrlVal, onInput: (e) => setBaseUrlVal(e.target.value) })
+  );
+  const keyRow = h('div', { class: 'row row--apikey' },
+    h('label', { class: 'label', for: 'sp-key' }, keyRequired ? 'API key' : 'API key (optional)'),
+    h('input', { class: 'input', id: 'sp-key', type: 'password', autocomplete: 'off',
+      placeholder: current && current.hasApiKey ? 'Saved. Paste a new key to replace it.' : (keyRequired ? 'Paste your key' : 'Leave empty if none is needed'),
+      value: apiKeyValue, onInput: (e) => setApiKeyValue(e.target.value) })
+  );
+  const authRow = id && canOAuth && !reserved ? h('div', { class: 'row' },
+    h('label', { class: 'label', for: 'sp-auth' }, 'How to connect'),
+    h('select', { class: 'input', id: 'sp-auth', value: effAuth,
+      onChange: (e) => { setAuthMode(e.target.value); } },
+      h('option', { value: 'apikey' }, 'API key'),
+      h('option', { value: 'oauth' }, 'Sign in')
+    )
+  ) : null;
+  const accountRow = hasAccounts ? h('div', { class: 'row row--oauth' },
+    h('label', { class: 'label', for: 'sp-account' }, 'Account'),
+    h('select', { class: 'input', id: 'sp-account', value: oauthAccountVal, onChange: (e) => setOauthAccountVal(e.target.value) },
+      accounts.length > 1 ? h('option', { value: '', disabled: true }, 'Choose an account') : null,
+      accounts.map((account) => h('option', { key: account, value: account }, account))
+    )
+  ) : null;
+  const signInStatus = h('span', { class: 'status', 'data-state': signInStatusType || undefined, 'aria-live': 'polite' }, signInStatusMsg);
+  const signInRow = def && def.deviceAuth
+    ? h('div', { class: 'row row--oauth' },
         deviceFlow
           ? h('div', { class: 'copilot-device' },
               h('button', { class: 'copilot-device__code', type: 'button', onClick: copyDeviceCode, 'aria-label': 'Copy code ' + deviceFlow.userCode, title: 'Copy code' }, deviceFlow.userCode),
-              h('div', { class: 'row row--actions' },
+              h('div', { class: 'provider-form__actions' },
                 h('a', { class: 'btn btn--primary', href: deviceFlow.verificationUri, target: '_blank', rel: 'noopener noreferrer' }, currentId === 'codex' ? 'Open ChatGPT sign-in' : 'Open github.com/login/device'),
-                h('button', { class: 'btn btn--ghost', type: 'button', onClick: cancelDeviceSignIn }, 'Cancel')
-              )
+                h('button', { class: 'btn', type: 'button', onClick: cancelDeviceSignIn }, 'Cancel')
+              ),
+              h('p', { class: 'hint hint--compact' }, 'Only approve a code you asked for here.')
             )
-          : h('div', { class: 'row row--actions' },
-              h('button', { class: 'btn btn--primary', type: 'button', onClick: startDeviceSignIn, disabled: deviceStarting }, 'Sign in with ' + deviceService + ' code')
+          : h('div', { class: 'provider-form__actions' },
+              h('button', { class: signInButtonClass, type: 'button', onClick: startDeviceSignIn, disabled: deviceStarting },
+                (hasAccounts ? 'Sign in with another ' + deviceService + ' account' : 'Sign in with ' + deviceService + ' code'))
             ),
-        h('span', { class: 'status' + (signInStatusType ? ' status--' + signInStatusType : ''), 'aria-live': 'polite' }, signInStatusMsg)
-      ) : null,
-      h('details', { class: hide(effAuth !== 'oauth' || currentId !== 'github-copilot') + ' row--oauth row--copilot' },
-        h('summary', { class: 'label' }, 'Advanced: custom GitHub OAuth app'),
-        h('label', { class: 'label', for: 'sp-copilot-id' }, 'GitHub OAuth app client ID'),
-        h('p', { class: 'hint hint--compact' }, 'Optional. Leave blank to use the shipped public client. A custom app must have Device Flow enabled (Developer settings → OAuth Apps). For browser redirect sign-in instead, register the callback ', h('code', null, new URL('/oauth/callback?provider=github-copilot', typeof window !== 'undefined' ? window.location.href : 'http://127.0.0.1:5732/').toString()), '.'),
-        h('input', { class: 'input', id: 'sp-copilot-id', type: 'text', placeholder: 'Iv1.xxxxxxxxxxxxxxxx', autocomplete: 'off',
-          value: copilotClientIdVal, onInput: (e) => setCopilotClientIdVal(e.target.value) }),
-        h('div', { class: 'row row--actions' },
-          h('button', { class: 'btn', type: 'button', onClick: saveCopilotClientId }, 'Save client ID'),
-          h('span', { class: 'status' + (copilotStatusType ? ' status--' + copilotStatusType : ''), 'aria-live': 'polite' }, copilotStatusMsg)
-        ),
-        h('div', { class: 'row row--actions' },
-          h('button', { class: 'btn', type: 'button', onClick: startSignIn }, 'Sign in with browser redirect')
-        )
-      ),
-      h('div', { class: hide(effAuth !== 'oauth' || (def && def.deviceAuth)) + ' row--oauth' },
-        h('div', { class: 'auth__help-inline' },
-          h('p', { class: 'hint hint--compact' }, 'Sign in to this provider below; the OAuth-account list refreshes automatically.'),
-          h('div', { class: 'row row--actions' },
-            h('button', { class: 'btn', type: 'button', onClick: startSignIn }, 'Sign in'),
-            h('span', { class: 'status' + (signInStatusType ? ' status--' + signInStatusType : ''), 'aria-live': 'polite' }, signInStatusMsg)
-          )
-        )
-      ),
-      h('div', { class: 'row row--actions' },
-        h('button', { class: 'btn btn--primary', type: 'button', disabled: isSaving, onClick: save }, id ? 'Save' : 'Add provider'),
-        h('button', { class: 'btn btn--danger', type: 'button', disabled: isDeleting, onClick: deleteProvider, hidden: !id }, 'Delete'),
-        h('span', { class: 'status' + (statusType ? ' status--' + statusType : ''), 'aria-live': 'polite' }, statusMsg)
+        signInStatus
       )
+    : h('div', { class: 'row row--oauth' },
+        h('div', { class: 'provider-form__actions' },
+          h('button', { class: signInButtonClass, type: 'button', onClick: startSignIn },
+            hasAccounts ? 'Sign in with another account' : 'Sign in with ' + ((def && def.signInWith) || (def && def.label) || 'this provider'))
+        ),
+        signInStatus
+      );
+  const copilotOptions = currentId === 'github-copilot' ? h('div', { class: 'row' },
+    h('label', { class: 'label', for: 'sp-copilot-id' }, 'GitHub OAuth app client ID'),
+    h('p', { class: 'hint hint--compact' }, 'Optional. Leave empty to use the built-in app. Your own app must have Device Flow turned on (Developer settings → OAuth Apps). For browser sign-in instead, register the callback ', h('code', null, new URL('/oauth/callback?provider=github-copilot', typeof window !== 'undefined' ? window.location.href : 'http://127.0.0.1:5732/').toString()), '.'),
+    h('input', { class: 'input', id: 'sp-copilot-id', type: 'text', placeholder: 'Iv1.xxxxxxxxxxxxxxxx', autocomplete: 'off',
+      value: copilotClientIdVal, onInput: (e) => setCopilotClientIdVal(e.target.value) }),
+    h('div', { class: 'provider-form__actions' },
+      h('button', { class: 'btn', type: 'button', onClick: saveCopilotClientId }, 'Save client ID'),
+      h('button', { class: 'btn', type: 'button', onClick: startSignIn }, 'Sign in with browser')
+    ),
+    h('span', { class: 'status', 'data-state': copilotStatusType || undefined, 'aria-live': 'polite' }, copilotStatusMsg)
+  ) : null;
+
+  // Adding asks only for what this choice can't work without; the rest waits in
+  // Advanced. Editing shows it all, because you came here to change something.
+  const fields = id
+    ? h(Fragment, null,
+        nameRow,
+        authRow,
+        urlRow,
+        effAuth === 'apikey' ? keyRow : h(Fragment, null, accountRow, signInRow),
+        copilotOptions ? h('details', { class: 'provider-form__more' }, h('summary', { class: 'label' }, 'Advanced'), copilotOptions) : null
+      )
+    : h(Fragment, null,
+        choice && choice.urlFirst ? urlRow : null,
+        effAuth === 'apikey' && !(choice && choice.local) ? keyRow : null,
+        effAuth === 'oauth' ? h(Fragment, null, accountRow, signInRow) : null,
+        h('details', { class: 'provider-form__more' },
+          h('summary', { class: 'label' }, 'Advanced'),
+          nameRow,
+          choice && choice.urlFirst ? null : urlRow,
+          choice && choice.local ? keyRow : null,
+          copilotOptions
+        )
+      );
+
+  return h(Fragment, null,
+    h('div', { class: 'view-head' },
+      h('a', { href: id ? '#/settings/providers' : '#/settings/providers/new', class: 'view-back', 'aria-label': id ? 'Back to providers' : 'Back to the provider list' }, '←'),
+      h('h2', { class: 'view-title' }, titleText)
+    ),
+    h('section', null,
+      id && def ? h('p', { class: 'hint hint--compact' }, def.label + ' · id ', h('code', null, id)) : null,
+      hintText ? h('p', { class: 'hint hint--compact' }, hintText) : null,
+      id && (health || isChecking)
+        ? h('div', { class: 'provider-health', role: 'status', 'data-state': isChecking ? 'busy' : HEALTH_STATE[health.state] },
+            h('strong', null, isChecking ? 'Checking the connection…' : health.text),
+            !isChecking && health.state !== 'ok' && health.detail ? h('span', { class: 'provider-health__detail' }, health.detail) : null
+          )
+        : null,
+      fields,
+      h('div', { class: 'provider-form__actions provider-form__actions--submit' },
+        showSubmit ? h('button', { class: 'btn btn--primary', type: 'button', disabled: isSaving, onClick: () => save() }, id ? 'Save' : 'Add provider') : null,
+        id ? h('button', { class: 'btn', type: 'button', disabled: isChecking || isSaving, onClick: () => current && runCheck(current, { force: true }) }, 'Test saved settings') : null,
+        id ? h('button', { class: 'btn btn--danger', type: 'button', disabled: isDeleting, onClick: deleteProvider }, 'Delete') : null
+      ),
+      h('p', { class: 'status provider-form__status', 'data-state': statusType || undefined, 'aria-live': 'polite' }, statusMsg)
     )
   );
 }

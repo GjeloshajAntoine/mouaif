@@ -35,11 +35,13 @@ window.fetch = async (url, init = {}) => {
       : { error: status === 404 ? 'device sign-in not found' : 'Sign in is required' };
   }
   if (url === '/api/settings/app/providers' && init.method === 'POST') {
-    window.saved = JSON.parse(init.body); body = { ok: true };
+    window.saved = JSON.parse(init.body);
+    body = { provider: { id: 'codex', type: 'codex', auth: 'oauth' } };
   }
+  if (url.startsWith('/api/ai/models/live?')) body = { models: [{ id: 'gpt-fixture' }] };
   return new Response(JSON.stringify(body), { status });
 };
-render(h(SettingsProviderEditView, {}), document.getElementById('fixture'));
+render(h(SettingsProviderEditView, { type: 'codex' }), document.getElementById('fixture'));
 window.ready = true;
 `;
 const bundle = await build({ stdin: { contents, resolveDir: process.cwd(), loader: 'jsx' },
@@ -84,12 +86,12 @@ try {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 844, deviceScaleFactor: 1, mobile: true });
   await cdp.send('Page.enable');
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/` });
-  await waitFor('!!window.ready && !!document.querySelector("#sp-id")');
-  await settle();
-  await evaluate(`const select = document.querySelector('#sp-id'); select.value = 'codex'; select.dispatchEvent(new Event('change', { bubbles: true }));`);
+  await waitFor('!!window.ready && !!document.querySelector(".copilot-device, .provider-form__actions")');
   await settle();
   const visible = `el => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length)`;
-  assert.equal(await evaluate(`document.querySelector('#sp-key').closest('.row').classList.contains('is-hidden')`), true);
+  assert.equal(await evaluate(`!!document.querySelector('#sp-key')`), false, 'no key field on a sign-in-only provider');
+  assert.equal(await evaluate(`!!document.querySelector('#sp-account')`), false, 'no account list before there is an account');
+  assert.equal(await evaluate(`Array.from(document.querySelectorAll('button')).some(el => el.textContent === 'Add provider')`), false, 'signing in is the only action until there is an account');
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('button')).filter(${visible}).some(el => el.textContent === 'Sign in with ChatGPT code')`), true);
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('button')).filter(${visible}).some(el => el.textContent === 'Sign in')`), false);
   await evaluate(`Array.from(document.querySelectorAll('button')).find(el => el.textContent === 'Sign in with ChatGPT code').click()`);
@@ -125,13 +127,13 @@ try {
     await settle();
   }
   await evaluate(`window.pollHttpStatus = 200; window.pollStatus = 'ok'; Array.from(document.querySelectorAll('button')).find(el => el.textContent === 'Sign in with ChatGPT code').click()`);
-  await waitFor(`document.body.textContent.includes('signed in as me@example.com')`);
-  await evaluate(`Array.from(document.querySelectorAll('button')).find(el => el.textContent === 'Add provider').click()`);
+  // Signing in is enough: the connection is added, and then checked, without another tap.
   await waitFor('!!window.saved');
-  assert.deepEqual(await evaluate('saved'), { id: 'codex', auth: 'oauth', baseUrl: 'https://chatgpt.com/backend-api/codex' });
+  assert.deepEqual(await evaluate('saved'), { type: 'codex', auth: 'oauth', name: '', baseUrl: 'https://chatgpt.com/backend-api/codex', oauthAccount: 'me@example.com (workspace)' });
+  await waitFor(`requests.some(r => r.url === '/api/ai/models/live?provider=codex&_bust=1')`);
   assert.equal(await evaluate(`requests.some(r => r.url.startsWith('/api/auth/sign-in/codex'))`), false);
   assert.deepEqual(await evaluate('errors'), []);
-  console.log('PASS Codex mobile UI: select provider, OAuth-only, device link/cancel/sign-in/save at 360/390/430px');
+  console.log('PASS Codex mobile UI: sign-in only, device link/cancel, sign-in adds and checks the connection at 360/390/430px');
 } finally {
   if (cdp) cdp.close();
   if (chrome && chrome.exitCode === null) {

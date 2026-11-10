@@ -257,11 +257,50 @@ font-size: 0.78rem;
   .provider-row__main:hover  { background: var(--surface-2); }
 }
 .provider-row__main:active { background: var(--surface-3); }
-.provider-row__main > div:first-child { flex: 1; }
+.provider-row__body { flex: 1; min-width: 0; }
 .provider-row__name {
   font-weight: 500;
   font-size: 0.9rem;
 }
+.provider-row__health { margin-top: 1px; }
+.provider-picker__group {
+  margin: 12px 10px 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.provider-health {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 10px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+.provider-health[data-state="success"] { border-left-color: var(--success); }
+.provider-health[data-state="error"]   { border-left-color: var(--danger); }
+.provider-health[data-state="busy"]    { border-left-color: var(--accent); }
+.provider-health strong { font-weight: 600; }
+.provider-health__detail {
+  color: var(--muted);
+  font-size: 0.74rem;
+  overflow-wrap: anywhere;
+}
+.provider-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.provider-form__actions > .btn { flex: 1 1 auto; text-decoration: none; }
+.provider-form__actions--submit { margin: 10px 10px 6px; }
+.provider-form__status { display: block; margin: 0 10px 10px; }
+.provider-form__more { margin: 8px 0; }
+.provider-form__more > summary { margin: 0 10px; }
 .provider-row__meta {
   color: var(--muted);
   font-size: 0.72rem;
@@ -275,24 +314,6 @@ font-size: 0.78rem;
   line-height: 1;
   flex-shrink: 0;
   width: 8px;
-}
-
-.key-hint {
-  margin: 0 0 8px;
-  color: var(--muted);
-  font-style: italic;
-}
-.key-hint[hidden] { display: none; }
-
-.auth__help-inline {
-  width: 100%;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
 .settings__out {

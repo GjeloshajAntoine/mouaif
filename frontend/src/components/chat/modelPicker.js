@@ -14,7 +14,7 @@
 // storage is folded onto the shared lists by `migrateProjectScopedBookmarks`
 // below.
 
-import { fetchJson, fetchLiveModels, invalidateModelsCache, touchRecentModel, loadRecentModels } from '../../api.js';
+import { fetchJson, fetchLiveModels, invalidateModelsCache, touchRecentModel, loadRecentModels, connectionType, providerLabel } from '../../api.js';
 
 // ---- Model bookmarks (pinned + recent) -------------------------------
 
@@ -229,7 +229,7 @@ export function updateModelTrigger(refs, state) {
   const idEl = trig.querySelector('.chat-view__model-id');
   const provEl = trig.querySelector('.chat-view__model-provider');
   if (idEl) idEl.textContent = modelId || '(pick a model)';
-  if (provEl) provEl.textContent = providerId || (state.providers.length ? '' : 'add a provider in Settings → Providers');
+  if (provEl) provEl.textContent = providerLabel(providerId) || (state.providers.length ? '' : 'add a provider in Settings → Providers');
   trig.classList.toggle('is-empty', !modelId);
   trig.classList.toggle('no-providers', !state.providers.length);
 }
@@ -255,7 +255,7 @@ export function updatePickerChips(state, refs, visibleList, activeFilter) {
   for (const p of providers) if (!counts.hasOwnProperty(p)) counts[p] = 0;
   const chips = [
     { id: 'all', label: 'All' },
-    ...providers.map((p) => ({ id: p, label: p }))
+    ...providers.map((p) => ({ id: p, label: providerLabel(p) }))
   ];
   chipsHost.innerHTML = '';
   for (const c of chips) {
@@ -312,7 +312,7 @@ function buildPickerRow(state, refs, m, activeProvider, activeModel) {
   }
   const meta = document.createElement('span');
   meta.className = 'chat-view__picker-row-meta';
-  meta.textContent = m.ghost ? 'unavailable' : m.provider;
+  meta.textContent = m.ghost ? 'unavailable' : providerLabel(m.provider);
   row.appendChild(meta);
   row.addEventListener('click', () => {
     if (state._onPickerPick) state._onPickerPick(m.provider, m.id);
@@ -427,7 +427,7 @@ export function renderModelPicker(state, refs) {
     header.className = 'chat-view__picker-section-head';
     const title = document.createElement('span');
     title.className = 'chat-view__picker-section-title';
-    title.textContent = g.provider;
+    title.textContent = providerLabel(g.provider);
     const count = document.createElement('span');
     count.className = 'chat-view__picker-section-count';
     count.textContent = String(g.items.length);
@@ -479,8 +479,9 @@ function renderPickerEmpty(state, refs, list, q, providerFilter) {
     actionLabel = 'Open Settings';
     actionKind = 'settings';
   } else if (providerFilter !== 'all') {
-    title = 'No ' + providerFilter + ' models';
-    body = 'The ' + providerFilter + ' provider has no models in the current catalog. Refresh to fetch the latest list.';
+    const filterName = providerLabel(providerFilter);
+    title = 'No ' + filterName + ' models';
+    body = 'The ' + filterName + ' provider has no models in the current catalog. Refresh to fetch the latest list.';
     actionLabel = 'Refresh models';
     actionKind = 'refresh';
   } else {
@@ -795,14 +796,16 @@ export async function refreshAllProviders(state, refs) {
   if (primary && !primary.ok) {
     const code = primary.body && primary.body.code;
     const msg = primary.body && primary.body.error;
+    const primaryName = providerLabel(primary.provider);
+    const primaryConnection = state.providers.find((p) => p && p.id === primary.provider);
     let pill;
     if (code === 'ENO_APIKEY')      pill = 'add API key in Settings → Providers';
-    else if (code === 'EUNREACHABLE') pill = (primary.provider === 'ollama')
-      ? 'ollama not running on ' + (window.__mouaif_ollama_url || '127.0.0.1:11434')
-      : (primary.provider + ' unreachable');
-    else if (code === 'EABORTED')    pill = 'timeout — ' + primary.provider + ' did not respond in 8s';
-    else if (code === 'EUPSTREAM')   pill = (primary.provider + ' returned ' + (primary.status || '?'));
-    else if (code === 'ENO_LIST')    pill = (primary.provider + ' has no model list endpoint');
+    else if (code === 'EUNREACHABLE') pill = ((primaryConnection ? connectionType(primaryConnection) : primary.provider) === 'ollama')
+      ? primaryName + ' not running on ' + (window.__mouaif_ollama_url || '127.0.0.1:11434')
+      : (primaryName + ' unreachable');
+    else if (code === 'EABORTED')    pill = 'timeout — ' + primaryName + ' did not respond in 8s';
+    else if (code === 'EUPSTREAM')   pill = (primaryName + ' returned ' + (primary.status || '?'));
+    else if (code === 'ENO_LIST')    pill = (primaryName + ' has no model list endpoint');
     else                              pill = 'model list failed (' + (primary.status || '?') + ')';
     error = pill + (msg && msg !== pill ? ' — ' + msg : '');
   } else if (failed) {

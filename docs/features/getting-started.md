@@ -84,11 +84,13 @@ From now on, opening `http://127.0.0.1:5732/` shows the login screen.
 ## Step 3 — Connect an AI provider
 
 1. Open the **Settings** tab, then **Providers**.
-2. Tap **+** (Add provider) and choose a provider.
-3. Paste its API key, or tap **Sign in** for Anthropic, OpenRouter, or GitHub Copilot.
-   - **Ollama**: no key; make sure Ollama is running.
-   - **llama.cpp / LM Studio**: choose **OpenAI-compatible**, leave the key empty, and set the base URL (for example `http://127.0.0.1:8080/v1`). See [Local OpenAI-compatible servers](./local-openai-servers.md).
-4. Tap **Add provider**.
+2. Tap **+ Add provider** and choose how to connect.
+3. Follow the next screen:
+   - **Sign in with an account**: tap the sign-in button. The provider is added when you finish.
+   - **Paste an API key**: paste the key and tap **Add provider**.
+   - **Run on your own server**: start the server, check its address, and tap **Add provider**. See [Local OpenAI-compatible servers](./local-openai-servers.md).
+
+mouaif tests the connection and tells you if something is wrong.
 
 Providers are shared by all your projects. Keys stay on the computer running mouaif; the browser never receives them.
 

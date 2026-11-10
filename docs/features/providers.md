@@ -10,14 +10,34 @@ Connections live at app level, not per project: you add a provider once and ever
 
 ### Connect a provider
 
-1. Open **Settings → Providers**.
-2. Tap **+ Add provider** and choose a provider from the list.
-3. Enter the requested API key and API base URL, or tap **Sign in** when the provider offers browser sign-in.
-4. Save the provider, then run its model refresh or connection test to confirm it works.
+1. Open **Settings → Providers** and tap **+ Add provider**.
+2. Choose how you want to connect:
+   - **Sign in with an account** — Claude Pro or Max, ChatGPT (Codex), GitHub Copilot, or OpenRouter.
+   - **Paste an API key** — OpenAI, Anthropic, Google Gemini, OpenRouter, Mistral, Groq, DeepSeek, Azure OpenAI, or another OpenAI-compatible service.
+   - **Run on your own server** — Ollama, LM Studio, or llama.cpp.
+3. Fill in what the next screen asks for. A name and a custom address are under **Advanced** when you don't need them.
+4. Tap **Add provider**. If you signed in, the provider is added as soon as sign-in finishes.
+
+mouaif then tests the connection. If it works, you return to the list. If it doesn't, the provider is still saved and you land on its form with the reason, so you can fix it or delete it.
+
+### Connection status
+
+The provider list shows how each connection is doing:
+
+| Status | What it means |
+|--------|---------------|
+| **Connected · 42 models** | The provider answered and listed its models. |
+| **Saved · can't be tested** | mouaif can't test this provider without sending a message: Anthropic, OpenRouter and GitHub Copilot list their models whatever the key or sign-in. Send a message to confirm it works. |
+| **Needs an API key** / **Needs sign-in** | The connection has no credential, and this provider requires one. |
+| **API key rejected** / **Sign-in rejected** | The provider refused the credential. |
+| **Can't reach the server** / **No answer from the server** | Nothing answered at this address. For a local server, check that it's running. |
+| **Nothing found at this address** | A server answered, but not with a model list. Check the address. |
+
+Open a connection and tap **Test saved settings** to test it again. It tests what is saved, not changes you haven't saved yet.
 
 The built-in providers are:
 
-- **OpenAI compatible** — any OpenAI-shaped endpoint (OpenAI, Together, LM Studio, llama.cpp `llama-server`). The key may be left blank for a local server that needs none, see [Local OpenAI-compatible servers](./local-openai-servers.md).
+- **OpenAI compatible** — any OpenAI-shaped endpoint. You add it as **OpenAI**, **LM Studio**, **llama.cpp**, or **Another OpenAI-compatible service**. Only OpenAI itself requires a key, see [Local OpenAI-compatible servers](./local-openai-servers.md).
 - **Anthropic** — API key or browser sign-in, see [Anthropic sign-in](./oauth-anthropic.md).
 - **Google Gemini** — API key. The connection's base URL drives both chat and the model catalog (a proxy, gateway, or regional host works), and OAuth accounts for Gemini are indexed under the `google` namespace the server uses.
 - **OpenAI Codex** — use your ChatGPT plan with device-code sign-in, see [OpenAI Codex](./codex.md).
@@ -26,13 +46,21 @@ The built-in providers are:
 - **GitHub Copilot** — sign in with a GitHub one-time code, see [GitHub Copilot](./github-copilot.md).
 - **Azure OpenAI**, **Mistral**, **Groq**, **DeepSeek** — API key, see [Cloud model providers](./cloud-providers.md).
 
+### Connect the same provider more than once
+
+Tap **+ Add provider** again and make the same choice. Each connection keeps its own API key or signed-in account, base URL, model list and balance, so you can use a work and a personal account side by side, or an LM Studio server next to a llama.cpp one.
+
+Give each connection a **Name**, under **Advanced**, so you can tell them apart. The name appears in Settings and in the model pickers, and you can change it at any time. Without a name, pickers show the connection's id. OpenAI, LM Studio and llama.cpp name themselves if you leave it empty.
+
+The first connection of a provider has the provider's own id, such as `openai-compatible`. Later ones get `openai-compatible-2`, `openai-compatible-3` and so on. An id never changes, and you can't change a connection's provider after adding it.
+
 ### Add a model to a project
 
-Open a project's settings, then its **Models** editor, and add an entry that names this provider and the model id you want. The live model catalog in the chat's model picker can also refresh and pull the provider's own list.
+Open a project's settings, then its **Models** editor, and add an entry that names this provider and the model id you want. Use the connection's id as the provider. The live model catalog in the chat's model picker can also refresh and pull the provider's own list.
 
 ### Sign in with an account instead of a key
 
-Anthropic and OpenRouter offer **Sign in** in the provider form: the browser is sent to the provider, you authorize mouaif, and the resulting token or key is stored on your computer. GitHub Copilot uses a one-time code you enter at github.com/login/device instead. You can sign in with more than one account for the same provider and pick the account in the provider form.
+Claude Pro or Max and OpenRouter send the browser to the provider, you authorize mouaif, and the resulting token or key is stored on your computer. GitHub Copilot and ChatGPT (Codex) use a one-time code instead. Finishing sign-in adds the provider. If you've already signed in, choose the account and tap **Add provider**, or tap **Sign in with another account**. To use two accounts at once, add a connection for each.
 
 ## Where credentials are kept
 

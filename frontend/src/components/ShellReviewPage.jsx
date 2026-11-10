@@ -6,7 +6,7 @@
 // auto-allows SAFE commands to run without waiting for a manual tap.
 import { h, Fragment } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { fetchJson, fetchLiveModels, activeProject } from '../api.js';
+import { fetchJson, fetchLiveModels, activeProject, providerLabel } from '../api.js';
 import { ModelPickerField } from './ModelPickerField.jsx';
 import { ThinkingSelectField } from './ThinkingSelectField.jsx';
 import { loadPinned, loadRecent, loadRecentFromServer, touchRecent, togglePin } from './chat/modelPicker.js';
@@ -23,7 +23,7 @@ function stateFor(saved) {
   if (!saved) return '';
   if (saved.mode === 'off') return 'Off — commands are not reviewed.';
   const modelLabel = saved.providerId && saved.modelId
-    ? (saved.providerId + ' · ' + saved.modelId)
+    ? (providerLabel(saved.providerId) + ' · ' + saved.modelId)
     : 'the chat’s current model';
   if (saved.mode === 'always') {
     const autoDesc = saved.autoAllow !== false

@@ -9,12 +9,12 @@
 ### Add a provider
 
 1. **Settings → Providers → + Add provider.**
-2. Pick the provider from the dropdown:
+2. Under **Paste an API key**, choose the provider:
    - **Azure OpenAI** — paste the resource key. The **API base URL** must be the full deployment URL, e.g. `https://<resource>.openai.azure.com/openai/deployments/<deployment>`. The deployment name is the model id on the chat side. The `api-version` query parameter is appended automatically (default `2024-10-21`; override per project model via `model.apiVersion`).
    - **Mistral** — default base URL `https://api.mistral.ai/v1`. Paste a key from [console.mistral.ai](https://console.mistral.ai).
    - **Groq** — default base URL `https://api.groq.com/openai/v1`. Paste a key from [console.groq.com](https://console.groq.com).
    - **DeepSeek** — default base URL `https://api.deepseek.com`. Paste a key from [platform.deepseek.com](https://platform.deepseek.com).
-3. **Save provider.** All four are API-key only — the Settings form shows no OAuth option for them.
+3. Tap **Add provider**. mouaif tests the connection. All four are API-key only. A custom address for Mistral, Groq or DeepSeek goes under **Advanced**.
 
 ### Add a model
 

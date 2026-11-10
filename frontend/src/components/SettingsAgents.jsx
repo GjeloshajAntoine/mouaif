@@ -13,7 +13,7 @@ import { useState, useEffect, useRef } from 'preact/hooks';
 import { createAgentAutosave } from './settings/agentAutosave.js';
 import { agentQuery, agentEditorPath } from './settings/agentNavigation.js';
 import { backHref, backTarget } from './settings/projectNavigation.js';
-import { fetchJson, fetchLiveModels, activeProject } from '../api.js';
+import { fetchJson, fetchLiveModels, activeProject, providerLabel } from '../api.js';
 import { back as goBack, replace, replaceUrl } from '../router.js';
 import { ToolTree, buildAgentToolGroups } from './ToolTree.jsx';
 import { TOOL_GROUPS } from '../toolGroups.js';
@@ -178,7 +178,7 @@ export function SettingsAgentsView(props) {
             h('div', { class: 'prompt-row__title' }, 'Default subagent'),
             h('div', { class: 'prompt-row__meta' }, 'Used when the subagent tool is called without an agent'),
             h('div', { class: 'prompt-row__meta' }, defaultAgent && defaultAgent.modelId
-            ? 'Runs on: ' + (defaultAgent.providerId || 'project model') + ' / ' + defaultAgent.modelId
+            ? 'Runs on: ' + (providerLabel(defaultAgent.providerId) || 'project model') + ' / ' + defaultAgent.modelId
             : 'Follows chat / project subagent defaults, then the chat model'),
             h('div', { class: 'prompt-row__chev' }, '›')
           )
@@ -190,7 +190,7 @@ export function SettingsAgentsView(props) {
           bits.push(Array.isArray(a.tools) && a.tools.length
             ? a.tools.length + (a.tools.length === 1 ? ' tool' : ' tools')
             : 'all tools');
-          bits.push(a.modelId ? 'Runs on: ' + (a.providerId || 'project model') + ' / ' + a.modelId
+          bits.push(a.modelId ? 'Runs on: ' + (providerLabel(a.providerId) || 'project model') + ' / ' + a.modelId
           : 'Follows chat / project subagent defaults, then the chat model');
           const snippet = (a.content || '').trim().replace(/\s+/g, ' ');
           if (snippet) bits.push(snippet.length > 48 ? snippet.slice(0, 48) + '…' : snippet);

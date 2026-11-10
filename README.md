@@ -11,7 +11,7 @@ npx mouaif serve --auth
 ```
 
 1. **Create your login.** Open the setup link printed in the terminal (or scan its QR code) and choose a username and password. Keep the terminal open — `Ctrl+C` stops mouaif.
-2. **Connect a provider.** In the app, open **Settings → Providers**, tap **+**, and enter a key or tap **Sign in**.
+2. **Connect a provider.** In the app, open **Settings → Providers**, tap **+ Add provider**, and choose how to connect.
 3. **Add a project.** On the **Chats** tab, tap **+** and pick a folder.
 4. **Chat.** Tap **New chat** on the project card, pick a model in the header, and send a message.
 
@@ -25,7 +25,7 @@ The full walkthrough, with troubleshooting, is in [Getting started](docs/feature
 | Global command | `npm install -g mouaif` then `mouaif serve --auth` |
 | From source | `git clone https://github.com/GjeloshajAntoine/mouaif.git && cd mouaif && npm install && npm link` |
 
-The npm package is [`mouaif`](https://www.npmjs.com/package/mouaif) and ships a pre-built web UI, so there is no build step. In a source checkout, `npm install` builds the UI for you.
+The npm package is [`mouaif`](https://www.npmjs.com/package/mouaif) and ships a pre-built web UI, so there is no build step. In a source checkout, `npm install` builds the UI for you. The server is also available to CommonJS consumers through `require('mouaif')`.
 
 ## CLI at a glance
 

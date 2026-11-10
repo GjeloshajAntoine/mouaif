@@ -2,7 +2,7 @@
 
 ## Overview
 
-The **OpenAI compatible** provider connects mouaif to any OpenAI-shaped HTTP endpoint. Two of the most common are local inference servers you run yourself: **llama.cpp**'s `llama-server` (default `http://127.0.0.1:8080/v1`) and **LM Studio** (`http://127.0.0.1:1234/v1`). Neither requires an API key, so an OpenAI-compatible connection may now be saved with a **blank key** and a custom base URL. When no key is stored, mouaif sends **no `Authorization` header** — a local server that runs unauthenticated accepts the request, and a hosted endpoint that really needs a key still fails cleanly with a `401` you can act on.
+The **OpenAI compatible** provider connects mouaif to any OpenAI-shaped HTTP endpoint. Two of the most common are local inference servers you run yourself: **llama.cpp**'s `llama-server` (default `http://127.0.0.1:8080/v1`) and **LM Studio** (`http://127.0.0.1:1234/v1`). Neither requires an API key, so an OpenAI-compatible connection may be saved with a **blank key** at any address other than OpenAI's. When no key is stored, mouaif sends **no `Authorization` header** — a local server that runs unauthenticated accepts the request, and a hosted endpoint that really needs a key still fails cleanly with a `401` you can act on.
 
 ## Usage
 
@@ -15,11 +15,10 @@ The **OpenAI compatible** provider connects mouaif to any OpenAI-shaped HTTP end
    ```
 
 2. In mouaif, open **Settings → Providers → + Add provider**.
-3. Choose **OpenAI compatible**.
-4. Set **API base URL** to the server's `/v1` root — for llama.cpp that is `http://127.0.0.1:8080/v1`.
-5. Leave the **provider API key** field **empty**.
-6. **Save provider.** A blank key on a key-optional provider is accepted; the row shows `no key`.
-7. In the project's **Models** editor add a model whose `provider` is `openai-compatible` and whose `id` is the served model name, then use the model picker's refresh (↻) to list the server's models live.
+3. Under **Run on your own server**, choose **llama.cpp**.
+4. Check **Server address**. It starts at `http://127.0.0.1:8080/v1`. Use the address as seen from the computer running mouaif, which may not be your phone.
+5. Tap **Add provider**. mouaif tests the connection, and the row shows `Connected · 1 model` when the server answers. If your server does need a key, it goes under **Advanced**.
+6. In the project's **Models** editor add a model whose `provider` is `openai-compatible` and whose `id` is the served model name, then use the model picker's refresh (↻) to list the server's models live.
 
 ```jsonc
 // <projectDir>/.mouaif.json
@@ -32,11 +31,15 @@ The **OpenAI compatible** provider connects mouaif to any OpenAI-shaped HTTP end
 
 ### LM Studio
 
-Identical flow with the base URL `http://127.0.0.1:1234/v1` and the LM Studio model identifier as `id`. LM Studio does not require a key either.
+Identical flow: choose **LM Studio**, whose address starts at `http://127.0.0.1:1234/v1`, and use the LM Studio model identifier as `id`. LM Studio does not require a key either.
+
+### Run several servers at once
+
+Add one connection per server. Each is named after its choice (`LM Studio`, `LM Studio 2`), and you can give it your own **Name** under **Advanced**. A project model then refers to a server by its connection id, such as `openai-compatible-2`. See [Connect the same provider more than once](./providers.md#connect-the-same-provider-more-than-once).
 
 ### Hosted OpenAI-shaped endpoints
 
-Hosted providers (OpenAI, Together, Groq, and the first-class Azure/Mistral/DeepSeek connections) still require a key. The Settings form refuses to save an OpenAI-compatible connection with a blank key **only** when the chosen provider is not key-optional; for `openai-compatible` you may leave it blank, but a hosted base URL without a key will return a `401` from upstream.
+Choose **Another OpenAI-compatible service** for a hosted API such as Together. The form requires a key only for OpenAI's own address (`api.openai.com`) and for the first-class Azure, Mistral, Groq and DeepSeek connections. Any other address may be saved without one, and if the service does want a key, the connection test reports `Needs an API key`.
 
 ## Behavior
 

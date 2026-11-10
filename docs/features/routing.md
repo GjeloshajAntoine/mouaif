@@ -16,7 +16,7 @@ Every view has a hash. Deep links are stable and old names keep working.
 | `#/inspector` | Inspector |
 | `#/settings` | Settings root |
 | `#/settings/access` | Access / authentication |
-| `#/settings/providers`, `#/settings/providers/new`, `#/settings/providers/<id>` | AI providers |
+| `#/settings/providers`, `#/settings/providers/new`, `#/settings/providers/new/<choice>`, `#/settings/providers/<id>` | AI providers |
 | `#/settings/projects` | Registered projects |
 | `#/settings/defaults` | App defaults |
 | `#/settings/notifications` | Push notifications |

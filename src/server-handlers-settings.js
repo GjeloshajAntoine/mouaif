@@ -18,6 +18,7 @@ const {
   settings,
   ai
 } = require('./server-shared.js');
+const { connectionType, nextConnectionId } = require('./providerConnections.js');
 
 async function handleSettings(req, res, parsed) {
   const urlPath = parsed.pathname;
@@ -116,17 +117,40 @@ async function handleSettings(req, res, parsed) {
     }
   }
 
-  // POST /api/settings/app/providers  body: { id, baseUrl?, apiKey?, auth?, oauthAccount? }
+  // POST /api/settings/app/providers
+  // body: { id?, type?, name?, baseUrl?, apiKey?, auth?, oauthAccount? }
   // Provider connections are app-level. Project model records reference
   // them by `provider`, keeping credentials out of project files.
+  //
+  // `{ type }` adds a connection and the server picks its id. `{ id }` updates
+  // that connection, or adds it when the id is itself a type name, which is
+  // what clients did before a type could have more than one connection.
   if (urlPath === '/api/settings/app/providers' && method === 'POST') {
     const body = await readJsonOr400(req, res);
     if (!body) return;
-    if (!body || typeof body !== 'object' || typeof body.id !== 'string' || !body.id.trim()) {
-      return sendJSON(res, 400, { error: 'id is required' });
+    if (!body || typeof body !== 'object') {
+      return sendJSON(res, 400, { error: 'id or type is required' });
     }
-    if (!Object.prototype.hasOwnProperty.call(ai.ENDPOINTS, body.id)) {
-      return sendJSON(res, 400, { error: 'Unknown provider', id: body.id });
+    if ((body.id !== undefined && typeof body.id !== 'string') || (body.type !== undefined && typeof body.type !== 'string')) {
+      return sendJSON(res, 400, { error: 'id and type must be strings' });
+    }
+    const app = settings.getApp();
+    const providers = Array.isArray(app.providers) ? app.providers.slice() : [];
+    const wantedId = (body.id || '').trim();
+    const idx = wantedId ? providers.findIndex(p => p && p.id === wantedId) : -1;
+    const type = idx >= 0 ? connectionType(providers[idx]) : ((body.type || '').trim() || wantedId);
+    if (!type) return sendJSON(res, 400, { error: 'id or type is required' });
+    if (!Object.prototype.hasOwnProperty.call(ai.ENDPOINTS, type)) {
+      return sendJSON(res, 400, { error: 'Unknown provider', id: wantedId || undefined, type });
+    }
+    if (idx >= 0 && body.type !== undefined && body.type.trim() !== type) {
+      return sendJSON(res, 400, { error: 'A connection\'s type cannot change', id: wantedId, type });
+    }
+    if (idx < 0 && wantedId && wantedId !== type) {
+      return sendJSON(res, 400, { error: 'Leave id out when adding a connection; the server picks it', id: wantedId });
+    }
+    if (body.name !== undefined && (typeof body.name !== 'string' || body.name.length > 80)) {
+      return sendJSON(res, 400, { error: 'name must be a string of at most 80 characters' });
     }
     if (body.auth !== undefined && body.auth !== 'apikey' && body.auth !== 'oauth') {
       return sendJSON(res, 400, { error: 'auth must be "apikey" or "oauth"' });
@@ -134,11 +158,13 @@ async function handleSettings(req, res, parsed) {
     if (body.oauthAccount !== undefined && (typeof body.oauthAccount !== 'string' || body.oauthAccount.length > 256)) {
       return sendJSON(res, 400, { error: 'oauthAccount must be a string' });
     }
-    const app = settings.getApp();
-    const providers = Array.isArray(app.providers) ? app.providers.slice() : [];
-    const idx = providers.findIndex(p => p && p.id === body.id);
-    const merged = Object.assign({}, idx >= 0 ? providers[idx] : {}, body, { id: body.id.trim() });
+    const merged = Object.assign({}, idx >= 0 ? providers[idx] : {}, body, {
+      id: wantedId || nextConnectionId(type, providers),
+      type
+    });
     delete merged.hasApiKey;
+    if (typeof merged.name === 'string') merged.name = merged.name.trim();
+    if (!merged.name) delete merged.name;
     if (!Object.prototype.hasOwnProperty.call(body, 'apiKey') && idx >= 0 && providers[idx].apiKey) {
       merged.apiKey = providers[idx].apiKey;
     }
@@ -345,6 +371,11 @@ async function handleSettings(req, res, parsed) {
       return sendJSON(res, 400, { error: 'dbBacked must be a boolean' });
     }
     try {
+      // A chat's artifacts follow the project's storage. They move first, so a
+      // failed move leaves the project on its old store with nothing lost.
+      if (body.dbBacked !== settings.isDbBacked(projectDir)) {
+        require('./artifacts.js').moveStorage(projectDir, body.dbBacked);
+      }
       if (body.dbBacked) {
         // Seed from the existing file (if any), then flag as DB-backed.
         settings.setDbProject(projectDir, { ...settings.getProjectRaw(projectDir), __dbBacked: true });

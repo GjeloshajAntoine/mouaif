@@ -19,6 +19,7 @@
 import { h } from 'preact';
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'preact/hooks';
 import { useBackClose } from '../hooks/useBackClose.js';
+import { loadApp, providerLabel } from '../api.js';
 
 // modelsForField(list) — normalize a flat model list into
 // { id, provider, label, ghost } rows, dropping falsy entries and
@@ -172,6 +173,10 @@ export function ModelPickerField(props) {
     if (isControlled) { if (onOpenChange) onOpenChange(v); }
     else setOpen(v);
   }, [isControlled, onOpenChange]);
+  // providerLabel reads the app settings, which a settings page opened directly
+  // may not have loaded yet. Render again once they arrive.
+  const [, setLabelsLoaded] = useState(false);
+  useEffect(() => { loadApp().then(() => setLabelsLoaded(true)).catch(() => {}); }, []);
   const [q, setQ] = useState('');
   const [providerFilter, setProviderFilter] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
@@ -366,7 +371,7 @@ export function ModelPickerField(props) {
   }
 
   const trigId = sel ? sel.modelId : (allowClear ? clearLabel : placeholder);
-  const trigProvider = sel ? sel.providerId : (noProviders ? 'add a provider in Settings → Providers' : '');
+  const trigProvider = sel ? providerLabel(sel.providerId) : (noProviders ? 'add a provider in Settings → Providers' : '');
   const isEmpty = !sel && !allowClear;
   const rootClass = 'mp'
     + (className ? ' ' + className : '')
@@ -465,7 +470,7 @@ export function ModelPickerField(props) {
         hidden: !optionsOpen
       }, children) : null,
       providers.length ? h('div', { class: 'mp__chips', role: 'tablist', 'aria-label': 'Filter by provider' },
-        [{ id: 'all', label: 'All' }].concat(providers.map((p) => ({ id: p, label: p }))).map((c) =>
+        [{ id: 'all', label: 'All' }].concat(providers.map((p) => ({ id: p, label: providerLabel(p) }))).map((c) =>
           h('button', {
             key: c.id,
             type: 'button',
@@ -518,7 +523,7 @@ h('span', { class: 'mp__clear-id' }, clearLabel)
         ) : groups.map((g) =>
           h('section', { class: 'mp__section', key: g.provider || 'other' },
             h('div', { class: 'mp__section-head' },
-              h('span', { class: 'mp__section-title' }, g.provider || 'Other'),
+              h('span', { class: 'mp__section-title' }, providerLabel(g.provider) || 'Other'),
               h('span', { class: 'mp__section-count' }, String(g.items.length))
             ),
             g.items.map((m) => {
@@ -535,7 +540,7 @@ h('span', { class: 'mp__clear-id' }, clearLabel)
               },
               h('span', { class: 'mp__row-id' }, m.id),
               m.label && m.label !== m.id ? h('span', { class: 'mp__row-label' }, m.label) : null,
-              h('span', { class: 'mp__row-meta' }, m.ghost ? 'unavailable' : (m.provider || ''))
+              h('span', { class: 'mp__row-meta' }, m.ghost ? 'unavailable' : providerLabel(m.provider || ''))
               ),
               !m.ghost && onTogglePin ? h('button', {
               type: 'button',
@@ -573,7 +578,7 @@ h('span', { class: 'mp__clear-id' }, clearLabel)
         },
         h('span', { class: 'mp__row-id' }, m.id),
         m.label && m.label !== m.id ? h('span', { class: 'mp__row-label' }, m.label) : null,
-        h('span', { class: 'mp__row-meta' }, m.provider || '')
+        h('span', { class: 'mp__row-meta' }, providerLabel(m.provider || ''))
         ),
         onTogglePin ? h('button', {
         type: 'button',

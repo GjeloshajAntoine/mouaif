@@ -26,6 +26,7 @@ import { ChatReviewMockupView } from './ChatReviewMockup.jsx';
 const lazyNamed = (loader, name) => lazy(() => loader().then((m) => ({ default: m[name] })));
 const InspectorView = lazy(() => import('./Inspector.jsx').then((module) => ({ default: module.InspectorView })));
 const SettingsProvidersView = lazyNamed(() => import('./SettingsProviders.jsx'), 'SettingsProvidersView');
+const SettingsProviderNewView = lazyNamed(() => import('./SettingsProviders.jsx'), 'SettingsProviderNewView');
 const SettingsProviderEditView = lazyNamed(() => import('./SettingsProviders.jsx'), 'SettingsProviderEditView');
 const SettingsProjectView = lazyNamed(() => import('./SettingsProject.jsx'), 'SettingsProjectView');
 const SettingsHiddenContentView = lazyNamed(() => import('./SettingsHiddenContent.jsx'), 'SettingsHiddenContentView');
@@ -65,7 +66,7 @@ picker: [ProjectPickerView, ({ dir }) => ({ dir })],
 chat: [ChatView, ({ chatId, projectDir }) => ({ chatId, projectDir })],
 settings: [SettingsHomeView],
 settingsProviders: [SettingsProvidersView],
-settingsProviderNew: [SettingsProviderEditView, () => ({ id: '' })],
+settingsProviderNew: [SettingsProviderNewView, ({ type }) => ({ type })],
 settingsProviderEdit: [SettingsProviderEditView, ({ id }) => ({ id })],
 settingsProject: [SettingsProjectView, ({ projectDir, chatId, from }) => ({ projectDir, chatId, from })],
 settingsProjectTechnical: [SettingsProjectView, ({ projectDir, chatId, from }) => ({ projectDir, chatId, from, page: 'technical' })],
@@ -216,7 +217,11 @@ export function App() {
         // Navigate only if the user isn't already on a deeper route
         // (e.g. they navigated away after the sign-in completed).
         if (view.name === 'chats' || view.name === 'settings' || view.name === 'settingsProviders') {
-          nav('settings/providers/' + encodeURIComponent(pending.provider));
+          // Back to the connection being edited, or to the add form it came
+          // from when the sign-in was for a connection that does not exist yet.
+          nav(pending.connection
+            ? 'settings/providers/' + encodeURIComponent(pending.connection)
+            : 'settings/providers/new/' + encodeURIComponent(pending.choice || pending.provider));
         }
       }
     } catch (_) { /* sessionStorage unavailable */ }

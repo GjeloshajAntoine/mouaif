@@ -25,8 +25,9 @@ Each card's summary line reflects live state (e.g. `1 connected`, `3 models pric
 | Hash route | View | Purpose |
 |------------|------|---------|
 | `#/settings` | `SettingsHomeView` | Scope-grouped card list (see above). |
-| `#/settings/providers` | `SettingsProvidersView` | List of configured providers + an `+ Add provider` entry. |
-| `#/settings/providers/new` | `SettingsProviderEditView` | New provider form. |
+| `#/settings/providers` | `SettingsProvidersView` | List of configured providers with each one's connection status, and a **+ Add provider** button. |
+| `#/settings/providers/new` | `SettingsProviderNewView` | Choose how to connect. |
+| `#/settings/providers/new/<choice>` | `SettingsProviderNewView` | The form for that choice. |
 | `#/settings/providers/<id>` | `SettingsProviderEditView` | Edit / delete an existing provider. |
 | `#/settings/defaults` | `SettingsDefaultsView` | `Default prompt style` (select) + `Enter inserts a newline instead of sending` (switch). Save writes to `PUT /api/settings/app`. |
 **Composer keyboard default.** The Chat defaults view adds an app-level switch, `enterForNewline` (default on). When on, Enter inserts a newline in the composer and you send with the send button or Ctrl/Cmd+Enter; when off, Enter sends and Shift+Enter inserts a newline. The value is read at chat-load time from app settings and drives the textarea `onComposerKey` handler, so it applies to every chat unless overridden elsewhere. |
