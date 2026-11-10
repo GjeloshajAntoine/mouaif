@@ -41,6 +41,8 @@ npm publish
 
 - **Public access.** `publishConfig` pins `https://registry.npmjs.org/` and `access: public`, so a developer-level registry override cannot send the release to another registry.
 - **Pre-built UI.** Every tarball ships `frontend/dist/`, so `npx mouaif` and a global install never run a frontend build. `scripts/prepare-web.js` builds the UI only in a source checkout.
+- **Node API entry point.** CommonJS consumers can use `require('mouaif')`; the public export is `src/index.js`, which exposes `createServer` and the server helpers. `package.json` is also available through the explicit `mouaif/package.json` export.
+- **Package validation.** `npm run test:npm-package` checks the metadata, bundled UI, and representative tarball contents without running install hooks.
 - **Native dependencies.** `better-sqlite3` and `@napi-rs/keyring` ship prebuilt binaries for common platforms; where none exists, Node compiles them during install, so the first install can take a few minutes.
 - **`postinstall` patch.** The install runs `scripts/patch-zimmerframe.js`, which is why that single script file stays in the tarball.
 - **Semantic versions only.** `version` must be a full `X.Y.Z`; the registry rejects the two-part form with a 400.
