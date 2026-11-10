@@ -25,4 +25,5 @@ curl -X PUT http://localhost:5732/api/settings/project/storage \
 - Source: [src/settings.js](../../../src/settings.js) — `project_settings` table, `getDbProjectRaw`, `isDbBacked`, `setDbBacked`, plus routing in `getProject` / `setProject` / `unsetProjectKeys` / `getResolved`.
 - REST: [src/server-handlers-settings.js](../../../src/server-handlers-settings.js) — `GET`/`PUT /api/settings/project/storage`; `GET`/`PUT /api/settings/project` now include `dbBacked`.
 - UI: [frontend/src/components/SettingsProject.jsx](../../../frontend/src/components/SettingsProject.jsx) — the storage card in Technical details; [frontend/src/api.js](../../../frontend/src/api.js) — `getProjectStorage` / `setProjectStorage`.
+- Artifacts: `isDbBacked` also picks where a chat's artifacts live, and both switch paths move them first ([chat artifacts](./chat-artifacts.md)).
 - Test: [scripts/test-project-db-backed.js](../../../scripts/test-project-db-backed.js).
