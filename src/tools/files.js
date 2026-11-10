@@ -123,6 +123,14 @@ function resolveSandbox(projectDir) {
 // under the resolved project root. Throws EOUTSIDE_PROJECT on escape.
 function toRelPath(root, p) {
   if (typeof p !== 'string' || !p.trim()) throw err('EBADINPUT', 'path is required');
+  // A stray space or newline around the path ("src/a.js\n") is the model's
+  // formatting, not part of the name: list_files and search_files already
+  // trim, and keeping it made read_file miss the file and write_file create
+  // one whose name ends in a newline. A name that really has the space wins.
+  if (p !== p.trim()) {
+    try { fs.lstatSync(path.resolve(root, p)); }
+    catch { p = p.trim(); }
+  }
   const abs = path.isAbsolute(p) ? path.resolve(p) : path.resolve(root, p);
   let rel = path.relative(root, abs);
   // `root` is a realpath, but the model is told the folder by the path the

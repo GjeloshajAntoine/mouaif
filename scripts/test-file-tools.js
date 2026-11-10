@@ -123,6 +123,15 @@ function writeFile(p, content) {
     const r1r = await files.runFileTool('read_file', { projectDir: root, args: { path: self } });
     assert(r1r.ok === false && r1r.result.error.code === 'ENOTFILE', 'read_file calls ' + JSON.stringify(self) + ' the project folder, not an escape');
   }
+  const r1ws = await files.runFileTool('read_file', { projectDir: root, args: { path: ' ..notes.md\n' } });
+  assert(r1ws.ok === true && r1ws.result.relPath === '..notes.md', 'read_file trims spaces and a newline around the path');
+  const r1ww = await files.runFileTool('write_file', { projectDir: root, args: { path: 'trimmed.md\n', content: 't' } });
+  assert(r1ww.ok === true && fs.existsSync(path.join(root, 'trimmed.md')) && !fs.existsSync(path.join(root, 'trimmed.md\n')), 'write_file does not put a trailing newline in the file name');
+  writeFile(path.join(root, 'spaced.md '), 'real');
+  const r1wr = await files.runFileTool('read_file', { projectDir: root, args: { path: 'spaced.md ' } });
+  assert(r1wr.ok === true && r1wr.result.body === 'real', 'read_file keeps a trailing space that is really in the name');
+  fs.rmSync(path.join(root, 'trimmed.md'));
+  fs.rmSync(path.join(root, 'spaced.md '));
   const r1rw = await files.runFileTool('write_file', { projectDir: root, args: { path: '.', content: 'x' } });
   assert(r1rw.ok === false && r1rw.result.error.code === 'ENOTFILE', 'write_file refuses the project folder as not a file');
   fs.rmSync(path.join(root, '..notes.md'));
