@@ -48,7 +48,8 @@ services:
     # Chrome binds CDP to loopback. The app shares this network namespace;
     # publish only the app port, never the unauthenticated debugging port.
     ports:
-      - "5732:5732"
+    # Keep the UI-review app reachable only from this host.
+    - "127.0.0.1:5732:5732"
     healthcheck:
       test:
         - CMD
