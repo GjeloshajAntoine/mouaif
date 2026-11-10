@@ -1390,6 +1390,8 @@ module.exports = {
   isFileToolName,
   runFileTool,
   resolveSandbox,
+  toRelPath,
+  toAbsInside,
   assertImageFits,
   imageResult,
   // exposed for tests

@@ -123,7 +123,7 @@ When the gate is `ask` and the model initiates a call, the chat pauses the strea
 
 - a plain-language action title and the target chat when available;
 - the proposed request, actual working folder, and timeout;
-- bounded before snapshots for single-file edits/writes and chat/settings updates when available;
+- bounded before snapshots for single-file edits/writes and chat/settings updates when available (a file snapshot resolves the path exactly as the file tool will, so a trimmed name or a path through the folder's symlink alias shows the file that is really replaced, with its hidden lines still hidden);
 - the server/tool identity for MCP calls and the exact broader permission scope.
 
 The card is always fully open and cannot be folded, because its body holds the decision the run is waiting on. Its head shows a static shield icon rather than the collapse chevron other tool cards use, and it has no pointer or press state, the same treatment as the ask_user card. A chevron that pointed "closed" and ignored taps read as broken.

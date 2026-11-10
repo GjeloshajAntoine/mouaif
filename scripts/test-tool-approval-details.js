@@ -32,6 +32,15 @@ const auth = require('../src/tools/authorization.js');
     settings.setProject(projectDir, { hideFileContent: [{ path: 'sample.js', ranges: [{ start: 1, end: 1 }] }] });
     const hidden = buildApprovalDetails({ ...base, tool: 'edit_file', args: { path: 'sample.js', oldText: 'old', newText: 'new' } });
     assert.ok(hidden.fileBefore.includes('[hidden]')); assert.ok(!hidden.fileBefore.includes('old value'));
+    // The card resolves the path as the tool does: an absolute path through
+    // the folder's symlink alias still names sample.js for the hide rule.
+    const aliasDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-approval-alias-'));
+    fs.symlinkSync(projectDir, path.join(aliasDir, 'proj'), 'dir');
+    const aliased = buildApprovalDetails({ ...base, tool: 'edit_file', args: { path: path.join(aliasDir, 'proj', 'sample.js'), oldText: 'old', newText: 'new' } });
+    assert.ok(aliased.fileBefore.includes('[hidden]') && !aliased.fileBefore.includes('old value'), 'a path through the alias keeps hidden lines hidden');
+    fs.rmSync(aliasDir, { recursive: true, force: true });
+    const trailing = buildApprovalDetails({ ...base, tool: 'write_file', args: { path: 'sample.js\n', content: 'new value' } });
+    assert.equal(trailing.fileExists, true, 'a trailing newline still names the file the write replaces');
     const fresh = buildApprovalDetails({ ...base, tool: 'write_file', args: { path: 'new.js', content: 'new value' } });
     assert.equal(fresh.fileExists, false);
     const outside = buildApprovalDetails({ ...base, tool: 'edit_file', args: { path: '../outside' } });

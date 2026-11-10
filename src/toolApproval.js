@@ -35,12 +35,14 @@ function buildApprovalDetails(input) {
   }
   if (input.tool === 'write_file' || input.tool === 'edit_file') {
     const fs = require('node:fs');
-    const path = require('node:path');
     try {
-      const root = fs.realpathSync(details.workingDirectory);
-      const target = fs.realpathSync(path.resolve(root, args.path || args.file));
-      const relative = path.relative(root, target);
-      if (!relative || require('./util.js').relEscapes(relative)) throw new Error('outside working folder');
+      // Resolve the path exactly as the tool will, so the card shows the file
+      // that is really written: a trimmed name, a path through the folder's
+      // symlink alias, and the project-relative path hide rules match on.
+      const files = require('./tools/files.js');
+      const root = files.resolveSandbox(details.workingDirectory);
+      const rel = files.toRelPath(root, args.path || args.file);
+      const target = files.toAbsInside(root, rel);
       const stat = fs.statSync(target);
       details.fileExists = true;
       if (stat.isFile()) {
@@ -49,8 +51,7 @@ function buildApprovalDetails(input) {
           const bytes = Buffer.alloc(Math.min(stat.size, 12000));
           const read = fs.readSync(fd, bytes, 0, bytes.length, 0);
           const raw = bytes.subarray(0, read).toString('utf8');
-          details.fileBefore = require('./hideFileContent.js').redactText(input.projectDir,
-          path.relative(root, path.resolve(root, args.path || args.file)).split(path.sep).join('/'), raw).text
+          details.fileBefore = require('./hideFileContent.js').redactText(input.projectDir, rel, raw).text
           + (stat.size > bytes.length ? '\n[preview capped]' : '');
         } finally { fs.closeSync(fd); }
       }
