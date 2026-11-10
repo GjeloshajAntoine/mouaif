@@ -153,7 +153,7 @@ function resolveReviewModel(projectDir, config, opts) {
   const fallbackModel = opts && opts.fallbackModel;
   if (fallbackModel && typeof fallbackModel === 'object' && fallbackModel.id && fallbackModel.provider) {
     if (fallbackModel.auth) return fallbackModel;
-    return shared.resolveModel(fallbackModel.id, projectDir || null, fallbackModel.provider);
+    return shared.resolveModel(fallbackModel.id, projectDir || null, fallbackModel.providerId || fallbackModel.provider);
   }
   const chatId = opts && typeof opts.chatId === 'string' ? opts.chatId.trim() : '';
   if (projectDir && chatId) {
@@ -272,7 +272,7 @@ async function reviewCommand(opts) {
         ok: false,
         code,
         error: timedOut ? 'review timed out after ' + Math.round(REVIEW_TIMEOUT_MS / 1000) + 's' : (err.message || 'review failed'),
-        model: { id: model.id, provider: model.provider },
+        model: { id: model.id, provider: model.providerId || model.provider },
         durationMs: Date.now() - startedAt
       };
     }
@@ -282,7 +282,7 @@ async function reviewCommand(opts) {
       ok: false,
       code,
       error: timedOut ? 'review timed out after ' + Math.round(REVIEW_TIMEOUT_MS / 1000) + 's' : ((e && e.message) || String(e)),
-      model: { id: model.id, provider: model.provider },
+      model: { id: model.id, provider: model.providerId || model.provider },
       durationMs: Date.now() - startedAt
     };
   } finally {
@@ -295,7 +295,7 @@ async function reviewCommand(opts) {
       ok: false,
       code: 'EEMPTY_REVIEW',
       error: 'the reviewing model returned no text',
-      model: { id: model.id, provider: model.provider },
+      model: { id: model.id, provider: model.providerId || model.provider },
       durationMs: Date.now() - startedAt
     };
   }
@@ -312,7 +312,7 @@ async function reviewCommand(opts) {
     ok: true,
     text: parsed.text,
     verdict: parsed.verdict,
-    model: { id: model.id, provider: model.provider },
+    model: { id: model.id, provider: model.providerId || model.provider },
     usage: usage || null,
     cost,
     durationMs: Date.now() - startedAt

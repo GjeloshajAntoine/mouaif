@@ -29,7 +29,7 @@
 // Escape/Tab handling through useModal).
 import { h } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { fetchJson } from '../../api.js';
+import { fetchJson, providerLabel } from '../../api.js';
 import { useModal } from '../../hooks/useModal.js';
 import { settingsLink } from '../settings/projectNavigation.js';
 import { shellReviewFromResolved, buildReviewBlock } from './shellReview.js';
@@ -43,7 +43,7 @@ import { shellReviewFromResolved, buildReviewBlock } from './shellReview.js';
 function reviewStatusLine(result) {
   if (!result) return '';
   if (result.ok === false) return 'No review: ' + (result.error || result.code || 'the reviewer could not answer');
-  const model = result.model ? [result.model.provider, result.model.id].filter(Boolean).join(' · ') : '';
+  const model = result.model ? [providerLabel(result.model.provider), result.model.id].filter(Boolean).join(' · ') : '';
   const parts = [model || 'reviewer'];
   if (result.durationMs != null) parts.push(result.durationMs + 'ms');
   if (result.cost && result.cost.known && Number(result.cost.total) > 0) {
@@ -75,7 +75,7 @@ export function ShellReviewSheet({ projectDir, chatId, initialCommand = '', onCl
         setConfig(next);
         setPrompt(next.prompt || '');
         const modelLabel = next.providerId && next.modelId
-          ? (next.providerId + ' · ' + next.modelId)
+          ? (providerLabel(next.providerId) + ' · ' + next.modelId)
           : 'the chat’s current model';
         setStatus(next.mode === 'off'
           ? 'Shell review is off — open Shell review to turn it on.'

@@ -21,7 +21,7 @@
 // actions off-screen (style notes live in dictation.css).
 import { h, Fragment } from 'preact';
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
-import { fetchJson, activeProject, providerDef, saveApp } from '../api.js';
+import { fetchJson, activeProject, appProviders, connectionType, providerDef, saveApp } from '../api.js';
 import { ModelPickerField } from './ModelPickerField.jsx';
 import { loadPinned, loadRecent, loadRecentFromServer, togglePin,
   migrateProjectScopedBookmarks } from './chat/modelPicker.js';
@@ -980,7 +980,9 @@ function scopeNote(project, projectDir) {
 // that says "openai-compatible" names a key in the app store; a failure that
 // says "OpenAI compatible" names the row the user has to go and fix.
 function providerName(id) {
-  const def = providerDef(id);
+  const connection = appProviders().find((p) => p && p.id === id);
+  if (connection && connection.name) return connection.name;
+  const def = providerDef(connection ? connectionType(connection) : id);
   return (def && def.label) || id;
 }
 

@@ -19,7 +19,7 @@ Use these rules whenever implementing or modifying code in this repository.
   - `chore:` tooling, deps, config
   - `perf:` performance improvement
   - `test:` adding or fixing tests
-- Before finishing, run `node -c` (or the project's lint) on touched files. To check a change in a browser, use the test mouaif in Docker (`:5732`, rebuilt from your changes: `docker build -t mouaif-app:latest .` then `docker compose -f compose.ui-review.yaml up -d`) and the debug Chrome on `127.0.0.1:9222`. Don't start another `mouaif serve`, Chrome or preview server, and stop anything you did start (see `AGENTS.md` → Machine resources).
+- Before finishing, run `node -c` (or the project's lint) on touched files. To check a change in a browser, use the test mouaif in Docker (`:5732`, rebuilt from your changes: `docker buildx build --builder mouaif-capped --load -t mouaif-app:latest .` then `docker compose -f compose.ui-review.yaml up -d`) and the debug Chrome on `127.0.0.1:9222`. Don't start another `mouaif serve`, Chrome or preview server, and stop anything you did start (see `AGENTS.md` → Machine resources).
 
 ## UI is mobile first
 
@@ -47,6 +47,6 @@ Use these rules whenever implementing or modifying code in this repository.
 ## Key subsystems to respect
 
 - Providers global, models per project (SQLite store); see `docs/decisions.md`.
-- AI providers are localized: a `buildRequest` + `parseEvent` in `src/ai.js`, a row in `frontend/src/api.js` `SETTINGS_PROVIDERS`, and if auth differs, an entry in `src/auth.js` `AI_TO_AUTH_PROVIDER`. PKCE/OAuth/device-code providers add `src/oauth-<name>.js` exporting `register()`, called from `src/index.js`.
+- AI providers are localized: a `buildRequest` + `parseEvent` in `src/ai.js`, a row in `frontend/src/api.js` `SETTINGS_PROVIDERS`, a choice in `frontend/src/providerChoices.js` so it can be added, and if auth differs, an entry in `src/auth.js` `AI_TO_AUTH_PROVIDER`. PKCE/OAuth/device-code providers add `src/oauth-<name>.js` exporting `register()`, called from `src/index.js`.
 - Skills live in `.agents/skills/<name>/SKILL.md` (see this file) and are parsed by `src/agentSkills.js`.
 - Settings can be app-level (SQLite) or per-project (`.mouaif.json`); project overrides app.

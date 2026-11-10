@@ -45,11 +45,13 @@ Store the **chosen** prompt-size profile per chat with `update_chat({ promptSize
 
 ## Providers and models
 
-Providers are app-scoped connections: `{ id, baseUrl, apiKey, auth, oauthAccount }`. Model ids are project-scoped and reference a provider: `{ id, provider, label, contextWindow }`. A provider carries no model list of its own.
+Providers are app-scoped connections: `{ id, type, name, baseUrl, apiKey, auth, oauthAccount }`. Model ids are project-scoped and reference a connection by its id: `{ id, provider, label, contextWindow }`. A provider carries no model list of its own.
 
-The provider ids a project model may reference:
+The provider types:
 
 `openai-compatible`, `anthropic`, `gemini`, `codex`, `ollama`, `openrouter`, `github-copilot`, `azure`, `mistral`, `groq`, `deepseek`
+
+The first connection of a type has the type as its id. A type can have more connections, with ids like `openai-compatible-2` and a `name` the user chose, so read the connection list before choosing the `provider` for a model.
 
 Two rules decide which provider to use:
 
@@ -81,7 +83,7 @@ An agent is a named persona (`{ name, content, tools?, modelId?, providerId?, th
 | --- | --- |
 | `shell` | the `shell` tool |
 | `file` | `read_file`, `list_files`, `search_files`, `write_file`, `edit_file`, `group_read`, `group_edit` |
-| `chats` | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `change_working_folder`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments`, `ask_user`, `task`, `report_progress`, `webpreview` |
+| `chats` | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `change_working_folder`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments`, `list_artifacts`, `read_artifact`, `save_artifact`, `delete_artifact`, `export_artifact`, `ask_user`, `task`, `report_progress`, `webpreview` |
 | `mouaif` | `get_settings`, `update_settings`, `list_projects`, `restart_app`, `list_features` |
 | `subagent` | the `subagent` tool |
 
