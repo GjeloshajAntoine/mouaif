@@ -130,7 +130,7 @@ async function post(route, body, headers = {}) {
     assert.equal(nativeUpdated.ok, true, nativeUpdated.content);
     assert.equal(nativeUpdated.result.path, nativeCreated.result.path, 'update reuses existing app path in place');
     assert.equal(nativeUpdated.result.updated, true);
-    assert.equal(fs.readFileSync(path.join(projectDir, nativeCreated.result.path), 'utf8'), nativeUpdatedHtml);
+    assert.equal(require('../src/artifacts.js').readBytes(projectDir, host.id, nativeCreated.result.path).bytes.toString('utf8'), nativeUpdatedHtml);
     const remounted = await post('mount', { chatId: host.id, callId });
     assert.equal(remounted.status, 200);
     assert.match(remounted.body.html, /Updated native/);

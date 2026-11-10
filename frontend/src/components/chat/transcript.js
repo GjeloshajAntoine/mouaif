@@ -1961,9 +1961,10 @@ if (!card) {
       if (rawR && rawR.name) card.dataset.mcpAppName = String(rawR.name);
     }
     card.classList.add('tool-card--mcp-app');
-    // Older history painted after the tail (latest-first backfill) is never
-    // the latest app: it stays in its chat slot.
-    if (!(refs._insertAnchor && hasMcpCreatedCard(refs, card))) pinMcpAppCardToBottom(refs, card);
+    // Rows painted above an anchor arrive out of order (the backfill walks
+    // backwards, a page forwards), so the pass settles the bottom slot once
+    // its rows are in place; see pinLatestAppAfterOlderRows.
+    if (!(refs._insertAnchor && toolResult.replay)) pinMcpAppCardToBottom(refs, card);
     }
     mountMcpApp(app, { ...context, callId: id,
     appPath: rawR && rawR.path,
@@ -1972,8 +1973,10 @@ if (!card) {
     // A created app was pinned (or deliberately not) when its card was built;
     // a late mount must not steal the bottom from a newer app.
     if (isMcpAppCreate) return;
-    if (enabled) pinMcpAppCardToBottom(refs, card);
-    else if (card.dataset) delete card.dataset.mcpAppCard;
+    if (!enabled) { unpinMcpAppCard(card, refs.transcript.current); return; }
+    card.classList.add('tool-card--mcp-app');
+    // Opening an app older than the pinned one runs it where it is in the chat.
+    if (!isOlderThanPinnedApp(refs, card)) pinMcpAppCardToBottom(refs, card);
     },
     onAuthorize: (request, signal) => authorizationCard({ ...request, signal }, context.projectDir, context.chatId, refs) });
     }
@@ -3323,7 +3326,9 @@ function restoreSubagentCardToSlot(card, el) {
   card._slotRecorded = false;
   const prevAnchor = card._slotPrev;
   const myOrder = card._slotOrder || 0;
+  const nextAnchor = card._slotNext;
   card._slotPrev = null;
+  card._slotNext = null;
   const host = el || card.parentNode;
   if (!host || card.parentNode !== host) return;
   const children = host.children;
@@ -3347,6 +3352,11 @@ function restoreSubagentCardToSlot(card, el) {
       ref = prevAnchor.nextElementSibling === undefined ? (prevAnchor.nextSibling || null) : prevAnchor.nextElementSibling;
     }
     card._settledPrevAnchor = prevAnchor;
+  } else if (prevAnchor === null && nextAnchor && nextAnchor.parentNode === host && !isMcpAppCard(nextAnchor)) {
+    // Pinned with nothing above it: rows painted since (an older page) belong
+    // above this card, so its slot is the row it was pinned in front of.
+    ref = nextAnchor;
+    card._settledPrevAnchor = null;
   } else if (prevAnchor === null) {
     if (children) {
       let idx = 0;
@@ -3373,7 +3383,7 @@ function restoreSubagentCardToSlot(card, el) {
     const refIdx = ref ? Array.prototype.indexOf.call(children, ref) : children.length;
     if (cardIdx >= 0 && cardIdx + 1 === refIdx) return;
   }
-  host.insertBefore(card, ref);
+  moveTranscriptNode(host, card, ref);
 }
 
 // firstOverlayCard(el) -> Element | null
@@ -4053,6 +4063,7 @@ refs._suspendScrollPin = false;
 refs._insertAnchor = null;
 }
 if (el.childElementCount === beforeCount) return false;
+pinLatestAppAfterOlderRows(refs);
 // Preserve the viewport anchor: the inserted content raised the total
 // height above the viewport, so bump scrollTop by exactly the delta to
 // keep the rows the user was reading in place.

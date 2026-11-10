@@ -43,6 +43,7 @@ async function loadModule(rel) {
 const SHEETS = [
   ['frontend/src/components/chat/CliModal.jsx'],
   ['frontend/src/components/chat/GitModal.jsx'],
+  ['frontend/src/components/chat/ArtifactsModal.jsx'],
   ['frontend/src/components/chat/McpErrorModal.jsx'],
   ['frontend/src/components/chat/WebpreviewModal.jsx'],
   ['frontend/src/components/chat/PreviewUrlPrompt.jsx'],
