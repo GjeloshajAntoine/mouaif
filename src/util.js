@@ -1,12 +1,13 @@
 'use strict';
 
 // Leaf utility helpers shared across the server. This module deliberately
-// requires nothing else so any domain module can pull from it without
+// requires only Node built-ins so any domain module can pull from it without
 // creating a require cycle. Helpers that used to be copy-pasted into
 // several files (err, joinUrl, the first-*string finders) live here so
 // there is exactly one definition.
 
 const querystring = require('querystring');
+const fs = require('fs');
 const path = require('path');
 
 // err(code, message, extra) — a typed Error with a machine-readable
@@ -206,6 +207,28 @@ function relEscapes(rel) {
   return rel === '..' || rel.startsWith('..' + path.sep) || rel.startsWith('../') || path.isAbsolute(rel);
 }
 
+// canonicalPath(value) — the realpath of `value`, or, when it does not exist
+// yet, the realpath of its nearest existing ancestor with the missing tail
+// re-joined. Path checks compare against a realpath'd root, so a path given
+// through the symlink alias the project was opened with must be resolved the
+// same way before it is compared.
+function canonicalPath(value) {
+  const absolute = path.resolve(value);
+  let probe = absolute;
+  const suffix = [];
+  while (true) {
+    try {
+      const real = fs.realpathSync(probe);
+      return path.resolve(real, ...suffix.reverse());
+    } catch {
+      const parent = path.dirname(probe);
+      if (parent === probe) return absolute;
+      suffix.push(path.basename(probe));
+      probe = parent;
+    }
+  }
+}
+
 module.exports = {
 err,
 joinUrl,
@@ -217,5 +240,6 @@ PROJECT_MODEL_FIELDS,
 firstStringField,
 firstStringValue,
 errCodeToHttpStatus,
-relEscapes
+relEscapes,
+canonicalPath
 };

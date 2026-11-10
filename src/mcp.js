@@ -49,7 +49,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { URL, pathToFileURL } = require('url');
-const { err } = require('./util.js');
+const { err, canonicalPath: canonicalFilesystemPath } = require('./util.js');
 const settings = require('./settings.js');
 const mcpOAuth = require('./oauth-mcp.js');
 const mcpApps = require('./mcp-apps.js');
@@ -1352,23 +1352,6 @@ const MCP_OUTPUT_PATH_KEYS = new Set([
   'requestFilePath',
   'responseFilePath'
 ]);
-
-function canonicalFilesystemPath(value) {
-  const absolute = path.resolve(value);
-  let probe = absolute;
-  const suffix = [];
-  while (true) {
-    try {
-      const real = fs.realpathSync(probe);
-      return path.resolve(real, ...suffix.reverse());
-    } catch {
-      const parent = path.dirname(probe);
-      if (parent === probe) return absolute;
-      suffix.push(path.basename(probe));
-      probe = parent;
-    }
-  }
-}
 
 function canonicalProjectRoot(projectDir) {
   return canonicalFilesystemPath(projectDir);

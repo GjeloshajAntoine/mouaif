@@ -86,7 +86,7 @@ const TEXT_EXTS = new Set(searchEngine.TEXT_EXTS);
 // ---- Errors ------------------------------------------------------------
 
 // Shared typed-error helper; single definition lives in src/util.js.
-const { err, relEscapes } = require('../util.js');
+const { err, relEscapes, canonicalPath } = require('../util.js');
 
 // ---- Path safety -------------------------------------------------------
 
@@ -112,7 +112,17 @@ function resolveSandbox(projectDir) {
 function toRelPath(root, p) {
   if (typeof p !== 'string' || !p.trim()) throw err('EBADINPUT', 'path is required');
   const abs = path.isAbsolute(p) ? path.resolve(p) : path.resolve(root, p);
-  const rel = path.relative(root, abs);
+  let rel = path.relative(root, abs);
+  // `root` is a realpath, but the model is told the folder by the path the
+  // project was opened with. When that path runs through a symlink, an
+  // absolute path into the project looks lexically outside it, so compare
+  // its canonical parent instead. The last segment stays as named:
+  // toAbsInside still refuses a file that is itself a symlink leading out.
+  if (path.isAbsolute(p) && relEscapes(rel)) {
+    const canonical = path.join(canonicalPath(path.dirname(abs)), path.basename(abs));
+    const canonicalRel = path.relative(root, canonical);
+    if (!relEscapes(canonicalRel)) rel = canonicalRel;
+  }
   if (!rel || relEscapes(rel)) {
     throw err('EOUTSIDE_PROJECT', 'Path escapes the project root', { path: p });
   }

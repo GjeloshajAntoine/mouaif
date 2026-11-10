@@ -65,7 +65,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const hideFileContent = require('../hideFileContent.js');
-const { err, relEscapes } = require('../util.js');
+const { err, relEscapes, canonicalPath } = require('../util.js');
 
 // Caps applied when the caller did not override them in settings.
 const DEFAULT_MAX_MATCHES = 200;
@@ -499,10 +499,9 @@ function toRelPath(root, p) {
 }
 
 function toAbsInside(root, rel) {
-  const abs = path.resolve(root, rel);
-  let real;
-  try { real = fs.realpathSync(abs); } catch { real = null; }
-  const check = real || abs;
+  // canonicalPath, not a bare realpath: a scope that does not exist yet,
+  // named through the project's symlink alias, still resolves under root.
+  const check = canonicalPath(path.resolve(root, rel));
   const relOut = path.relative(root, check);
   if (relOut && (relEscapes(relOut))) {
     throw err('EOUTSIDE_PROJECT', 'Path escapes the project root', { path: rel });

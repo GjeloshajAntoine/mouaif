@@ -122,6 +122,25 @@ function writeFile(p, content) {
   fs.rmSync(path.join(root, '..notes.md'));
   fs.rmSync(path.join(root, '...draft'), { recursive: true });
 
+  // A project opened through a symlink: the model is told the alias path, and
+  // an absolute path through it names a file inside the project.
+  const aliasDir = tmpdir('mouaif-file-tools-alias-');
+  const alias = path.join(aliasDir, 'proj');
+  fs.symlinkSync(root, alias, 'dir');
+  const r1l = await files.runFileTool('read_file', { projectDir: alias, args: { path: path.join(alias, 'src', 'index.js') } });
+  assert(r1l.ok === true && r1l.result.relPath === 'src/index.js', 'read_file accepts an absolute path through the project symlink alias');
+  const r1lw = await files.runFileTool('write_file', { projectDir: alias, args: { path: path.join(alias, 'alias-new', 'n.md'), content: 'n' } });
+  assert(r1lw.ok === true && fs.readFileSync(path.join(root, 'alias-new', 'n.md'), 'utf8') === 'n', 'write_file creates a new file through the project symlink alias');
+  fs.rmSync(path.join(root, 'alias-new'), { recursive: true });
+  const outsideDir = tmpdir('mouaif-file-tools-out-');
+  writeFile(path.join(outsideDir, 'secret.txt'), 'secret');
+  fs.symlinkSync(path.join(outsideDir, 'secret.txt'), path.join(root, 'leak.txt'));
+  const r1ll = await files.runFileTool('read_file', { projectDir: alias, args: { path: path.join(alias, 'leak.txt') } });
+  assert(r1ll.ok === false && r1ll.result.error.code === 'EOUTSIDE_PROJECT', 'read_file still refuses an in-project symlink leading out, named through the alias');
+  fs.rmSync(path.join(root, 'leak.txt'));
+  fs.rmSync(aliasDir, { recursive: true, force: true });
+  fs.rmSync(outsideDir, { recursive: true, force: true });
+
   // ---- runFileTool: list_files -----------------------------------
   writeFile(path.join(root, 'src', 'a.js'), 'a');
   writeFile(path.join(root, 'src', 'b.ts'), 'b');
