@@ -14,6 +14,7 @@ const { projectModelRecord } = require('./util.js');
 const toolFeedback = require('./toolFeedback.js');
 const usageMetrics = require('./usage.js');
 const toolOverridesMod = require('./toolOverrides.js');
+const skipNotification = require('./tools/skipNotification.js');
 const hooksMod = require('./hooks.js');
 const { withHookContext } = require('./messages.js');
 
@@ -116,9 +117,9 @@ async function* readNDJSON(stream) {
 // scripts/test-tool-groups.mjs pins the set exactly: nothing else may be
 // dispatched here. Both are read-only, and both still honor `off`.
 const NO_PROMPT_TOOLS = new Set(['report_progress', 'list_features']);
-// Tools that fire no hooks (src/hooks.js): the no-card tools above and skill
-// activation have nothing to approve or police.
-const HOOKLESS_TOOLS = new Set([...NO_PROMPT_TOOLS, 'activate_skill']);
+// Tools that fire no hooks (src/hooks.js): the no-card tools above, skill
+// activation and the quiet-finish marker have nothing to approve or police.
+const HOOKLESS_TOOLS = new Set([...NO_PROMPT_TOOLS, 'activate_skill', skipNotification.NAME]);
 
 // The context a hook process runs in: the chat's working folder as cwd.
 // Resolved on first use: most tool calls run no hook, and this reads the chat.
@@ -191,6 +192,16 @@ async function runSingleToolCall(c, cx) {
       if (convo) convo.push({ role: 'tool', tool_call_id: c.id || undefined, name: c.name, content: JSON.stringify(result) });
       return { exec: { ok: false, result, content: JSON.stringify(result) }, imageParts: [] };
     }
+  }
+  // A recurring task's run asking to finish without a notification
+  // (src/tools/skipNotification.js). It belongs to the turn, so it skips the
+  // chat's tool filter, and it has no approval card: a card would notify.
+  if (c.name === skipNotification.NAME && opts?.scheduledRun && !opts?.nestedSubagent) {
+    const exec = skipNotification.run(args);
+    onEvent('tool_call', { id: c.id || null, name: c.name, args });
+    onEvent('tool_result', { id: c.id || null, name: c.name, ok: true, result: exec.result });
+    if (convo) convo.push({ role: 'tool', tool_call_id: c.id || undefined, name: c.name, content: exec.content });
+    return { exec, imageParts: [] };
   }
   // Enforce the advertised tool surface against forged calls before approval
   // or side effects. A tool unchecked in the chat's tool filter (or outside a
@@ -972,6 +983,12 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     const allow = new Set(opts.enabledTools.map((n) => String(n)));
     visibleToolSpecs = toolSpecs.filter((s) => s && s.function
     && (allow.has(s.function.name) || (!opts.nestedSubagent && s.function.name === 'activate_skill')));
+  }
+  // A recurring task's run may finish without a notification. The tool is
+  // the turn's own, so it is added after the chat's filter and never inherited
+  // by a subagent.
+  if (opts && opts.scheduledRun && !opts.nestedSubagent && !opts.noTools && !opts.singleToolCall) {
+    visibleToolSpecs = [...visibleToolSpecs, skipNotification.SPEC];
   }
 
   // Shrink the tool declaration according to the active prompt-size

@@ -1327,6 +1327,9 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
   // The most recent tool this turn ran, for the status block's activity row.
   // Reset each turn so it never leaks a tool name from the previous turn.
   let lastToolName = '';
+  // Set when a recurring task's run calls skip_notification: it found nothing
+  // relevant, so its completion push is left out. Errors still notify.
+  let skipCompletionPush = false;
   // Cost already persisted on intermediate segments (assistant_turn_end).
   // The final message must carry only the REMAINING cost so the chat
   // total (segment costs + final cost) equals the true per-round sum —
@@ -1433,7 +1436,7 @@ function accumulateRoundUsage(roundUsage) {
   function statusInfo(data, extra) {
     const o = extra || {};
     const modelName = model.label || model.id
-      ? ((model.provider ? model.provider + '/' : '') + (model.id || model.label || ''))
+      ? (((model.providerId || model.provider) ? (model.providerId || model.provider) + '/' : '') + (model.id || model.label || ''))
       : '';
     return {
       title: data && data.title ? String(data.title) : '',
@@ -1571,6 +1574,8 @@ function accumulateRoundUsage(roundUsage) {
     hookOrigin,
     projectDir,
     chatId, // Pass chatId for authorization gate
+    // A recurring task's run may finish without a notification (skip_notification).
+    scheduledRun: !!(internal.origin && internal.origin.kind === 'schedule'),
     shellEnabled,
     fileToolsEnabled,
     appSettings,
@@ -1699,6 +1704,8 @@ promptSize: resolvedProfileId,
           });
         } catch { /* non-fatal */ }
       } else if (name === 'tool_result') {
+        // A recurring task's run that found nothing relevant asked to finish quietly.
+        if (data && data.name === 'skip_notification' && data.ok) skipCompletionPush = true;
         try {
           messages.appendMessage(projectDir, chatId, {
             role: 'tool', phase: 'result', toolCallId: data.id || '', name: data.name || '',
@@ -1744,7 +1751,7 @@ promptSize: resolvedProfileId,
       // A recurring chat's notification reads as the message the run wrote, so
       // you can tell what it found without opening the chat.
       const reply = hasRecurringTask() ? replyPreview(assistantContent) : '';
-      sendChatPush('completion', {
+      if (!skipCompletionPush) sendChatPush('completion', {
       title: (chat && chat.title) || 'mouaif',
       ...(reply ? { body: reply } : { bodyFor: (sub) => statusBody(sub, 100, info) }),
       tag: statusPushTag
