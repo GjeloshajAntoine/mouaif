@@ -449,12 +449,10 @@ function resolveScope(projectDir, rawPath) {
   const cleaned = cleanRelPath(rawPath);
   if (!cleaned) return { root, dir: root, relDir: '', relFile: null };
 
-  let abs;
-  try { abs = toAbsInside(root, cleaned); }
-  catch (e) {
-    if (e && e.code === 'EOUTSIDE_PROJECT') return { root, dir: root, relDir: '', relFile: null };
-    throw e;
-  }
+  // A path outside the project is an error, as it is for read_file. It used
+  // to fall back to the whole project, so `path: "/etc"` returned project
+  // matches the model then took for matches from /etc.
+  const abs = toAbsInside(root, cleaned);
 
   let st = null;
   try { st = fs.statSync(abs); } catch { st = null; }
@@ -487,15 +485,6 @@ function cleanRelPath(raw) {
   s = s.replace(/\/+/g, '/');
   if (s === '.' || s === '') return null;
   return s.replace(/\/+$/, '');
-}
-
-function toRelPath(root, p) {
-  const abs = path.isAbsolute(p) ? path.resolve(p) : path.resolve(root, p);
-  const rel = path.relative(root, abs);
-  if (!rel || relEscapes(rel)) {
-    throw err('EOUTSIDE_PROJECT', 'Path escapes the project root', { path: p });
-  }
-  return rel.split(path.sep).join('/');
 }
 
 function toAbsInside(root, rel) {

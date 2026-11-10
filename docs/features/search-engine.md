@@ -63,7 +63,7 @@ Because a row is a line, a **multi-line match cannot be redacted** and is theref
 | Argument | Required | Notes |
 | --- | --- | --- |
 | `query` | yes | A ripgrep-style regular expression, matched one line at a time. |
-| `path` | no | A directory or a single file. `.`, `./`, `src`, `src/`, `src/file.js` are accepted. A path that does not exist yet searches its **nearest existing ancestor**, so `src/util` searches `src/` instead of returning nothing. |
+| `path` | no | A directory or a single file. `.`, `./`, `src`, `src/`, `src/file.js` are accepted. A path that does not exist yet searches its **nearest existing ancestor**, so `src/util` searches `src/` instead of returning nothing. A path outside the project (`../x`, `/etc`) is refused with `EOUTSIDE_PROJECT`, like `read_file`; it is never widened to the whole project. |
 | `include` | no | A glob to filter the files searched: `*.js`, `*.{ts,tsx}`, `src/**/*.test.js`, `src/[ab].js`. A leading `!` or `/` is stripped rather than honored, so an `include` can never turn into an exclusion — and a skipped directory (`node_modules`, `.git`, `dist`, ...) stays skipped even if the glob names it. |
 
 ### Regex dialect

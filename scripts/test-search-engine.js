@@ -191,9 +191,12 @@ async function main() {
     const s = engine.resolveScope(fx, 'src/util');
     assert.equal(s.relDir, 'src');
   });
-  t('resolveScope never escapes the project root', () => {
-    const s = engine.resolveScope(fx, '../..');
-    assert.equal(s.dir, fs.realpathSync(fx));
+  t('resolveScope refuses a path outside the project root', () => {
+    assert.throws(() => engine.resolveScope(fx, '../..'), (e) => e.code === 'EOUTSIDE_PROJECT');
+    assert.throws(() => engine.resolveScope(fx, '/etc'), (e) => e.code === 'EOUTSIDE_PROJECT');
+  });
+  t('resolveScope accepts an absolute path inside the project', () => {
+    assert.equal(engine.resolveScope(fx, path.join(fx, 'src')).relDir, 'src');
   });
 
   // ---- both engines, same answers --------------------------------
@@ -286,7 +289,9 @@ async function main() {
     await tAsync(m('missing query / bad regex keep their error codes'), async () => {
       assert.equal((await search(fx, {})).result.error.code, 'EBADINPUT');
       assert.equal((await search(fx, { query: '(' })).result.error.code, 'EBADINPUT');
-      assert.equal((await search(fx, { query: 'login', path: '../../etc' })).ok, true);
+      const outside = await search(fx, { query: 'login', path: '../../etc' });
+      assert.equal(outside.ok, false, 'a path outside the project is refused, not widened to the project');
+      assert.equal(outside.result.error.code, 'EOUTSIDE_PROJECT');
     });
 
     await tAsync(m('a hidden line and a hidden span are both suppressed'), async () => {
