@@ -174,6 +174,28 @@ function writeFile(p, content) {
   assert(bp.indexOf('src/a.js') >= 0 && bp.indexOf('src/b.ts') >= 0, 'list_files bare `src` lists the subtree');
   assert(bp.indexOf('README.md') === -1, 'list_files bare `src` does not leak outside src');
 
+  // Scope: "." is the whole project, and a pattern that starts inside a
+  // skipped folder lists that folder (only the unscoped walk skips it).
+  const listed = async (pattern) => {
+    const r = await files.runFileTool('list_files', { projectDir: root, args: { pattern } });
+    return r.ok ? r.result.entries.map((e) => e.path) : r.result.error.code;
+  };
+  for (const dot of ['.', './', root]) {
+    const lp = await listed(dot);
+    assert(Array.isArray(lp) && lp.indexOf('src/a.js') >= 0 && lp.indexOf('README.md') >= 0, 'list_files ' + JSON.stringify(dot === root ? '<root abs>' : dot) + ' lists the whole project');
+  }
+  writeFile(path.join(root, 'node_modules', 'lib', 'node_modules', 'inner', 'e.js'), 'e');
+  assert(deepEqual(await listed('node_modules/lib'), ['node_modules/lib/d.js']), 'list_files names a skipped folder and lists it, still skipping nested node_modules');
+  assert(deepEqual(await listed('node_modules/lib/**/*.js'), ['node_modules/lib/d.js']), 'list_files glob starting inside a skipped folder lists it');
+  assert(deepEqual(await listed('node_modules/lib/d.js'), ['node_modules/lib/d.js']), 'list_files names one file inside a skipped folder');
+  assert((await listed('**/d.js')).length === 0, 'list_files unscoped glob still skips node_modules');
+  const srcJs = (lp) => Array.isArray(lp) && lp.indexOf('src/a.js') >= 0 && lp.every((x) => /^src\/[^/]+\.js$/.test(x));
+  assert(srcJs(await listed('./src/*.js')), 'list_files drops a leading ./ from a glob');
+  assert(srcJs(await listed(path.join(root, 'src', '*.js'))), 'list_files accepts an absolute glob inside the project');
+  assert(await listed('../elsewhere') === 'EOUTSIDE_PROJECT', 'list_files refuses a relative path outside the project');
+  assert(await listed('/etc/*.conf') === 'EOUTSIDE_PROJECT', 'list_files refuses an absolute glob outside the project');
+  fs.rmSync(path.join(root, 'node_modules', 'lib', 'node_modules'), { recursive: true });
+
 
   // Empty pattern.
   const r2z = await files.runFileTool('list_files', { projectDir: root, args: { pattern: '   ' } });

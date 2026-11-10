@@ -452,37 +452,12 @@ async function runListFiles(opts) {
 
   const pattern = (args && typeof args.pattern === 'string' && args.pattern.trim()) ? args.pattern.trim() : null;
   if (isArtifactPath(pattern)) return listArtifactFiles(opts, pattern, cap);
-  // Compile a simple glob: '*' matches any path segment, '**' matches
-  // any number of segments. Anything else is a literal segment match.
-  // A bare (non-glob) pattern is resolved against the filesystem first:
-  //   - an existing directory → everything under it (`src` → all of src/);
-  //   - an existing file → just that file;
-  //   - a non-existing path → the longest existing ancestor, so `src/util`
-  //     (typo or new dir) still lists something instead of nothing (`doc`
-  //     falls back to the whole project).
-  // This is the same prefix-tolerant behavior the search_files `path`
-  // parameter uses; the two surfaces should not disagree.
-  let re = pattern ? globToRegExp(pattern) : null;
-  if (pattern && !/[\\*?]/.test(pattern)) {
-    const rawPath = pattern.replace(/\/+$/, '');
-    try {
-      const safe = toRelPath(root, rawPath);
-      const absProbe = path.resolve(root, safe);
-      const probeStat = fs.statSync(absProbe);
-      if (probeStat.isDirectory()) {
-        re = globToRegExp(safe + '/**');
-      } else {
-        re = globToRegExp(safe);
-      }
-    } catch {
-      // Outside root or otherwise invalid — keep the strict literal glob so
-      // the model gets an honest empty result instead of a fallback walk.
-      re = globToRegExp(pattern);
-    }
-  } else if (pattern && pattern.endsWith('/')) {
-    // A trailing slash is a directory intent; match everything under it.
-    re = globToRegExp(pattern + '**');
-  }
+  // The pattern is rewritten to a project-relative glob, and the walk
+  // starts at the deepest existing folder it names, so a folder the
+  // unscoped walk skips (`dist`, `node_modules/pkg/**`) is listed when the
+  // pattern starts inside it. See listScope.
+  const scope = listScope(root, pattern);
+  const re = scope.glob ? globToRegExp(scope.glob) : null;
 
   const out = [];
   let truncated = false;
@@ -514,7 +489,7 @@ async function runListFiles(opts) {
       out.push(image ? { path: childRel, image: true } : { path: childRel });
     }
   }
-  await walk(root, '');
+  await walk(scope.baseAbs, scope.baseRel);
   return { entries: out, skipped, truncated, cap, pattern: pattern || '' };
 }
 
@@ -565,6 +540,71 @@ function formatListFilesResult(r, structure) {
 //   - Globs are case-insensitive (`README*` matches `readme.md`). Path
 //     matching works on the lowercase form so the model doesn't have to
 //     guess the project's casing.
+// listScope(root, pattern) -> { glob, baseRel, baseAbs }
+//
+// Turn a list_files pattern into a project-relative glob (`glob`, null for
+// "everything") and the folder the walk starts in. '*' matches within one
+// path segment and '**' across segments; everything else is literal.
+//   - omitted, ".", "./" or the project's own absolute path → everything;
+//   - a leading "./" is dropped, and an absolute path into the project
+//     (including through its symlink alias) becomes project-relative;
+//   - a bare existing directory → everything under it (`src` → `src/**`);
+//   - a bare existing file → just that file;
+//   - a bare path that does not exist → matched literally (an empty list);
+//   - a trailing slash on a glob is a directory intent (`src/*/` → `src/*/**`).
+// The literal segments in front of the first wildcard name the folder the
+// walk starts in, so SKIP_DIRS applies only below it: `dist` or
+// `node_modules/pkg/**/*.js` list that folder, while `**/*.js` still skips
+// every `node_modules`. A pattern that leaves the project (`../x`, `/etc`)
+// throws EOUTSIDE_PROJECT, as read_file and search_files do.
+function listScope(root, pattern) {
+  const everything = { glob: null, baseRel: '', baseAbs: root };
+  if (!pattern) return everything;
+  let p = pattern;
+  while (p.startsWith('./')) p = p.slice(2);
+  const isGlob = /[\\*?]/.test(p);
+  const segments = p.split('/');
+  const firstGlob = isGlob ? segments.findIndex((seg) => /[\\*?]/.test(seg)) : segments.length;
+  const prefix = segments.slice(0, firstGlob).join('/').replace(/\/+$/, '');
+  const rest = segments.slice(firstGlob).join('/');
+
+  // Resolve the literal prefix to a project-relative path ('' = the root).
+  let prefixRel = '';
+  if (prefix && prefix !== '.') {
+    const abs = path.isAbsolute(prefix) ? path.resolve(prefix) : path.resolve(root, prefix);
+    const atRoot = abs === root || (path.isAbsolute(prefix) && canonicalPath(abs) === root);
+    if (!atRoot) prefixRel = toRelPath(root, prefix);
+  } else if (!prefix && !isGlob && p.startsWith('/')) {
+    throw err('EOUTSIDE_PROJECT', 'Path escapes the project root', { path: pattern });
+  }
+
+  let prefixStat = null;
+  let prefixAbs = root;
+  if (prefixRel) {
+    prefixAbs = toAbsInside(root, prefixRel);
+    try { prefixStat = fs.statSync(prefixAbs); } catch { prefixStat = null; }
+  }
+
+  if (!isGlob) {
+    if (!prefixRel) return everything;
+    if (prefixStat && prefixStat.isDirectory()) return { glob: prefixRel + '/**', baseRel: prefixRel, baseAbs: prefixAbs };
+    if (prefixStat && prefixStat.isFile()) {
+      const dirRel = path.posix.dirname(prefixRel);
+      return dirRel === '.'
+        ? { glob: prefixRel, baseRel: '', baseAbs: root }
+        : { glob: prefixRel, baseRel: dirRel, baseAbs: path.dirname(prefixAbs) };
+    }
+    // Missing: keep the literal from the project root, so a different-case
+    // spelling still matches through the case-insensitive glob.
+    return { glob: prefixRel, baseRel: '', baseAbs: root };
+  }
+
+  let glob = prefixRel ? prefixRel + '/' + rest : rest;
+  if (glob.endsWith('/')) glob += '**';
+  if (prefixStat && prefixStat.isDirectory()) return { glob, baseRel: prefixRel, baseAbs: prefixAbs };
+  return { glob, baseRel: '', baseAbs: root };
+}
+
 function globToRegExp(pattern) {
   let src = '';
   if (!/[\\*?]/.test(pattern)) {
@@ -1254,11 +1294,11 @@ const SINGLE_FILE_SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'list_files',
-      description: 'List text and image files in the chat\'s working folder (the project by default). Honors a simple glob pattern ("src/**/*.js", "**/*.test.*", "README.md"). Image files are marked "(image)" — read them with read_file to see the picture. Skips ' + searchEngine.SKIP_DIRS.join(', ') + ' (a fixed list; .gitignore is not read). Result is capped at ' + DEFAULT_LIST_MAX_ENTRIES + ' entries. A pattern starting with artifact: lists this chat\'s artifacts instead ("artifact:*", "artifact:*.json").',
+      description: 'List text and image files in the chat\'s working folder (the project by default). Honors a simple glob pattern ("src/**/*.js", "**/*.test.*", "README.md"). Image files are marked "(image)" — read them with read_file to see the picture. Skips ' + searchEngine.SKIP_DIRS.join(', ') + ' (a fixed list; .gitignore is not read) unless the pattern starts inside one ("dist", "node_modules/pkg/**/*.js"). Result is capped at ' + DEFAULT_LIST_MAX_ENTRIES + ' entries. A pattern starting with artifact: lists this chat\'s artifacts instead ("artifact:*", "artifact:*.json").',
       parameters: {
         type: 'object',
         properties: {
-          pattern: { type: 'string', description: 'Optional glob relative to the working folder. Omit to list every text and image file.' }
+          pattern: { type: 'string', description: 'Optional glob relative to the working folder; a bare folder ("src") lists everything under it. Omit (or ".") to list every text and image file.' }
         },
         additionalProperties: false
       }
