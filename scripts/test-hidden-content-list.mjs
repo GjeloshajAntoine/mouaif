@@ -79,6 +79,7 @@ function createList(seed) {
     window: { confirm: () => confirmAnswer },
     nav() {},
     Fragment: 'fragment', AgentFilePicker: 'file-picker', HiddenContentEditor: 'hidden-editor',
+    sectionIcon: () => null,
     useRef: (value) => { const i = cursor++; if (first) states[i] = { current: value }; return states[i]; },
     useState: (initial) => {
       const i = cursor++;
@@ -141,8 +142,10 @@ function createList(seed) {
 // The h() stub records every element in one flat array, so selections are a
 // plain filter — recursing would count each element once per nesting level.
 const select = (nodes, predicate) => nodes.filter((node) => node.tag && predicate(node));
-const rowsOf = (nodes) => select(nodes, (node) => node.attrs.class === 'hidden-content__row');
-const removeButtons = (nodes) => select(nodes, (node) => node.attrs.class === 'hidden-content__remove');
+// Rows and buttons also carry the shared settings classes, so match one token.
+const hasClass = (node, name) => String(node.attrs.class || '').split(/\s+/).includes(name);
+const rowsOf = (nodes) => select(nodes, (node) => hasClass(node, 'hidden-content__row'));
+const removeButtons = (nodes) => select(nodes, (node) => hasClass(node, 'hidden-content__remove'));
 const rowLabels = (nodes) => select(nodes, (node) => node.attrs.class === 'hidden-content__muted')
   .map((node) => node.children.filter((child) => typeof child === 'string').join(''));
 const noticeText = (nodes) => select(nodes, (node) => node.attrs.class === 'hidden-content__notice')

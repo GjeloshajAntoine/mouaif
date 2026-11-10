@@ -8,37 +8,32 @@
   box-sizing: border-box;
 }
 .hidden-content p { margin: 0; }
-.hidden-content__intro { font-size: 0.9rem; line-height: 1.5; }
-.hidden-content__scope {
-  padding: 0.75rem; border-left: 0.2rem solid var(--accent);
-  border-radius: var(--r-sm); background: var(--surface-2);
-  font-size: 0.8rem; line-height: 1.5; color: var(--fg-soft);
-}
-.hidden-content__scope code { overflow-wrap: anywhere; }
 .hidden-content__path { font-family: var(--font-mono); font-size: 0.9rem; overflow-wrap: anywhere; }
 .hidden-content__muted { display: block; color: var(--muted); font-size: 0.8rem; line-height: 1.5; overflow-wrap: anywhere; }
-.hidden-content > .btn { align-self: flex-start; }
-.hidden-content__files { margin: 0; padding: 0; list-style: none; border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
-.hidden-content__files li + li { border-top: 1px solid var(--border); }
-/* One row = open the editor (the wide, primary target) + remove this file's
-rule. The remove action keeps its own 44px target so it can never be hit by
-accident and never shrinks the tap area of the row itself. */
-.hidden-content__row { display: flex; align-items: stretch; background: var(--surface); }
-.hidden-content__file {
-flex: 1 1 auto; min-width: 0;
-display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
-min-height: 3.5rem; padding: 0.875rem 0.5rem 0.875rem 0.875rem; background: transparent; color: var(--fg);
-border: 0; text-align: left; cursor: pointer;
+
+/* ---- List view: the shared settings group (layout.css / settings.css) --
+   One row = open the editor (the wide, primary target) + a compact Remove
+   on the right, like the MCP server rows (no chevron next to Remove). Add file closes the group, like
+   "+ Add agent" on the project page. */
+.hidden-content-list__scope strong { color: var(--fg-soft); font-weight: 600; }
+.hidden-content-list__scope code { font-family: var(--font-mono); font-size: 0.95em; }
+.hidden-content-list .hidden-content__row { display: flex; align-items: center; }
+.hidden-content-list .group__row { flex: 1 1 auto; min-width: 0; }
+.hidden-content-list .hidden-content__path { font-size: 0.82rem; }
+.hidden-content-list .hidden-content__muted { font-size: 0.72rem; line-height: 1.3; }
+.hidden-content-list .hidden-content__remove { flex: 0 0 auto; margin-right: 10px; }
+.hidden-content-list .hidden-content__remove:disabled { opacity: 0.5; }
+.hidden-content-list .hidden-content__empty,
+.hidden-content-list__state {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin: 0; padding: 10px 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md);
+  color: var(--muted); font-size: 0.8rem; line-height: 1.4;
 }
-.hidden-content__file-main { min-width: 0; display: grid; gap: 0.25rem; }
-.hidden-content__remove {
-flex: 0 0 auto; min-width: 2.75rem; min-height: 2.75rem; margin: 0.5rem 0.5rem 0.5rem 0;
-display: inline-flex; align-items: center; justify-content: center;
-padding: 0 0.75rem; background: transparent; color: var(--danger);
-border: 1px solid var(--border); border-radius: var(--r-sm); cursor: pointer;
-font: inherit; font-size: 0.8rem; font-weight: 600;
-}
-.hidden-content__empty { padding: 1rem; background: var(--surface); border: 1px dashed var(--border); border-radius: var(--r-md); color: var(--muted); }
+.hidden-content-list__add { margin-top: 8px; width: 100%; }
+.hidden-content-list > .hidden-content__error,
+.hidden-content-list > .hidden-content__notice { margin: 8px 14px 0; font-size: 0.76rem; line-height: 1.4; }
+.hidden-content-list > .hidden-content__notice { color: var(--success); }
 .hidden-content__notice:empty { display: none; }
 .hidden-content__fields { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 0.75rem; }
 .hidden-content .btn, .hidden-content .input, .hidden-content summary { min-height: 2.75rem; min-width: 2.75rem; }

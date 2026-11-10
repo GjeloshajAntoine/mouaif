@@ -6,6 +6,7 @@ import { AgentFilePicker } from './AgentFilePicker.jsx';
 import { HiddenContentEditor } from './settings/HiddenContentEditor.jsx';
 import { describeHidden, hiddenContentPath } from './settings/hiddenRanges.js';
 import { settingsLink } from './settings/projectNavigation.js';
+import { sectionIcon } from './settingsProjectUi.js';
 import './settings/hiddenContent.css';
 
 export function SettingsHiddenContentView({ projectDir = '', from = '', chatId = '', filePath = '' }) {
@@ -100,43 +101,60 @@ export function SettingsHiddenContentView({ projectDir = '', from = '', chatId =
     initialRule: rules.find((rule) => rule.path === filePath),
     onSave, onClose
   });
+  // Same shape as the other project drill-downs (Agent files, Shell review):
+  // a one-line lede, then one titled group whose "?" holds the long help.
   return h(Fragment, null,
-    h('div', { class: 'view-head hidden-content__head' },
+    h('div', { class: 'view-head' },
       h('a', { class: 'view-back', href: settingsLink('settings/project', context), 'aria-label': 'Back to project settings' }, '←'),
       h('h2', { class: 'view-title' }, 'Hide file content')
     ),
-    h('section', { class: 'hidden-content', 'aria-label': 'Hidden files' },
-      h('p', { class: 'hidden-content__intro' }, 'Choose a file, then tap the line numbers you want hidden from the agent file tools, or select text and hide just that span. Your file stays unchanged.'),
-      h('p', { class: 'hidden-content__scope' },
-        h('strong', null, 'Not a security boundary. '),
-        'Only ', h('code', null, 'read_file'), ', ', h('code', null, 'search_files'),
-        ', and files attached by a tag or an @ mention are filtered. Shell, MCP, and other access can still read the original content.'
+    h('section', { class: 'settings-project hidden-content-list', 'aria-label': 'Hidden files' },
+      h('p', { class: 'settings-project__lede' }, 'Hide lines or text from the agent’s file tools. Your files stay unchanged.'),
+      // The limits stay on the page itself, never only behind the "?".
+      h('p', { class: 'settings-project__lede hidden-content-list__scope' },
+        h('strong', null, 'Not a security boundary: '),
+        'only ', h('code', null, 'read_file'), ', ', h('code', null, 'search_files'),
+        ', and tag or @ attachments are filtered. Shell and MCP still read the original.'
       ),
-      error ? h('div', { role: 'alert' }, h('p', null, error), dir && h('button', { class: 'btn', onClick: () => setReload((n) => n + 1) }, 'Retry'))
-        : rules === null ? h('p', { role: 'status' }, 'Loading hidden files…')
-          : h(Fragment, null,
-            rules.length ? h('ul', { class: 'hidden-content__files', ref: listRef }, rules.map((rule, index) => h('li', { key: rule.path, class: 'hidden-content__row' },
-            h('button', {
-            class: 'hidden-content__file', type: 'button',
-            onClick: () => onOpen(rule.path)
-            },
-            h('span', { class: 'hidden-content__file-main' },
-            h('span', { class: 'hidden-content__path' }, rule.path),
-            h('span', { class: 'hidden-content__muted' }, describeHidden(rule))
-            ),
-            h('span', { 'aria-hidden': 'true' }, '›')
-            ),
-            h('button', {
-            class: 'hidden-content__remove', type: 'button',
-            disabled: !!removing,
-            'aria-label': `Stop hiding content in ${rule.path}`,
-            onClick: () => onRemove(rule.path, index)
-            }, removing === rule.path ? 'Removing…' : 'Remove')
-            ))) : h('p', { class: 'hidden-content__empty' }, 'Nothing hidden yet. Add a file to hide whole lines or selected text.'),
-            h('button', { class: 'btn btn--primary', ref: addRef, onClick: () => setPicking(true) }, '+ Add file'),
-            removeError && h('p', { class: 'hidden-content__error', role: 'alert' }, removeError),
-            h('p', { role: 'status', class: 'hidden-content__notice' }, notice)
-            ),
+      h('div', { class: 'group settings-project__section' },
+        h('div', { class: 'group__title settings-project__section-title' },
+          sectionIcon('files'),
+          h('span', null, 'Hidden files'),
+          h('details', { class: 'settings-project__info' },
+            h('summary', { 'aria-label': 'About hidden file content' }, '?'),
+            h('div', { class: 'settings-project__info-body' },
+              h('p', null, 'Choose a file, then tap the line numbers you want hidden, or select text and hide just that span.'),
+              h('p', null, 'Tap a row to change what it hides; Remove un-hides the whole file.')
+            )
+          )
+        ),
+        error ? h('div', { class: 'hidden-content-list__state', role: 'alert' },
+          h('span', null, error),
+          dir && h('button', { class: 'btn btn--small', type: 'button', onClick: () => setReload((n) => n + 1) }, 'Retry'))
+          : rules === null ? h('p', { class: 'hidden-content-list__state', role: 'status' }, 'Loading hidden files…')
+            : h(Fragment, null,
+              rules.length ? h('ul', { class: 'group__list', ref: listRef }, rules.map((rule, index) => h('li', { key: rule.path, class: 'hidden-content__row' },
+                h('button', {
+                  class: 'group__row settings-project__link-row', type: 'button',
+                  onClick: () => onOpen(rule.path)
+                },
+                  h('span', { class: 'group__row-body' },
+                    h('span', { class: 'group__row-label hidden-content__path' }, rule.path),
+                    h('span', { class: 'hidden-content__muted' }, describeHidden(rule))
+                  )
+                ),
+                h('button', {
+                  class: 'btn btn--small btn--danger hidden-content__remove', type: 'button',
+                  disabled: !!removing,
+                  'aria-label': `Stop hiding content in ${rule.path}`,
+                  onClick: () => onRemove(rule.path, index)
+                }, removing === rule.path ? 'Removing…' : 'Remove')
+              ))) : h('p', { class: 'hidden-content__empty' }, 'Nothing hidden yet. Add a file to hide whole lines or selected text.'),
+              h('button', { class: 'btn btn--primary hidden-content-list__add', type: 'button', ref: addRef, onClick: () => setPicking(true) }, '+ Add file')
+            )
+      ),
+      removeError && h('p', { class: 'hidden-content__error', role: 'alert' }, removeError),
+      h('p', { role: 'status', class: 'hidden-content__notice' }, notice),
       picking && h(AgentFilePicker, {
         projectDir: dir, onPick: onOpen, onClose: () => setPicking(false),
         label: 'Choose a file to hide lines',
