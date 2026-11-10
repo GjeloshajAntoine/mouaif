@@ -174,6 +174,43 @@ function makeCx(chatId, dispatched, events, convo) {
   };
 }
 
+// A tool call with no hooks to run stays cheap: no repeated table setup, and
+// the chat is not read just to find a hook's working folder.
+async function testLookupCost() {
+  authz.setAuthorization(projectDir, { tools: { shell: { mode: 'allow', allowlist: [] } } });
+  const db = require('../src/settings.js').getDb();
+  const chatdb = require('../src/chatdb.js');
+  chatdb.ensureChatTables();
+  let execs = 0;
+  db.exec = function exec(sql) { execs++; return Object.getPrototypeOf(db).exec.call(this, sql); };
+  chatdb.ensureChatTables();
+  delete db.exec;
+  assert.equal(execs, 0, 'table setup runs once per database handle');
+
+  const folder = require('../src/chatWorkingFolder.js');
+  const resolveForCall = folder.resolveForCall;
+  let resolved = 0;
+  folder.resolveForCall = (...args) => { resolved++; return resolveForCall(...args); };
+  try {
+    setHooks([]);
+    await runSingleToolCall({ id: 'cost_1', name: 'shell', arguments: JSON.stringify({ cmd: 'ls' }) }, makeCx('c-cost', [], [], []));
+    assert.equal(resolved, 0, 'no hook ran, so no working folder was resolved');
+    // A hook that runs still gets the folder, resolved once for both events.
+    setHooks([
+      { id: 'where', event: 'tool.before', handler: { kind: 'command', shell: 'node', script: "process.stdout.write(JSON.stringify({context:process.cwd()}))" } },
+      { id: 'where-after', event: 'tool.after', handler: { kind: 'command', shell: 'node', script: "process.stdout.write(JSON.stringify({context:process.cwd()}))" } }
+    ]);
+    const convo = [];
+    await runSingleToolCall({ id: 'cost_2', name: 'shell', arguments: JSON.stringify({ cmd: 'ls' }) }, makeCx('c-cost', [], [], convo));
+    assert.equal(resolved, 1);
+    const seen = convo.map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content))).join('\n');
+    assert.ok(seen.includes(fs.realpathSync(projectDir)), 'the hook ran in the project folder');
+  } finally {
+    folder.resolveForCall = resolveForCall;
+    setHooks([]);
+  }
+}
+
 async function testToolLoop() {
   authz.setAuthorization(projectDir, { tools: { shell: { mode: 'allow', allowlist: [] } } });
 
@@ -798,6 +835,311 @@ async function testProjectHooks() {
   assert.equal(res.status, 400);
 }
 
+// What a project's trust hash has to follow, and where a project hook runs.
+async function testTrustCoverage() {
+  const settings = require('../src/settings.js');
+  const projectHooks = require('../src/projectHooks.js');
+  const proj = path.join(root, 'trust-cover');
+  fs.mkdirSync(path.join(proj, 'scripts'), { recursive: true });
+  const write = (rel, text) => fs.writeFileSync(path.join(proj, rel), text);
+  const trustHandler = (handler) => {
+    write('.mouaif.json', JSON.stringify({ hooks: [{ id: 'h', event: 'tool.before', handler }] }));
+    projectHooks._clearCache();
+    return projectHooks.trust(proj, projectHooks.status(proj).hash);
+  };
+  const trustCommand = (command) => trustHandler({ kind: 'command', command });
+  const expectOff = (why) => {
+    assert.equal(projectHooks.status(proj).trusted, false, why);
+    assert.deepEqual(projectHooks.active(proj), [], why);
+  };
+
+  // Paths that do not exist yet, with no re-read forced between the steps.
+  trustCommand('./scripts/late.sh');
+  assert.equal(projectHooks.active(proj).length, 1);
+  assert.deepEqual(projectHooks.status(proj).files, [], 'a path that does not exist is not listed for review');
+  write('scripts/late.sh', 'exit 0\n');
+  expectOff('a script that appears after the review');
+  trustCommand('sh later');
+  assert.equal(projectHooks.status(proj).trusted, true);
+  write('later', 'exit 0\n');
+  expectOff('a bare name a runner runs, appearing after the review');
+
+  // Forms of a path the hash used to miss.
+  write('scripts/run.sh', 'one\n');
+  assert.deepEqual(trustCommand('cd scripts && ./run.sh').files.map((f) => f.path), ['scripts/run.sh']);
+  write('scripts/run.sh', 'two\n');
+  expectOff('a script run after cd');
+  write('scripts/inline.sh', 'one\n');
+  assert.deepEqual(trustHandler({ kind: 'command', shell: 'bash', script: 'bash ./scripts/inline.sh\n' }).files.map((f) => f.path), ['scripts/inline.sh']);
+  write('scripts/inline.sh', 'two\n');
+  expectOff('a script an inline script runs');
+  write('check', 'one\n');
+  assert.deepEqual(trustCommand('sh check').files.map((f) => f.path), ['check']);
+  write('check', 'two\n');
+  expectOff('a bare name a runner runs');
+  fs.mkdirSync(path.join(proj, '..tools'));
+  write('..tools/x.sh', 'one\n');
+  assert.deepEqual(trustCommand('..tools/x.sh').files.map((f) => f.path), [path.join('..tools', 'x.sh')]);
+  write('..tools/x.sh', 'two\n');
+  expectOff('a folder whose name starts with two dots');
+
+  // The whole of a big file, and every file of a long list.
+  const big = Buffer.alloc(1024 * 1024 + 10, 'a');
+  fs.writeFileSync(path.join(proj, 'big.sh'), big);
+  trustCommand('./big.sh');
+  big[big.length - 1] = 'b'.charCodeAt(0);
+  fs.writeFileSync(path.join(proj, 'big.sh'), big);
+  expectOff('a change past the first MiB');
+  const many = Array.from({ length: 25 }, (_, i) => 'scripts/m' + i + '.sh');
+  many.forEach((rel) => write(rel, 'one\n'));
+  assert.equal(trustCommand(many.map((rel) => './' + rel).join(' && ')).files.length, 25);
+  write(many[24], 'two\n');
+  expectOff('the 25th file of a long list');
+
+  // A hook list too long to stat on each lookup is read every time instead.
+  const words = Array.from({ length: 300 }, (_, i) => './nope' + i + '.sh').join(' ') + ' ./scripts/lots.sh';
+  trustHandler({ kind: 'command', shell: 'bash', script: words });
+  write('scripts/lots.sh', 'exit 0\n');
+  expectOff('a late script among hundreds of paths');
+
+  // Nothing internal reaches the API, and a URL is not a path.
+  trustCommand('curl https://example.com/a.sh');
+  assert.equal(projectHooks.status(proj).trusted, true);
+  assert.ok(!Object.keys(projectHooks.status(proj)).includes('watch'));
+
+  // Settings stored in mouaif: an edit of the same length is still noticed.
+  trustCommand('true');
+  const { isDbBacked, getProject } = settings;
+  const dbHooks = [{ id: 'a', event: 'tool.before', handler: { kind: 'command', command: 'true' } }];
+  try {
+    settings.isDbBacked = () => true;
+    settings.getProject = () => ({ hooks: dbHooks });
+    projectHooks._clearCache();
+    projectHooks.trust(proj, projectHooks.status(proj).hash);
+    settings.getProject = () => ({ hooks: [Object.assign({}, dbHooks[0], { id: 'b' })] });
+    assert.equal(projectHooks.status(proj).trusted, false, 'same-length edit in the settings row');
+  } finally {
+    settings.isDbBacked = isDbBacked;
+    settings.getProject = getProject;
+  }
+
+  // A project hook runs from the project folder, never a copy in a chat's
+  // working folder; other hooks keep the working folder.
+  const worktree = path.join(root, 'worktree');
+  fs.mkdirSync(path.join(worktree, 'scripts'), { recursive: true });
+  const where = { kind: 'command', shell: 'node', script: "process.stdout.write(JSON.stringify({context:process.cwd()+'|'+process.env.MOUAIF_WORKING_DIR}))" };
+  trustHandler(where);
+  setHooks([]);
+  const ctx = { projectDir: proj, chatId: 'c-trust', cwd: worktree };
+  let out = await hooks.runHooks('tool.before', { tool: 'shell', args: {} }, ctx);
+  assert.ok(out.context.includes(fs.realpathSync(proj) + '|' + worktree), out.context);
+  write('.mouaif.json', '{}');
+  projectHooks._clearCache();
+  setHooks([{ id: 'app-where', event: 'tool.before', handler: where }]);
+  out = await hooks.runHooks('tool.before', { tool: 'shell', args: {} }, ctx);
+  assert.ok(out.context.includes(fs.realpathSync(worktree) + '|' + worktree), out.context);
+  setHooks([]);
+}
+
+// A hook set to block on failure blocks whenever it could not do its check.
+async function testFailClosedGaps() {
+  const ctx = { projectDir, chatId: 'c-closed', cwd: projectDir };
+  const call = { tool: 'shell', args: { cmd: 'a'.repeat(40) + '!' } };
+  const runsOf = () => hooks.listRuns({ chatId: 'c-closed' });
+  const inline = { kind: 'command', shell: 'bash', script: 'echo ran\n' };
+
+  // The handler's setup throws: no temp folder for an inline script.
+  const tmpdir = process.env.TMPDIR;
+  process.env.TMPDIR = path.join(root, 'no-such-folder');
+  try {
+    setHooks([{ id: 'guard', event: 'tool.before', failClosed: true, handler: inline }]);
+    let out = await hooks.runHooks('tool.before', call, ctx);
+    assert.equal(out.decision, 'block');
+    assert.match(out.reason, /set to block on failure/);
+    assert.ok(runsOf().some((r) => r.hook === 'guard' && r.decision === 'block'), 'the failure is in the run log');
+    // Without failClosed it carries on, and an earlier hook's decision stands.
+    setHooks([
+      { id: 'asker', event: 'tool.before', handler: { kind: 'command', command: say({ decision: 'ask', reason: 'sure?' }) } },
+      { id: 'broken', event: 'tool.before', handler: inline }
+    ]);
+    out = await hooks.runHooks('tool.before', call, ctx);
+    assert.equal(out.decision, 'ask');
+    assert.equal(out.notes[1].decision, 'error');
+  } finally {
+    if (tmpdir === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = tmpdir;
+  }
+
+  // The arguments pattern does not finish.
+  const slow = '(a+)+$';
+  assert.equal(await hooks._regexSearch(slow, call.args.cmd, 100), null);
+  assert.equal(await hooks._regexSearch('a', 'a'), true);
+  assert.equal(await hooks._regexSearch('b', 'a'), false);
+  setHooks([{ id: 'slow-guard', event: 'tool.before', failClosed: true, match: { argText: slow }, handler: inline }]);
+  let out = await hooks.runHooks('tool.before', call, ctx);
+  assert.equal(out.decision, 'block');
+  assert.match(out.reason, /did not finish/);
+  setHooks([{ id: 'slow-plain', event: 'tool.before', match: { argText: slow }, handler: inline }]);
+  out = await hooks.runHooks('tool.before', call, ctx);
+  assert.equal(out.decision, 'continue');
+  assert.equal(out.context, undefined, 'the hook did not run');
+  assert.equal(out.notes[0].decision, 'error');
+  assert.ok(runsOf().some((r) => r.hook === 'slow-plain' && r.decision === 'error'), 'logged');
+
+  // More hooks match than may run.
+  const carryOn = (id) => ({ id, event: 'tool.before', handler: { kind: 'command', command: 'true' } });
+  const four = ['a', 'b', 'c', 'd'].map(carryOn);
+  setHooks([...four, { id: 'fifth-guard', event: 'tool.before', failClosed: true, handler: { kind: 'command', command: 'true' } }]);
+  out = await hooks.runHooks('tool.before', call, ctx);
+  assert.equal(out.decision, 'block');
+  assert.equal(out.by, 'fifth-guard');
+  assert.match(out.reason, /more than 4 hooks matched/);
+  setHooks([...four, carryOn('fifth-plain')]);
+  out = await hooks.runHooks('tool.before', call, ctx);
+  assert.equal(out.decision, 'continue');
+  assert.equal(out.notes[4].decision, 'skipped');
+  assert.ok(runsOf().some((r) => r.hook === 'fifth-plain' && r.decision === 'skipped'), 'logged');
+  setHooks([]);
+}
+
+async function testSubagentEnd() {
+  const { Scope } = require('../src/tools/subagent-orchestration.js');
+  const { fireSubagentEnd } = require('../src/hookTurns.js');
+  assert.ok(hooks.EVENTS.includes('subagent.end'));
+  assert.throws(() => hooks.normalizeHook({ id: 'a', event: 'subagent.end', match: { tool: ['shell'] }, handler: { kind: 'command', command: 'x' } }), /tool events/);
+
+  const ctx = { projectDir, chatId: 'c-sub', cwd: projectDir };
+  const echo = { kind: 'command', shell: 'node', script:
+    "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const i=JSON.parse(s);" +
+    "process.stdout.write(JSON.stringify({context:[i.event,i.task,i.state,i.ok,i.text,i.depth,i.background].join('|'),decision:'block'}))})" };
+  setHooks([{ id: 'sub', event: 'subagent.end', handler: echo }]);
+
+  // A finished background run: the context is on its status once it is
+  // settled, and its state is not "completed" before the hooks answered. A
+  // block means nothing here.
+  const onEnd = (row, exec, state) => fireSubagentEnd(ctx, { row, exec, state, task: 'the task', background: true });
+  const done = [];
+  let scope = new Scope(projectDir, 'c-sub');
+  let row = scope.start('sub-1', '', async () => ({ ok: true, result: { text: 'child text' } }), (exec) => done.push(exec), { onEnd });
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(scope.status(row).state, 'running', 'still waiting for the hook');
+  const exec = await row.promise;
+  assert.equal(done.length, 1);
+  assert.equal(exec.ok, true, 'a hook cannot fail the run');
+  assert.equal(exec.subagentEnd.notes[0].hook, 'sub');
+  assert.match(exec.subagentEnd.context, /subagent\.end\|the task\|completed\|true\|child text\|1\|true/);
+  const status = scope.status(row);
+  assert.equal(status.state, 'completed');
+  assert.equal(status.hookContext, exec.subagentEnd.context);
+  await scope.finish();
+
+  // A failed run reports its state, and no hooks = nothing added.
+  scope = new Scope(projectDir, 'c-sub');
+  row = scope.start('sub-2', '', async () => { throw new Error('nope'); }, () => {}, { onEnd });
+  assert.match((await row.promise).subagentEnd.context, /\|failed\|false\|/);
+  setHooks([]);
+  row = scope.start('sub-3', '', async () => ({ ok: true, result: { text: 'x' } }), () => {}, { onEnd });
+  assert.equal((await row.promise).subagentEnd, undefined);
+  await scope.finish();
+
+  // A cancelled run does not wait for its hook, which still runs once. That
+  // includes a child that never settles, finalized by the shutdown budget.
+  const log = path.join(root, 'subagent-end.jsonl');
+  setHooks([{ id: 'slow', event: 'subagent.end', handler: { kind: 'command', shell: 'node', script:
+    "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const i=JSON.parse(s);require('fs').appendFileSync(" + JSON.stringify(log) + ",i.callId+':'+i.state+'\\n');setTimeout(()=>{},1500)})" } }]);
+  scope = new Scope(projectDir, 'c-sub');
+  const stuck = scope.start('sub-stuck', '', () => new Promise(() => {}), () => {}, { onEnd });
+  await new Promise((r) => setImmediate(r));
+  const t0 = Date.now();
+  await scope.finish();
+  assert.ok(Date.now() - t0 < 1400, 'shutdown did not wait for the hook');
+  assert.equal(stuck.state, 'cancelled');
+  // The run log gets its row once the hook is over and its temp folder removed.
+  for (let i = 0; i < 100 && !hooks.listRuns({ chatId: 'c-sub' }).some((r) => r.hook === 'slow'); i++) await new Promise((r) => setTimeout(r, 100));
+  assert.deepEqual(fs.readFileSync(log, 'utf8').trim().split('\n'), ['sub-stuck:cancelled']);
+
+  // A prompt-like task stays off the network unless the hook sends prompts.
+  const http = require('node:http');
+  const bodies = [];
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (d) => { body += d; });
+    req.on('end', () => { bodies.push(JSON.parse(body)); res.end(); });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const url = 'http://127.0.0.1:' + server.address().port + '/';
+  setHooks([{ id: 'net', event: 'subagent.end', handler: { kind: 'http', url } }]);
+  await hooks.runHooks('subagent.end', { task: 'secret task', text: 'secret text', state: 'completed' }, ctx);
+  assert.equal(bodies[0].state, 'completed');
+  assert.equal(bodies[0].task, undefined);
+  assert.equal(bodies[0].text, undefined);
+  setHooks([{ id: 'net', event: 'subagent.end', handler: { kind: 'http', url, send: ['content'] } }]);
+  await hooks.runHooks('subagent.end', { task: 'secret task', state: 'completed' }, ctx);
+  assert.equal(bodies[1].task, 'secret task');
+  server.close();
+
+  await testSubagentEndTurn();
+  setHooks([]);
+}
+
+// A whole turn: the model delegates and waits, and gets the hook's context
+// with the result, then and when the history is rebuilt.
+async function testSubagentEndTurn() {
+  const http = require('node:http');
+  const settings = require('../src/settings.js');
+  const chats = require('../src/chats.js');
+  const { handleChatStream } = require('../src/server-handlers-chats.js');
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (d) => { body += d; });
+    req.on('end', () => {
+      requests.push(body);
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      const parent = body.includes('DELEGATE-NOW');
+      if (parent && !body.includes('"role":"tool"')) {
+        res.write('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_sub","function":{"name":"subagent","arguments":"{\\"task\\":\\"CHILD-TASK\\"}"}}]},"index":0}]}\n\n');
+        res.write('data: {"choices":[{"finish_reason":"tool_calls","index":0}]}\n\n');
+      } else {
+        res.write('data: {"choices":[{"delta":{"content":"' + (parent ? 'All done.' : 'Child answer.') + '"},"index":0}]}\n\n');
+        res.write('data: {"choices":[{"finish_reason":"stop","index":0}]}\n\n');
+      }
+      res.write('data: [DONE]\n\n');
+      res.end();
+    });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  settings.setProject(projectDir, { models: [{ id: 'mock', provider: 'openai-compatible', label: 'Mock' }], tools: { subagent: { enabled: true, mode: 'allow' } } });
+  settings.setApp({ providers: [{ id: 'openai-compatible', type: 'openai-compatible', baseUrl: 'http://127.0.0.1:' + server.address().port, apiKey: 'k' }] });
+  setHooks([{ id: 'review', event: 'subagent.end', handler: { kind: 'command', shell: 'node', script:
+    "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const i=JSON.parse(s);process.stdout.write(JSON.stringify({context:'REVIEWED '+i.task+' '+i.text+' depth '+i.depth}))})" } }]);
+  const mockReq = (body) => ({ method: 'POST', headers: { 'content-type': 'application/json' },
+    on(ev, cb) { if (ev === 'data') process.nextTick(() => cb(Buffer.from(JSON.stringify(body)))); if (ev === 'end') process.nextTick(cb); } });
+  const mockRes = () => ({ statusCode: 0, body: '', writeHead(c) { this.statusCode = c; }, write(c) { this.body += c; }, end() {}, setHeader() {}, getHeader() {}, on() {}, off() {} });
+  const chat = chats.createChat(projectDir, { title: 'delegate' });
+  const res = mockRes();
+  await handleChatStream(mockReq({ projectDir, modelId: 'mock', content: 'DELEGATE-NOW' }), res, chat.id, null);
+  assert.equal(res.statusCode, 200);
+  const waitFor = async (fn, ms = 20000) => { const t = Date.now(); while (Date.now() - t < ms) { if (fn()) return true; await new Promise((r) => setTimeout(r, 50)); } return false; };
+  const rows = () => messages.listMessages(projectDir, chat.id);
+  const toolRow = () => rows().find((m) => m.role === 'tool' && m.phase === 'result' && m.name === 'subagent');
+  const answered = () => rows().some((m) => m.role === 'assistant' && m.content === 'All done.');
+  assert.ok(await waitFor(() => toolRow() && answered()), 'the parent got the result and answered');
+  const followUp = requests.find((b) => b.includes('"role":"tool"'));
+  assert.match(followUp, /hook-context hook=\\?"review\\?" event=\\?"subagent\.end\\?"/);
+  assert.match(followUp, /REVIEWED CHILD-TASK Child answer\. depth 1/);
+  assert.match(toolRow().hooks.context, /REVIEWED CHILD-TASK/);
+  assert.equal(toolRow().hooks.notes[0].hook, 'review');
+  // A later turn rebuilds the history from the stored rows, context included.
+  const seen = requests.length;
+  await new Promise((r) => setTimeout(r, 300));
+  const again = mockRes();
+  await handleChatStream(mockReq({ projectDir, modelId: 'mock', content: 'And again' }), again, chat.id, null);
+  assert.equal(again.statusCode, 200);
+  assert.ok(await waitFor(() => requests.length > seen), 'the second turn called the model');
+  assert.match(requests[seen], /REVIEWED CHILD-TASK Child answer\. depth 1/);
+  server.close();
+}
+
 // A promise that never settles empties the event loop and Node exits 0 with
 // nothing printed; count that as a failure.
 let finished = false;
@@ -809,6 +1151,7 @@ async function main() {
   await testValidation();
   await testParseOutput();
   await testRunner();
+  await testLookupCost();
   await testToolLoop();
   await testUserRowContext();
   await testTurnEvents();
@@ -819,6 +1162,9 @@ async function main() {
   await testHttpAndModule();
   await testRedact();
   await testProjectHooks();
+  await testTrustCoverage();
+  await testFailClosedGaps();
+  await testSubagentEnd();
   finished = true;
   console.log('test-hooks: ok');
 }

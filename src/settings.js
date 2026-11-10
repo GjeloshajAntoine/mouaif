@@ -948,12 +948,19 @@ function getProjectRaw(projectDir) {
 // When a project opts out of the JSON file, its settings live here instead
 // of <projectDir>/.mouaif.json so the working tree is never touched. The
 // value is the same raw project object the file would have carried.
+// Prepared once per handle: tool authorization and hooks read this on every
+// tool call.
+let projectRowStatement = null;
+let projectRowStatementDb = null;
 function projectSettingsRow(projectDir) {
   const dir = canonicalProjectDir(projectDir);
   if (!dir) return null;
-  return db()
-    .prepare(`SELECT value FROM ${PROJECT_SETTINGS_TABLE} WHERE project_dir = ?`)
-    .get(dir) || null;
+  const d = db();
+  if (projectRowStatementDb !== d) {
+    projectRowStatement = d.prepare(`SELECT value FROM ${PROJECT_SETTINGS_TABLE} WHERE project_dir = ?`);
+    projectRowStatementDb = d;
+  }
+  return projectRowStatement.get(dir) || null;
 }
 function getDbProjectRaw(projectDir) {
   const row = projectSettingsRow(projectDir);

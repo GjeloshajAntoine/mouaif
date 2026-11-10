@@ -10,6 +10,7 @@
 //   turn.start     a turn is about to call the model -> observe
 //   turn.end       a turn finished and was saved    -> followUp (one more turn)
 //   turn.error     a turn failed or was stopped     -> observe
+//   subagent.end   a delegated run finished         -> context
 //   attention      a push is about to be sent       -> suppress
 //
 // turn.start, turn.end and turn.error never delay the chat (callers do not
@@ -45,16 +46,17 @@ const { Worker } = require('node:worker_threads');
 const settings = require('./settings.js');
 
 const STORE_KEY = 'hooks';
-const EVENTS = Object.freeze(['prompt.submit', 'tool.before', 'tool.after', 'turn.start', 'turn.end', 'turn.error', 'attention']);
+const EVENTS = Object.freeze(['prompt.submit', 'tool.before', 'tool.after', 'turn.start', 'turn.end', 'turn.error', 'subagent.end', 'attention']);
 const TOOL_EVENTS = Object.freeze(['tool.before', 'tool.after']);
 // Events whose `block` stops something; elsewhere a block is just a note.
 const BLOCKING_EVENTS = Object.freeze(['prompt.submit', 'tool.before']);
-const CONTEXT_EVENTS = Object.freeze(['prompt.submit', 'tool.before', 'tool.after']);
+const CONTEXT_EVENTS = Object.freeze(['prompt.submit', 'tool.before', 'tool.after', 'subagent.end']);
 // The fields each non-tool event sends besides the common ones.
 const EVENT_FIELDS = Object.freeze({
   'turn.start': ['model', 'provider', 'thinkingLevel'],
   'turn.end': ['text', 'usage', 'cost', 'toolCount', 'followUpDepth'],
   'turn.error': ['code', 'message', 'stopped'],
+  'subagent.end': ['callId', 'agent', 'task', 'background', 'state', 'ok', 'text', 'error', 'model', 'depth', 'parentCallId', 'groupId', 'memberId', 'durationMs'],
   attention: ['kind', 'tool']
 });
 // The model's hook tools (src/tools/hooks.js). Tool hooks never match them,
@@ -299,7 +301,8 @@ function mcpServerOf(tool) {
 }
 
 // A user regex runs in a worker with a time budget so a catastrophic pattern
-// cannot hang a turn. Unanchored search semantics.
+// cannot hang a turn. Unanchored search semantics. Resolves true or false, or
+// null when the search did not finish (over budget, out of memory, no worker).
 function regexSearch(pattern, value, budgetMs = REGEX_BUDGET_MS) {
   return new Promise((resolve) => {
     let settled = false;
@@ -312,21 +315,21 @@ function regexSearch(pattern, value, budgetMs = REGEX_BUDGET_MS) {
         ' catch { parentPort.postMessage(false); } });',
         { eval: true, resourceLimits: { maxOldGenerationSizeMb: 32 } }
       );
-    } catch { resolve(false); return; }
+    } catch { resolve(null); return; }
     const finish = (result) => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
       worker.terminate().catch(() => {});
-      resolve(result === true);
+      resolve(typeof result === 'boolean' ? result : null);
     };
     worker.once('online', () => {
-      timer = setTimeout(() => finish(false), budgetMs);
+      timer = setTimeout(() => finish(null), budgetMs);
       worker.postMessage({ p: pattern, v: String(value || '') });
     });
     worker.once('message', finish);
-    worker.once('error', () => finish(false));
-    worker.once('exit', () => finish(false));
+    worker.once('error', () => finish(null));
+    worker.once('exit', () => finish(null));
   });
 }
 
@@ -334,6 +337,9 @@ function safeJson(value) {
   try { return JSON.stringify(value === undefined ? null : value); } catch { return ''; }
 }
 
+// hookMatches(...) -> true | false | UNRESOLVED (the argument pattern did not
+// finish, so nobody knows whether this hook applies).
+const UNRESOLVED = 'unresolved';
 async function hookMatches(hook, event, payload, ctx) {
   if (!hook.enabled || hook.event !== event) return false;
   if (ctx.nested && !hook.subagents) return false;
@@ -342,7 +348,11 @@ async function hookMatches(hook, event, payload, ctx) {
   if (m.origin && !m.origin.includes((payload.origin && payload.origin.kind) || 'user')) return false;
   if (m.tool && !toolMatches(m.tool, String(payload.tool || ''))) return false;
   if (m.family && !m.family.includes(toolFamily(payload.tool))) return false;
-  if (m.argText && !(await regexSearch(m.argText, safeJson(payload.args)))) return false;
+  if (m.argText) {
+    const found = await regexSearch(m.argText, safeJson(payload.args));
+    if (found === null) return UNRESOLVED;
+    if (!found) return false;
+  }
   return true;
 }
 
@@ -362,12 +372,13 @@ function release() {
 const ENV_ALLOW = ['PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'TZ', 'TMPDIR', 'TEMP', 'TMP', 'SHELL', 'TERM',
   'SystemRoot', 'ComSpec', 'PATHEXT', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'WINDIR'];
 
-function hookEnv(hook, event, ctx) {
+function hookEnv(hook, event, ctx, workingDir) {
   const env = {};
   for (const key of ENV_ALLOW) if (process.env[key] !== undefined) env[key] = process.env[key];
   env.MOUAIF_EVENT = event;
   env.MOUAIF_HOOK_ID = hook.id;
   env.MOUAIF_PROJECT_DIR = ctx.projectDir || '';
+  env.MOUAIF_WORKING_DIR = workingDir;
   env.MOUAIF_CHAT_ID = ctx.chatId || '';
   if (hook.extension) env.MOUAIF_EXTENSION_ID = hook.extension;
   return env;
@@ -400,7 +411,13 @@ async function runCommand(hook, input, ctx) {
       argv = [];
       useShell = true;
     }
-    const cwd = ctx.cwd && fs.existsSync(ctx.cwd) ? ctx.cwd : (ctx.projectDir && fs.existsSync(ctx.projectDir) ? ctx.projectDir : os.homedir());
+    const projectFolder = ctx.projectDir && fs.existsSync(ctx.projectDir) ? ctx.projectDir : '';
+    const workingDir = ctx.cwd && fs.existsSync(ctx.cwd) ? ctx.cwd : (projectFolder || os.homedir());
+    // A project hook runs from the project folder: its trust hash covers the
+    // files its relative paths name there, not a copy in a chat's working
+    // folder (a worktree, another repository). It finds that folder in
+    // MOUAIF_WORKING_DIR.
+    const cwd = hook.scope === 'project' && projectFolder ? projectFolder : workingDir;
     return await new Promise((resolve) => {
       let stdout = '';
       let stderr = '';
@@ -409,7 +426,7 @@ async function runCommand(hook, input, ctx) {
       let child;
       try {
         child = spawn(file, argv, {
-          cwd, env: hookEnv(hook, input.event, ctx), shell: useShell,
+          cwd, env: hookEnv(hook, input.event, ctx, workingDir), shell: useShell,
           stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
           detached: process.platform !== 'win32'
         });
@@ -484,7 +501,8 @@ async function runHttp(hook, input, ctx) {
     if (!send.has('args')) delete body.args;
     else if (body.args !== undefined) body.args = require('./toolApproval.js').safeValue(body.args);
     if (!send.has('result')) { delete body.result; delete body.resultText; delete body.truncated; }
-    if (!send.has('content')) delete body.content;
+    // A subagent's task is a prompt: it goes out under the same choice.
+    if (!send.has('content')) { delete body.content; delete body.task; }
     if (!send.has('text')) delete body.text;
     const text = JSON.stringify(body);
     const headers = { 'Content-Type': 'application/json', 'X-Mouaif-Hook': String(input.event || ''), 'User-Agent': 'mouaif-hooks' };
@@ -660,6 +678,45 @@ function resultForPayload(result) {
   return { resultText: text.slice(0, MAX_PAYLOAD_TEXT), truncated: true };
 }
 
+function failedRun(failure) {
+  return { code: -1, stdout: '', stderr: '', failure, timedOut: false, ms: 0 };
+}
+
+// What one hook receives on stdin. `args` are the call's current arguments,
+// after any earlier hook's updatedArgs.
+function hookInput(event, hook, payload, args, ctx) {
+  const input = {
+    mouaifHook: 1,
+    event,
+    hookId: hook.id,
+    projectDir: ctx.projectDir || '',
+    chatId: ctx.chatId || '',
+    origin: payload.origin || { kind: 'user' },
+    nested: !!ctx.nested
+  };
+  if (event === 'prompt.submit') {
+    input.content = clip(payload.content || '', MAX_PAYLOAD_TEXT * 4);
+    input.attachments = payload.attachments || 0;
+  } else if (EVENT_FIELDS[event]) {
+    for (const key of EVENT_FIELDS[event]) {
+      if (payload[key] === undefined) continue;
+      input[key] = typeof payload[key] === 'string' ? clip(payload[key], MAX_PAYLOAD_TEXT) : payload[key];
+    }
+  } else {
+    input.tool = payload.tool;
+    input.family = toolFamily(payload.tool);
+    const server = mcpServerOf(payload.tool);
+    if (server) input.mcpServer = server;
+    input.callId = payload.callId || null;
+    input.args = args;
+    if (event === 'tool.after') {
+      input.ok = !!payload.ok;
+      Object.assign(input, resultForPayload(payload.result));
+    }
+  }
+  return input;
+}
+
 // runHooks(event, payload, ctx) -> {
 //   decision: 'continue' | 'block' | 'ask', reason?, by?,
 //   args?        (tool.before, after every updatedArgs, when changed)
@@ -689,50 +746,38 @@ async function runHooks(event, payload, ctx = {}) {
   const matching = [];
   for (const hook of all) {
     if (hook.event !== event || !hook.enabled) continue;
-    if (await hookMatches(hook, event, payload, ctx)) matching.push(hook);
+    const match = await hookMatches(hook, event, payload, ctx);
+    if (match) matching.push({ hook, unresolved: match === UNRESOLVED });
   }
   if (!matching.length) return outcome;
 
   let args = payload.args;
   let argsChanged = false;
+  let started = 0;
   const contexts = [];
-  for (let i = 0; i < matching.length; i++) {
-    const hook = matching[i];
-    if (i >= MAX_PER_EVENT) {
-      outcome.notes.push({ hook: hook.id, name: hook.name, event, decision: 'skipped', reason: 'more than ' + MAX_PER_EVENT + ' hooks matched', ms: 0 });
+  for (const { hook, unresolved } of matching) {
+    if (ctx.signal && ctx.signal.aborted) break;
+    const overLimit = !unresolved && started >= MAX_PER_EVENT;
+    const notRun = unresolved ? 'its arguments pattern did not finish' : overLimit ? 'more than ' + MAX_PER_EVENT + ' hooks matched' : '';
+    // A hook that could not run counts as failed when it is set to block on
+    // failure: a guard must not be bypassed by a slow pattern or a long list.
+    if (notRun && !(hook.failClosed && BLOCKING_EVENTS.includes(event))) {
+      const skipped = { hook: hook.id, event, decision: overLimit ? 'skipped' : 'error', ms: 0 };
+      if (hook.name) skipped.name = hook.name;
+      if (overLimit) skipped.reason = notRun; else skipped.error = notRun;
+      outcome.notes.push(skipped);
+      logRun(skipped, ctx);
       continue;
     }
-    if (ctx.signal && ctx.signal.aborted) break;
-    const input = {
-      mouaifHook: 1,
-      event,
-      hookId: hook.id,
-      projectDir: ctx.projectDir || '',
-      chatId: ctx.chatId || '',
-      origin: payload.origin || { kind: 'user' },
-      nested: !!ctx.nested
-    };
-    if (event === 'prompt.submit') {
-      input.content = clip(payload.content || '', MAX_PAYLOAD_TEXT * 4);
-      input.attachments = payload.attachments || 0;
-    } else if (EVENT_FIELDS[event]) {
-      for (const key of EVENT_FIELDS[event]) {
-        if (payload[key] === undefined) continue;
-        input[key] = typeof payload[key] === 'string' ? clip(payload[key], MAX_PAYLOAD_TEXT) : payload[key];
-      }
-    } else {
-      input.tool = payload.tool;
-      input.family = toolFamily(payload.tool);
-      const server = mcpServerOf(payload.tool);
-      if (server) input.mcpServer = server;
-      input.callId = payload.callId || null;
-      input.args = args;
-      if (event === 'tool.after') {
-        input.ok = !!payload.ok;
-        Object.assign(input, resultForPayload(payload.result));
-      }
+    let run;
+    if (notRun) run = failedRun(notRun);
+    else {
+      started++;
+      // A setup failure (no temp space, say) is a failed run, not a lost call:
+      // failClosed below still applies, and earlier hooks' decisions stand.
+      try { run = await runHandler(hook, hookInput(event, hook, payload, args, ctx), ctx); }
+      catch (e) { run = failedRun((e && e.message) || String(e)); }
     }
-    const run = await runHandler(hook, input, ctx);
     let parsed = parseOutput(run);
     if (parsed.decision === 'error' && hook.failClosed && BLOCKING_EVENTS.includes(event)) {
       parsed = { decision: 'block', reason: 'Hook "' + (hook.name || hook.id) + '" failed (' + parsed.error + ') and is set to block on failure.', error: parsed.error };

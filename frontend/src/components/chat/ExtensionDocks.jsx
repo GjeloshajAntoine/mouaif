@@ -27,23 +27,49 @@ export function PuzzleIcon({ size = 16 }) {
     'stroke-linejoin': 'round', 'aria-hidden': 'true' }, h('path', { d: PUZZLE_PATH }));
 }
 
-// useExtensionSurfaces(projectDir, slot) -> [surface] — the active views for a slot.
+// One request and one timer per project, however many slots are listening.
+const surfaceFeeds = new Map();
+
+function loadSurfaces(projectDir, feed) {
+  fetchJson('/api/extensions/surfaces?projectDir=' + encodeURIComponent(projectDir)).then((r) => {
+    if (surfaceFeeds.get(projectDir) !== feed || r.status !== 200 || !Array.isArray(r.body.surfaces)) return;
+    const json = JSON.stringify(r.body.surfaces);
+    if (json === feed.json) return;
+    feed.json = json;
+    feed.surfaces = r.body.surfaces;
+    for (const listener of feed.listeners) listener(feed.surfaces);
+  }, () => {});
+}
+
+function subscribeSurfaces(projectDir, listener) {
+  let feed = surfaceFeeds.get(projectDir);
+  if (!feed) {
+    feed = { surfaces: [], json: '[]', listeners: new Set() };
+    surfaceFeeds.set(projectDir, feed);
+    feed.refresh = () => loadSurfaces(projectDir, feed);
+    feed.timer = setInterval(() => { if (document.visibilityState !== 'hidden') feed.refresh(); }, POLL_MS);
+    window.addEventListener(EXTENSIONS_CHANGED, feed.refresh);
+    feed.refresh();
+  }
+  feed.listeners.add(listener);
+  listener(feed.surfaces);
+  return () => {
+    feed.listeners.delete(listener);
+    if (feed.listeners.size) return;
+    clearInterval(feed.timer);
+    window.removeEventListener(EXTENSIONS_CHANGED, feed.refresh);
+    surfaceFeeds.delete(projectDir);
+  };
+}
+
+// useExtensionSurfaces(projectDir, slot) -> [surface] — the active views for a
+// slot, or for every slot when `slot` is empty.
 export function useExtensionSurfaces(projectDir, slot) {
   const [list, setList] = useState([]);
-  const [tick, setTick] = useState(0);
   useEffect(() => {
     if (safeMode || !projectDir) { setList([]); return undefined; }
-    let stopped = false;
-    fetchJson('/api/extensions/surfaces?projectDir=' + encodeURIComponent(projectDir) + '&slot=' + encodeURIComponent(slot))
-      .then((r) => { if (!stopped) setList(r.status === 200 && Array.isArray(r.body.surfaces) ? r.body.surfaces : []); }, () => {});
-    return () => { stopped = true; };
-  }, [projectDir, slot, tick]);
-  useEffect(() => {
-    const bump = () => setTick((n) => n + 1);
-    const timer = setInterval(() => { if (document.visibilityState !== 'hidden') bump(); }, POLL_MS);
-    window.addEventListener(EXTENSIONS_CHANGED, bump);
-    return () => { clearInterval(timer); window.removeEventListener(EXTENSIONS_CHANGED, bump); };
-  }, []);
+    return subscribeSurfaces(projectDir, (surfaces) => setList(slot ? surfaces.filter((s) => s.slot === slot) : surfaces));
+  }, [projectDir, slot]);
   return list;
 }
 
@@ -62,7 +88,7 @@ function writeOpen(surface, open) {
   try { localStorage.setItem(storageKey(surface), open ? '1' : '0'); } catch { /* storage unavailable */ }
 }
 
-function ExtensionDock({ surface, projectDir, chatId }) {
+function ExtensionDock({ surface, projectDir, chatId, onAuthorize }) {
   const id = surface.extensionId + '/' + surface.surfaceId;
   const budgetKey = 'dock:' + id + '@' + chatId;
   const [open, setOpenState] = useState(() => readOpen(surface));
@@ -95,6 +121,7 @@ function ExtensionDock({ surface, projectDir, chatId }) {
         surface: { extensionId: surface.extensionId, surfaceId: surface.surfaceId, slot: 'chat.dock',
           projectName: (activeProject.value && activeProject.value.name) || '' },
         onBridge: (b) => { bridge.current = b; },
+        onAuthorize,
         onClosed: () => setOpen(false) })) : null,
     h('div', { class: 'run-dock webhook-dock ext-dock__bar', role: 'group', 'aria-label': label },
       h('span', { class: 'webhook-dock__icon' }, h(PuzzleIcon, { size: 16 })),
@@ -106,8 +133,8 @@ function ExtensionDock({ surface, projectDir, chatId }) {
         'aria-label': (open ? 'Close ' : 'Open ') + label, onClick: () => setOpen(!open) }, open ? 'Close' : 'Open')));
 }
 
-export function ExtensionDocks({ projectDir, chatId }) {
+export function ExtensionDocks({ projectDir, chatId, onAuthorize }) {
   const list = useExtensionSurfaces(projectDir, 'chat.dock');
   if (!list.length || !chatId) return null;
-  return h(Fragment, null, list.map((surface) => h(ExtensionDock, { key: surface.extensionId + '/' + surface.surfaceId, surface, projectDir, chatId })));
+  return h(Fragment, null, list.map((surface) => h(ExtensionDock, { key: surface.extensionId + '/' + surface.surfaceId, surface, projectDir, chatId, onAuthorize })));
 }

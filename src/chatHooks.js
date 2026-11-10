@@ -57,9 +57,11 @@ function present(row) {
   return { hook, createdBy: row.created_by, createdAt: row.created_at, status: row.status };
 }
 
+// Prepared once: runHooks reads this twice per tool call.
+let rowsStatement = null;
 function rows(projectDir, chatId) {
-  return store().prepare('SELECT * FROM chat_hook WHERE project_dir = ? AND chat_id = ? ORDER BY position, created_at')
-    .all(projectDir, chatId);
+  if (!rowsStatement) rowsStatement = store().prepare('SELECT * FROM chat_hook WHERE project_dir = ? AND chat_id = ? ORDER BY position, created_at');
+  return rowsStatement.all(projectDir, chatId);
 }
 
 // list(projectDir, chatId) -> [{ hook, createdBy, createdAt, status }]

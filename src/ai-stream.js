@@ -121,14 +121,22 @@ const NO_PROMPT_TOOLS = new Set(['report_progress', 'list_features']);
 const HOOKLESS_TOOLS = new Set([...NO_PROMPT_TOOLS, 'activate_skill']);
 
 // The context a hook process runs in: the chat's working folder as cwd.
+// Resolved on first use: most tool calls run no hook, and this reads the chat.
 function hookContextFor(opts) {
-  let cwd = opts && opts.projectDir;
-  try { cwd = require('./chatWorkingFolder.js').resolveForCall(opts.projectDir, opts.chatId, opts.workspaceChatId); }
-  catch { /* project folder */ }
+  let cwd;
+  let resolved = false;
   return {
     projectDir: opts && opts.projectDir,
     chatId: opts && opts.chatId,
-    cwd,
+    get cwd() {
+      if (!resolved) {
+        resolved = true;
+        cwd = opts && opts.projectDir;
+        try { cwd = require('./chatWorkingFolder.js').resolveForCall(opts.projectDir, opts.chatId, opts.workspaceChatId); }
+        catch { /* project folder */ }
+      }
+      return cwd;
+    },
     nested: !!(opts && opts.nestedSubagent),
     signal: opts && opts.signal
   };

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Hooks are commands mouaif runs at fixed points of a chat turn: when you send a prompt, before a tool runs and after it ran, when a turn starts, finishes or fails, and before a notification is sent. A hook can:
+Hooks are commands mouaif runs at fixed points of a chat turn: when you send a prompt, before a tool runs and after it ran, when a turn starts, finishes or fails, when a subagent finishes, and before a notification is sent. A hook can:
 
 - **block** a prompt or a tool call, with a reason the model reads,
 - **ask**: show the approval card for a call, even for a tool set to Allow,
@@ -52,7 +52,7 @@ Tools, **Tool groups** and **Arguments match** only apply to `tool.before` and `
 
 - **Tools**: tool names, comma-separated. `*` matches anything, so `mcp__github__*` matches every tool of that MCP server. Empty = every tool.
 - **Tool groups**: the groups of **Settings → Project → Tools**: **Shell**, **Files**, **Subagents**, **Chat tools**, **mouaif app** and **MCP servers** (every MCP tool). None ticked = every group. With tool names as well, a call must match both.
-- **Arguments match**: a regular expression searched in the call's arguments, written as JSON (`{"cmd":"git push -f origin main"}`). Empty = any arguments. A pattern gets 250 ms; a slower one counts as no match.
+- **Arguments match**: a regular expression searched in the call's arguments, written as JSON (`{"cmd":"git push -f origin main"}`). Empty = any arguments. A pattern gets 250 ms. A slower one counts as no match and shows as failed in **Recent runs**, unless the hook has **Block when the hook fails or times out** ticked: then the call is blocked.
 - **Sent by**: who sent the turn's prompt: **You**, **Webhook**, **Recurring task**, **MCP App** or **Hook follow-up** (a turn a `turn.end` hook started). None ticked = everyone.
 
 ### Writing a hook
@@ -167,9 +167,9 @@ When a `turn.end` hook answers with `followUp`, mouaif sends that text as the ne
 
 ### When hooks fail
 
-A hook that exits with another code, prints bad JSON or runs past its timeout (default 5 s, between 0.5 and 60 s) is an error. By default the turn goes on and the tool card says the hook failed. With **Block when the hook fails or times out** ticked, an error in `prompt.submit` or `tool.before` blocks instead. The other events have nothing to block: a failure is only recorded. An `attention` hook that fails lets the notification through.
+A hook that exits with another code, prints bad JSON or runs past its timeout (default 5 s, between 0.5 and 60 s) is an error. By default the turn goes on and the tool card says the hook failed. With **Block when the hook fails or times out** ticked, an error in `prompt.submit` or `tool.before` blocks instead. That covers every way the hook can fail to do its check: it could not start, its **Arguments match** pattern did not finish, or too many hooks matched for it to get a turn. The other events have nothing to block: a failure is only recorded. An `attention` hook that fails lets the notification through.
 
-When several hooks match, they run one after another in the list's order. A block stops the rest; an ask wins over carrying on; each hook sees the arguments the previous hooks changed; context from every hook is kept. At most 4 hooks run per event per call, and at most 8 hook processes run at once across the app.
+When several hooks match, they run one after another in the list's order. A block stops the rest; an ask wins over carrying on; each hook sees the arguments the previous hooks changed; context from every hook is kept. At most 4 hooks run per event per call, and at most 8 hook processes run at once across the app. A matching hook past the fourth is skipped and shows in **Recent runs**.
 
 To turn every hook off without the Settings page, start mouaif with `MOUAIF_NO_HOOKS=1`.
 
@@ -188,7 +188,11 @@ A project can define hooks under `hooks` in its `.mouaif.json` (or its settings 
 
 They stay **off** until you review them. While a project has hooks you have not trusted, its chats show a **Project hooks off** bar above the composer. **Review** lists every hook as written: command, script, URL or module source, plus the project files a command runs (`./scripts/deny.sh` above). **Trust and turn on** enables exactly what you saw. **Not now** hides the bar until the page reloads. **Settings → Hooks → This project** shows the same review and a **Turn off** button.
 
-Trust is tied to a fingerprint (a sha256 hash) of the hook list and every project file a command hook runs by relative path. Any change turns the hooks off again and brings the bar back: a `git pull` that edits a hook, or a change to one of those scripts. Reformatting the file does not count. The trust record stays in mouaif, never in the repository.
+Trust is tied to a fingerprint (a sha256 hash) of the hook list and every project file a command or inline script names by relative path, including after a `cd` in the same text. Any change turns the hooks off again and brings the bar back: a `git pull` that edits a hook, a change to one of those scripts, or one of them appearing or going away. Reformatting the file does not count. The trust record stays in mouaif, never in the repository.
+
+The fingerprint can only follow paths written out in the hook. A path built at run time (`$DIR/check.sh`) and a file that a reviewed script calls in turn are outside it, so read those before you trust the hook.
+
+A project hook always runs in the project folder, even when the chat's working folder is somewhere else, because that is where the reviewed files are. To act on the chat's folder, use `MOUAIF_WORKING_DIR`, which every command hook gets: `cd "$MOUAIF_WORKING_DIR" && git status`.
 
 Project hooks are not written through the settings screens or `update_settings`. Edit the file, or add one through the model's `hook_create` or the chat hooks panel's **Project** button. A hook added that way is trusted along with the others only if the project's hooks were already trusted. Otherwise all of them wait for your review.
 

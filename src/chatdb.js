@@ -85,9 +85,14 @@ const INDEX_SQL = `
     WHERE role = 'assistant' AND cost IS NOT NULL
 `;
 
+// The handle ensureTables() last finished on. Every chat read and write calls
+// it, so repeating the CREATE and PRAGMA statements would cost each of them.
+let ensuredDb = null;
+
 function ensureTables() {
   const settings = require('./settings.js');
   const d = settings.getDb();
+  if (ensuredDb === d) return;
   d.exec(CREATE_CHAT_TABLE);
 d.exec(CREATE_MESSAGE_TABLE);
 const chatColumns = d.prepare("PRAGMA table_info('chat_store')").all();
@@ -147,6 +152,7 @@ if (!messageColumns.some((column) => column.name === 'hooks')) {
 d.exec('ALTER TABLE message_store ADD COLUMN hooks TEXT');
 }
 d.exec(INDEX_SQL);
+ensuredDb = d;
 }
 
 // ---- Row <-> object mappers -----------------------------------------------

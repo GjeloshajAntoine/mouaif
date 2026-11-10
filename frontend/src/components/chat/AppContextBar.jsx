@@ -5,12 +5,13 @@
 // whether their context goes with the next prompt or was already sent. The
 // panel shows each entry exactly as the model receives it, with Clear and
 // Clear all. Reloaded when a view changes its context, after each prompt,
-// and every 20 s while visible.
+// and every 20 s while visible, as long as an extension view is active or
+// context is showing.
 import { h, Fragment } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
 import { APP_CONTEXT_CHANGED } from './extensionEvents.js';
-import { PuzzleIcon } from './ExtensionDocks.jsx';
+import { PuzzleIcon, useExtensionSurfaces } from './ExtensionDocks.jsx';
 import './extension-ui.css';
 
 const POLL_MS = 20000;
@@ -19,6 +20,9 @@ export function AppContextBar({ projectDir, chatId }) {
   const [entries, setEntries] = useState([]);
   const [open, setOpen] = useState(false);
   const [tick, setTick] = useState(0);
+  const surfaces = useExtensionSurfaces(projectDir, '');
+  const shouldPoll = useRef(false);
+  shouldPoll.current = surfaces.length > 0 || entries.length > 0;
   const base = '/api/extensions/context?projectDir=' + encodeURIComponent(projectDir || '') + '&chatId=' + encodeURIComponent(chatId || '');
   useEffect(() => {
     if (!projectDir || !chatId) { setEntries([]); return undefined; }
@@ -28,7 +32,7 @@ export function AppContextBar({ projectDir, chatId }) {
   }, [base, tick]);
   useEffect(() => {
     const bump = () => setTick((n) => n + 1);
-    const timer = setInterval(() => { if (document.visibilityState !== 'hidden') bump(); }, POLL_MS);
+    const timer = setInterval(() => { if (shouldPoll.current && document.visibilityState !== 'hidden') bump(); }, POLL_MS);
     window.addEventListener(APP_CONTEXT_CHANGED, bump);
     return () => { clearInterval(timer); window.removeEventListener(APP_CONTEXT_CHANGED, bump); };
   }, []);
