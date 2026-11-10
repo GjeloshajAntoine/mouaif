@@ -41,7 +41,7 @@ The fallback is not a degraded mode: it enforces the same caps and the same reda
 | Hidden files | Searched. `.github/workflows/ci.yml` is project source. |
 | Skipped directories | `node_modules`, `.git`, `.mouaif`, `dist`, `build`, `.cache`. These exclusions are applied **after** the caller's `include`, so no glob can re-include a skipped tree. |
 | Extensionless files | Searched, so `Dockerfile`, `Makefile` and `LICENSE` are reachable. |
-| Unknown extensions | Skipped in the walk backend (a stray `dump.001` or a photo is not source). ripgrep decides by content, so it searches any file that is text. |
+| Unknown extensions | Skipped in the walk backend (a stray `dump.001` or a photo is not source). The walk's list of known text extensions is the file editor's (`src/files.js`), so `.lock`, `.mod`, `.csv`, `.tf`, `.env` and the like are searched. ripgrep decides by content, so it searches any file that is text. |
 | Binary files | Skipped. |
 | Global ignore files | Not applied (`--no-ignore-global`): a developer's personal `~/.gitignore` is not part of the project. |
 | `.ripgreprc` | Not applied (`--no-config`): a project config file must not silently change what the model sees. |

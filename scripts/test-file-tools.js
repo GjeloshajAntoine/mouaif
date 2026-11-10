@@ -196,6 +196,19 @@ function writeFile(p, content) {
   assert(await listed('/etc/*.conf') === 'EOUTSIDE_PROJECT', 'list_files refuses an absolute glob outside the project');
   fs.rmSync(path.join(root, 'node_modules', 'lib', 'node_modules'), { recursive: true });
 
+  // Text files without a known extension are listed (search_files finds them
+  // too); binaries are not.
+  const plainNames = ['Dockerfile', 'Makefile', 'LICENSE', '.gitignore', '.env.example', 'go.mod', 'yarn.lock', 'data.csv', 'main.tf'];
+  const plainDir = path.join(root, 'plain');
+  for (const n of plainNames) writeFile(path.join(plainDir, n), 'text ' + n + '\n');
+  fs.writeFileSync(path.join(plainDir, 'blob.unknown'), Buffer.from([0x50, 0x4b, 0x00, 0x00, 0x01]));
+  fs.writeFileSync(path.join(plainDir, 'font.woff2'), Buffer.from('wOF2 looks like text but is a font'));
+  const plainListed = await listed('plain');
+  assert(plainNames.every((n) => plainListed.indexOf('plain/' + n) >= 0), 'list_files lists extensionless and unknown-extension text files');
+  assert(plainListed.indexOf('plain/blob.unknown') === -1, 'list_files skips an unknown-extension binary');
+  assert(plainListed.indexOf('plain/font.woff2') === -1, 'list_files skips a known binary extension without reading it');
+  fs.rmSync(plainDir, { recursive: true });
+
 
   // Empty pattern.
   const r2z = await files.runFileTool('list_files', { projectDir: root, args: { pattern: '   ' } });

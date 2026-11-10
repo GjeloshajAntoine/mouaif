@@ -70,19 +70,12 @@ const { err, relEscapes, canonicalPath } = require('../util.js');
 // Caps applied when the caller did not override them in settings.
 const DEFAULT_MAX_MATCHES = 200;
 const DEFAULT_MAX_BYTES = 2 * 1024 * 1024;
-// The walker still uses the old extension allowlist for files it cannot
-// identify, but the list is now a fallback, not the filter: nameless files
+// The walker still uses an extension allowlist for files it cannot
+// identify, but the list is a fallback, not the filter: nameless files
 // (no extension) are searched too, because that is where Dockerfile and
-// friends live.
-const TEXT_EXTS = new Set([
-  '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.json', '.md', '.mdx',
-  '.txt', '.py', '.rb', '.go', '.rs', '.java', '.kt', '.swift',
-  '.c', '.h', '.cpp', '.hpp', '.cc', '.cs', '.php',
-  '.css', '.scss', '.less', '.html', '.htm', '.xml', '.svg',
-  '.yml', '.yaml', '.toml', '.ini', '.sh', '.bash', '.zsh', '.fish',
-  '.lua', '.pl', '.r', '.dart', '.ex', '.exs', '.clj', '.scala',
-  '.sql', '.graphql', '.vue', '.svelte', '.astro'
-]);
+// friends live. The list is the file editor's (src/files.js), so the walk,
+// list_files and the editor agree on what counts as text.
+const TEXT_EXTS = new Set(require('../files.js').TEXT_EXTS);
 
 // Directories neither engine descends into. ripgrep gets these as `-g`
 // exclusions so it never walks them at all.

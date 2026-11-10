@@ -59,7 +59,7 @@ const searchEngine = require('./searchEngine.js');
 // Image extension knowledge (and the ext -> MIME map) lives in src/files.js
 // — the same list the file editor previews with — so `read_file` and the
 // editor never disagree about what counts as an image.
-const { isImageExt, mimeForExt } = require('../files.js');
+const { isImageExt, mimeForExt, isProbablyText } = require('../files.js');
 
 // ---- Constants ---------------------------------------------------------
 
@@ -79,9 +79,21 @@ const DEFAULT_SEARCH_MAX_MATCHES = searchEngine.DEFAULT_MAX_MATCHES;
 const DEFAULT_SEARCH_MAX_BYTES = searchEngine.DEFAULT_MAX_BYTES;
 const SKIP_DIRS = new Set(searchEngine.SKIP_DIRS);
 
-// Extension allowlist for list_files. search_files decides for itself (the
-// engine compares content, and the walk searches extensionless files).
+// Known text extensions (the file editor's list). list_files also keeps a
+// file whose extension is missing or unknown when its first 8 KiB look like
+// text, so Dockerfile, Makefile, LICENSE, .gitignore or .env.example are
+// listed — search_files already finds them, and the model must not be told
+// they do not exist. Extensions that are always binary skip that read.
 const TEXT_EXTS = new Set(searchEngine.TEXT_EXTS);
+const BINARY_EXTS = new Set([
+  '.zip', '.gz', '.tgz', '.bz2', '.xz', '.7z', '.rar', '.tar', '.jar', '.war',
+  '.exe', '.dll', '.so', '.dylib', '.o', '.a', '.lib', '.obj', '.class', '.pyc', '.pyo', '.wasm', '.node',
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt',
+  '.woff', '.woff2', '.ttf', '.otf', '.eot',
+  '.mp3', '.mp4', '.m4a', '.wav', '.ogg', '.flac', '.webm', '.mov', '.avi', '.mkv',
+  '.tiff', '.tif', '.psd', '.heic', '.avif',
+  '.sqlite', '.sqlite3', '.db', '.bin', '.dat', '.iso', '.dmg'
+]);
 
 // ---- Errors ------------------------------------------------------------
 
@@ -480,12 +492,14 @@ async function runListFiles(opts) {
       if (!ent.isFile()) { skipped++; continue; }
       // Pattern filter.
       if (re && !re.test(childRel)) continue;
-      // Extension allowlist — text files the model can read, plus pictures
-      // it can now open with `read_file`. Images are flagged in the entry so
-      // the model knows which read returns pixels instead of a body.
+      // Text files the model can read (a known extension, or a sniffed
+      // extensionless / unknown one), plus pictures it can open with
+      // `read_file`. Images are flagged in the entry so the model knows
+      // which read returns pixels instead of a body.
       const ext = path.extname(ent.name).toLowerCase();
       const image = !TEXT_EXTS.has(ext) && isImageExt(ext);
-      if (!TEXT_EXTS.has(ext) && !image) { skipped++; continue; }
+      const text = TEXT_EXTS.has(ext) || (!image && !BINARY_EXTS.has(ext) && await isProbablyText(childAbs));
+      if (!text && !image) { skipped++; continue; }
       out.push(image ? { path: childRel, image: true } : { path: childRel });
     }
   }

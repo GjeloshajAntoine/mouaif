@@ -35,7 +35,9 @@ const projects = require('./projects.js');
 // call when we need to (tests).
 const DEFAULT_MAX_BYTES = 1024 * 1024; // 1 MiB
 
-// Same allowlist as the file-tagging scan (docs/decisions.md §15).
+// Same allowlist as the file-tagging scan (docs/decisions.md §15). The
+// agent file tools (list_files, the search engine's walk) use this list too,
+// so the editor and the model agree on what counts as a text file.
 // Anything outside is treated as binary for editor purposes unless
 // the small-file text sniff in `isProbablyText` recognises it.
 const TEXT_EXTS = new Set([
@@ -53,7 +55,8 @@ const TEXT_EXTS = new Set([
   '.lock', '.sum', '.mod', '.properties',
   '.nim', '.zig', '.v', '.sv', '.svh',
   '.ex', '.exs', '.erl', '.hrl', '.clj', '.cljs', '.cljc',
-  '.tf', '.hcl', '.nix', '.dhall'
+  '.tf', '.hcl', '.nix', '.dhall',
+  '.scala', '.astro', '.jsonc', '.json5'
 ]);
 // Image extensions the file modal can preview inline. The same home
 // + MOUAIF_ALLOW_ANY_ROOT guard protects reads, just like the text
