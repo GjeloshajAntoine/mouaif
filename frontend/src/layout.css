@@ -419,7 +419,15 @@ box-shadow: 0 1px 4px rgba(110,168,254,.25), inset 0 1px 0 rgba(255,255,255,.25)
   align-items: center;
   justify-content: center;
   padding: 0;
+  text-decoration: none;
   transition: background 80ms ease, transform 80ms ease;
+}
+.page-bar__add--label {
+  width: auto;
+  padding: 0 12px;
+  font-size: 0.86rem;
+  font-weight: 500;
+  white-space: nowrap;
 }
 @media (hover: hover) {
   .page-bar__add:hover  { background: var(--accent-press); }

@@ -775,7 +775,7 @@ debouncer(() => saveAgentFiles(agentFilesOn, v));
       setProjectPath(res.path || d);
       setCurrentProject(res.project);
       setEditorText(JSON.stringify(res.project, null, 2));
-      setStorageStatusMsg(res.dbBacked ? 'stored in app DB — project folder unchanged' : 'stored in .mouaif.json');
+      setStorageStatusMsg(res.dbBacked ? 'stored in app DB' : 'stored in .mouaif.json');
     } catch (err) {
       setStorageStatusMsg('save failed: ' + (err && err.message ? err.message : err));
     }
@@ -1290,7 +1290,8 @@ h('h2', { class: 'view-title' }, 'Technical details')
           h('details', { class: 'settings-project__info' },
             h('summary', { 'aria-label': 'About project settings storage' }, '?'),
             h('div', { class: 'settings-project__info-body' },
-              h('p', null, 'Keep this project’s settings in the app database instead of writing a ', h('code', null, '.mouaif.json'), ' file. The project folder stays untouched, so nothing shows up in git.')
+              h('p', null, 'Keep this project’s settings in the app database instead of writing a ', h('code', null, '.mouaif.json'), ' file. The project folder stays untouched, so nothing shows up in git.'),
+              h('p', null, 'Chat artifacts follow this choice: they move to the app database, or back to ', h('code', null, '.mouaif/artifacts/'), ' in the project.')
             )
           )
         ),
