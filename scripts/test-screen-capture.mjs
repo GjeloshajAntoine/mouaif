@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { normalizedZone, zonePixels, differenceBounds, captureCanvas, exportCapture, captureAttachment, MAX_CAPTURE_FRAMES } from '../frontend/src/components/chat/screenCapture.js';
+import { normalizedZone, zonePixels, differenceBounds, captureCanvas, exportCapture, captureAttachment, createCaptureCache, prepareReview, MAX_CAPTURE_FRAMES, MAX_IGNORE_ZONES } from '../frontend/src/components/chat/screenCapture.js';
 
 function frame(width, height) { return { width, height, data: new Uint8ClampedArray(width * height * 4) }; }
 function pixel(image, x, y, rgb = 255) { const at = (y * image.width + x) * 4; image.data.set([rgb, rgb, rgb, 255], at); }
@@ -48,6 +48,34 @@ const attachment = captureAttachment('data:image/png;base64,AAAA', 1, { x: 2, y:
 assert.equal(attachment.name, 'screen-2-changes-x2-y2-3x2.png');
 assert.deepEqual(Object.keys(attachment), ['type', 'mimeType', 'dataUrl', 'name']);
 assert.equal(MAX_CAPTURE_FRAMES, 8);
+assert.equal(MAX_IGNORE_ZONES, 8);
+
+// Review edits reuse cached comparisons and encodes; a zone change recomputes.
+const work = { difference: 0, encode: 0 };
+const cache = createCaptureCache({
+  difference: (a, b) => { work.difference += 1; return a.marks === b.marks ? null : { x: b.marks, y: 0, width: 1, height: 1, changed: 1 }; },
+  encode: (canvas, zones, bounds) => { work.encode += 1; return `png:${canvas.marks}:${bounds ? bounds.x : 'full'}`; }
+});
+const shots = [0, 1, 2, 2].map((marks) => ({ width: 4, height: 4, marks }));
+const tray = (selected = [true, true, true, true], output = 'changes') => shots.map((canvas, index) => ({ id: index + 1, canvas, selected: selected[index], output }));
+const zonesA = [];
+let review = prepareReview(tray(), zonesA, cache);
+assert.deepEqual(review.map((f) => f.reference), [null, 0, 1, 2]);
+assert.deepEqual(review.map((f) => f.eligible), [true, true, true, false], 'unchanged image is not eligible in changed-area mode');
+const firstPass = { ...work };
+prepareReview(tray([true, true, true, false]), zonesA, cache);
+prepareReview(tray(undefined, 'full'), zonesA, cache);
+assert.equal(work.difference, firstPass.difference, 'selection and output edits reuse comparisons');
+assert.equal(work.encode, firstPass.encode + 2, 'switching to full encodes only the two cropped images, once');
+prepareReview(tray(), [], cache);
+assert.equal(work.difference, firstPass.difference + 3, 'a zone change recomputes comparisons');
+// Unticking image 2 makes image 3 compare with image 1, which the AI sees.
+review = prepareReview(tray([true, false, true, true]), zonesA, cache);
+assert.deepEqual(review.map((f) => f.reference), [null, 0, 0, 2]);
+assert.equal(review[2].bounds.x, 2);
+// Without an earlier selected image, a crop falls back to the previous capture.
+review = prepareReview(tray([false, false, true, true]), zonesA, cache);
+assert.deepEqual(review.map((f) => f.reference), [null, 0, 1, 2]);
 
 const read = (path) => fs.readFileSync(new URL('../' + path, import.meta.url), 'utf8');
 const chat = read('frontend/src/components/chat/Chat.jsx');

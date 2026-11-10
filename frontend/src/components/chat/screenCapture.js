@@ -3,6 +3,7 @@ import { canvasToBoundedPngDataUrl } from './annotation.js';
 
 export const MAX_CAPTURE_FRAMES = 8;
 export const MAX_CAPTURE_EDGE = 1280;
+export const MAX_IGNORE_ZONES = 8;
 
 export function normalizedZone(x1, y1, x2, y2) {
   const clamp = (v) => Math.max(0, Math.min(1, Number(v) || 0));
@@ -81,6 +82,53 @@ export function exportCapture(canvas, zones, bounds = null, makeCanvas = () => d
   if (!cropCtx) throw new Error('Could not prepare the changed area.');
   cropCtx.drawImage(masked, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, bounds.width, bounds.height);
   return canvasToBoundedPngDataUrl(crop, { makeCanvas });
+}
+
+// Review edits (selection, output) must not re-read pixels or re-encode PNGs,
+// so results are cached per canvas. Entries are keyed by the zones array
+// identity: any zone change invalidates them. Discarded canvases are released
+// with their entries.
+export function createCaptureCache({ difference = frameDifference, encode = exportCapture } = {}) {
+  const diffs = new WeakMap(), exports = new WeakMap();
+  function entry(map, canvas, zones, make) {
+    let found = map.get(canvas);
+    if (!found || found.zones !== zones) { found = { zones, results: make() }; map.set(canvas, found); }
+    return found.results;
+  }
+  return {
+    difference(before, canvas, zones) {
+      const results = entry(diffs, canvas, zones, () => new WeakMap());
+      if (!results.has(before)) results.set(before, difference(before, canvas, zones));
+      return results.get(before);
+    },
+    export(canvas, zones, bounds = null) {
+      const results = entry(exports, canvas, zones, () => new Map());
+      const key = bounds ? `${bounds.x},${bounds.y},${bounds.width},${bounds.height}` : 'full';
+      if (!results.has(key)) results.set(key, encode(canvas, zones, bounds));
+      return results.get(key);
+    }
+  };
+}
+
+// A changed-area image is compared with the latest earlier image that will be
+// attached, so a crop never depends on an image the AI won't see. With no
+// earlier image selected, it falls back to the previous capture.
+export function prepareReview(frames, zones, cache) {
+  let attached = -1;
+  return frames.map((frame, index) => {
+    const reference = attached >= 0 ? attached : index - 1;
+    const before = frames[reference]?.canvas;
+    const sameSize = !!before && before.width === frame.canvas.width && before.height === frame.canvas.height;
+    const bounds = sameSize ? cache.difference(before, frame.canvas, zones) : null;
+    const unchanged = sameSize && !bounds;
+    const crop = frame.output === 'changes' && bounds ? bounds : null;
+    let prepared;
+    try {
+      prepared = { ...frame, reference: sameSize ? reference : null, bounds: crop, unchanged, dataUrl: cache.export(frame.canvas, zones, crop), eligible: frame.output === 'full' || !unchanged };
+    } catch (e) { prepared = { ...frame, eligible: false, exportError: e.message }; }
+    if (prepared.selected && prepared.eligible) attached = index;
+    return prepared;
+  });
 }
 
 export function captureAttachment(dataUrl, index, bounds = null) {

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { useModal } from '../../hooks/useModal.js';
 import { fileToImageAttachment } from './imageInput.js';
 import { formatVideoTime, videoSampleTimes, waitForVideo, waitForVideoDuration, seekVideoFrame, releaseVideo } from './videoCapture.js';
-import { MAX_CAPTURE_FRAMES, captureCanvas, captureAttachment, exportCapture, frameDifference, normalizedZone } from './screenCapture.js';
+import { MAX_CAPTURE_FRAMES, MAX_IGNORE_ZONES, captureCanvas, captureAttachment, createCaptureCache, normalizedZone, prepareReview } from './screenCapture.js';
 
 export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
   const [sharing, setSharing] = useState(false);
@@ -22,6 +22,7 @@ export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
   const [message, setMessage] = useState('Choose a screen or import screenshots or a video. Nothing is sent automatically.');
   const [error, setError] = useState('');
   const [attaching, setAttaching] = useState(false);
+  const [cache] = useState(createCaptureCache);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const importedVideoRef = useRef(null);
@@ -135,7 +136,9 @@ export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
       }
       setMessage(`${framesRef.current.length - initialCount} video images added. Review the selection below; unchanged sampled frames are skipped in changed-area mode.`);
     } catch (e) {
-      if (aliveRef.current && e.name !== 'AbortError') setError(e.message);
+      if (!aliveRef.current) return;
+      if (e.name === 'AbortError') setMessage(`Extraction stopped. ${framesRef.current.length - initialCount} video images kept.`);
+      else setError(e.message);
     } finally {
       if (aliveRef.current && videoAbortRef.current === controller) {
         videoAbortRef.current = null; setBusy(false); setExtracting(false);
@@ -146,12 +149,12 @@ export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
   function addFrame(canvas, timeLabel = null) {
     const previous = framesRef.current;
     if (previous.length >= MAX_CAPTURE_FRAMES) {
-      setAutomatic(false); setMessage('The review tray is full (8 images). Attach your selection or clear it.'); return;
+      setAutomatic(false); setMessage(`The review tray is full (${MAX_CAPTURE_FRAMES} images). Attach your selection or clear it.`); return;
     }
     const settings = settingsRef.current;
     const before = previous[previous.length - 1]?.canvas;
     const sameSize = before && before.width === canvas.width && before.height === canvas.height;
-    const bounds = sameSize ? frameDifference(before, canvas, settings.zones) : null;
+    const bounds = sameSize ? cache.difference(before, canvas, settings.zones) : null;
     if (sameSize && !bounds && settings.mode === 'changes') {
       setMessage('No changes outside the ignored zones. No new image saved.'); return;
     }
@@ -196,22 +199,13 @@ export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
     }
   }
 
-  const prepared = useMemo(() => frames.map((frame, index) => {
-    const before = frames[index - 1]?.canvas;
-    const sameSize = before && before.width === frame.canvas.width && before.height === frame.canvas.height;
-    const bounds = sameSize ? frameDifference(before, frame.canvas, zones) : null;
-    const unchanged = !!sameSize && !bounds;
-    const crop = frame.output === 'changes' && bounds ? bounds : null;
-    try {
-      return { ...frame, bounds: crop, unchanged, dataUrl: exportCapture(frame.canvas, zones, crop), eligible: frame.output === 'full' || !unchanged };
-    } catch (e) { return { ...frame, eligible: false, exportError: e.message }; }
-  }), [frames, zones]);
+  const prepared = useMemo(() => prepareReview(frames, zones, cache), [frames, zones]);
   const chosen = prepared.filter((frame) => frame.selected && frame.eligible);
   const latest = prepared[prepared.length - 1];
   // The zone editor always shows the full frame, not its cropped output.
   const zonePreview = useMemo(() => {
     if (!frames.length) return null;
-    try { return exportCapture(frames[frames.length - 1].canvas, zones); } catch { return null; }
+    try { return cache.export(frames[frames.length - 1].canvas, zones); } catch { return null; }
   }, [frames, zones]);
 
   function updateFrame(id, patch) {
@@ -242,7 +236,7 @@ export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
     const p = point(event), start = drawRef.current;
     const zone = normalizedZone(start.x, start.y, p.x, p.y);
     drawRef.current = null; setDraftZone(null); setDrawing(false);
-    if (zone.width > 0.01 && zone.height > 0.01) setZones((previous) => previous.concat(zone).slice(0, 8));
+    if (zone.width > 0.01 && zone.height > 0.01) setZones((previous) => previous.concat(zone).slice(0, MAX_IGNORE_ZONES));
     else setMessage('Drag across the preview to create an ignored rectangle.');
   }
   async function onConfirm() {
@@ -271,8 +265,8 @@ export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
           h('p', { class: 'capture__hint' }, sharing ? 'Screen sharing is active. Stop it at any time.' : supported ? 'Choose a browser tab, window or screen in the browser’s sharing dialog.' : 'This browser cannot share a screen. Import screenshots or a screen-recording video instead; desktop sharing requires HTTPS or localhost.'),
           h('div', { class: 'capture__actions' },
             sharing ? button('Stop sharing', () => { stopSharing(); setMessage('Sharing stopped. Review your captures below.'); }) : button(busy ? 'Opening…' : 'Share screen', onStartSharing, !supported || busy || attaching || !!importedVideo, true),
-            h('label', { class: 'btn capture__import' + (busy || sharing || attaching || frames.length >= 8 ? ' capture__import--disabled' : '') }, 'Import screenshots',
-              h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', multiple: true, disabled: busy || sharing || attaching || frames.length >= 8, onChange: onImport, 'aria-label': 'Import screenshots' })),
+            h('label', { class: 'btn capture__import' + (busy || sharing || attaching || frames.length >= MAX_CAPTURE_FRAMES ? ' capture__import--disabled' : '') }, 'Import screenshots',
+              h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', multiple: true, disabled: busy || sharing || attaching || frames.length >= MAX_CAPTURE_FRAMES, onChange: onImport, 'aria-label': 'Import screenshots' })),
             h('label', { class: 'btn capture__import' + (busy || sharing || attaching ? ' capture__import--disabled' : '') }, 'Import video',
               h('input', { type: 'file', accept: 'video/*,.mp4,.mov,.m4v,.webm', disabled: busy || sharing || attaching, onChange: onImportVideo, 'aria-label': 'Import video' }))
           ),
@@ -281,8 +275,8 @@ export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
             h('video', { ref: importedVideoRef, controls: !busy, muted: true, playsInline: true, preload: 'auto', 'aria-label': 'Imported video preview', onTimeUpdate: (e) => { if (!busy) setVideoPosition(e.currentTarget.currentTime); } }),
             h('p', { class: 'capture__hint' }, `Selected moment: ${formatVideoTime(videoPosition)}. Use the video timeline to choose a frame.`),
             h('div', { class: 'capture__actions' },
-              button('Capture this frame', () => onExtractVideo(), busy || attaching || frames.length >= 8, true),
-              button(`Extract every ${intervalSeconds}s`, () => onExtractVideo(true), busy || attaching || frames.length >= 8),
+              button('Capture this frame', () => onExtractVideo(), busy || attaching || frames.length >= MAX_CAPTURE_FRAMES, true),
+              button(`Extract every ${intervalSeconds}s`, () => onExtractVideo(true), busy || attaching || frames.length >= MAX_CAPTURE_FRAMES),
               extracting ? button('Stop extracting', () => videoAbortRef.current?.abort()) : button('Remove video', onRemoveVideo, busy || attaching)
             ),
             h('p', { class: 'capture__hint' }, 'Extraction starts at the selected moment and samples up to the remaining tray slots. Only chosen PNG images will be attached; no video or audio is sent.')
@@ -293,9 +287,9 @@ export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
           h('div', { class: 'capture__segments', role: 'group', 'aria-label': 'New capture output' },
             ['changes', 'full'].map((value) => h('button', { class: 'btn' + (mode === value ? ' btn--primary' : ''), type: 'button', 'aria-pressed': String(mode === value), onClick: () => setMode(value) }, value === 'changes' ? 'Changed area only' : 'Full image'))),
           h('p', { class: 'capture__hint' }, 'The first image is a full baseline. Changes are compared with the previous captured image. Unchanged captures are skipped in changed-area mode.'),
-          h('div', { class: 'capture__actions' }, button('Capture now', onCapture, !sharing || drawing || frames.length >= 8 || attaching, true)),
+          h('div', { class: 'capture__actions' }, button('Capture now', onCapture, !sharing || drawing || frames.length >= MAX_CAPTURE_FRAMES || attaching, true)),
           h('div', { class: 'capture__auto' },
-            h('label', null, h('input', { type: 'checkbox', checked: automatic, disabled: !sharing || frames.length >= 8 || attaching, onChange: (e) => setAutomatic(e.currentTarget.checked) }), 'Capture automatically'),
+            h('label', null, h('input', { type: 'checkbox', checked: automatic, disabled: !sharing || frames.length >= MAX_CAPTURE_FRAMES || attaching, onChange: (e) => setAutomatic(e.currentTarget.checked) }), 'Capture automatically'),
             h('select', { class: 'input', value: intervalSeconds, onChange: (e) => setIntervalSeconds(Number(e.currentTarget.value)), 'aria-label': 'Capture interval' }, [2, 3, 5, 10].map((value) => h('option', { value }, `Every ${value}s`)))
           )
         ),
@@ -303,8 +297,8 @@ export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
           h('h3', null, '3. Ignore zones'),
           h('p', { class: 'capture__hint' }, 'Ignored zones do not trigger differences and are blacked out in every attached image. Zones apply to all images in this tray.'),
           h('div', { class: 'capture__actions' },
-            button('Ignore top 5% (status bar)', () => setZones((previous) => previous.concat({ x: 0, y: 0, width: 1, height: 0.05 }).slice(0, 8)), zones.length >= 8 || attaching),
-            button(drawing ? 'Cancel drawing' : 'Draw ignored zone', () => { setDrawing(!drawing); drawRef.current = null; setDraftZone(null); }, !latest || zones.length >= 8 || attaching)
+            button('Ignore top 5% (status bar)', () => setZones((previous) => previous.concat({ x: 0, y: 0, width: 1, height: 0.05 }).slice(0, MAX_IGNORE_ZONES)), zones.length >= MAX_IGNORE_ZONES || attaching),
+            button(drawing ? 'Cancel drawing' : 'Draw ignored zone', () => { setDrawing(!drawing); drawRef.current = null; setDraftZone(null); }, !latest || zones.length >= MAX_IGNORE_ZONES || attaching)
           ),
           drawing ? h('p', { class: 'capture__hint', role: 'status' }, 'Drag a rectangle on the preview. Automatic capture pauses while drawing.') : null,
           zonePreview ? h('div', { class: 'capture__zone-preview' + (drawing ? ' capture__zone-preview--drawing' : ''), onPointerDown: onZoneStart, onPointerMove: onZoneMove, onPointerUp: onZoneEnd, onPointerCancel: () => { drawRef.current = null; setDraftZone(null); } },
@@ -317,13 +311,13 @@ export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
             button('Remove', () => setZones((previous) => previous.filter((_, i) => i !== index)), attaching)))) : null
         ),
         h('section', { class: 'capture__card' },
-          h('div', { class: 'capture__review-head' }, h('h3', null, `4. Review · ${frames.length}/8`), button('Clear tray', onClear, !frames.length || attaching || busy)),
+          h('div', { class: 'capture__review-head' }, h('h3', null, `4. Review · ${frames.length}/${MAX_CAPTURE_FRAMES}`), button('Clear tray', onClear, !frames.length || attaching || busy)),
           !frames.length ? h('div', { class: 'capture__empty' }, 'Your captures will appear here. Choose the images you want to attach.') : null,
           h('div', { class: 'capture__gallery' }, prepared.map((frame, index) => h('article', { key: frame.id, class: 'capture__frame' + (frame.selected && frame.eligible ? ' capture__frame--selected' : '') },
-            h('label', { class: 'capture__selection' }, h('input', { type: 'checkbox', checked: frame.selected, disabled: !frame.eligible || attaching, onChange: (e) => updateFrame(frame.id, { selected: e.currentTarget.checked }) }), `Image ${index + 1}`, h('span', null, frame.time)),
+            h('label', { class: 'capture__selection' }, h('input', { type: 'checkbox', checked: frame.selected && frame.eligible, disabled: !frame.eligible || attaching, onChange: (e) => updateFrame(frame.id, { selected: e.currentTarget.checked }) }), `Image ${index + 1}`, h('span', null, frame.time)),
             frame.dataUrl ? h('img', { src: frame.dataUrl, alt: `Capture ${index + 1}${frame.bounds ? ', changed area' : ', full image'}` }) : null,
             h('select', { class: 'input', value: frame.output, disabled: attaching, 'aria-label': `Output for image ${index + 1}`, onChange: (e) => updateFrame(frame.id, { output: e.currentTarget.value }) }, h('option', { value: 'full' }, 'Full image'), h('option', { value: 'changes' }, index === 0 ? 'Baseline (full image)' : 'Changed area only')),
-            h('p', { class: 'capture__hint' }, frame.exportError || (frame.bounds ? `Crop at ${frame.bounds.x}, ${frame.bounds.y} · ${frame.bounds.width} × ${frame.bounds.height}` : frame.unchanged && frame.output === 'changes' ? 'No difference. Choose Full image to include it.' : 'Full image · ignored zones masked'))
+            h('p', { class: 'capture__hint' }, frame.exportError || (frame.bounds ? `Changes since image ${frame.reference + 1} · Crop at ${frame.bounds.x}, ${frame.bounds.y} · ${frame.bounds.width} × ${frame.bounds.height}` : frame.unchanged && frame.output === 'changes' ? `No difference from image ${frame.reference + 1}. Choose Full image to include it.` : 'Full image · ignored zones masked'))
           )))
         ),
         h('p', { class: 'capture__message', role: 'status', 'aria-live': 'polite' }, message),

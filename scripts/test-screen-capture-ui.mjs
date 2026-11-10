@@ -106,7 +106,7 @@ if (process.argv.includes('--serve')) {
       input.dispatchEvent(new Event('change', { bubbles: true }));
     })()`);
     await wait('document.querySelectorAll(".capture__frame").length === 2 && !document.querySelector("input[type=file]").disabled');
-    assert.match(await evaluate('document.querySelectorAll(".capture__frame")[1].textContent'), /Crop at 40, 80 · 20 × 30/);
+    assert.match(await evaluate('document.querySelectorAll(".capture__frame")[1].textContent'), /Changes since image 1 · Crop at 40, 80 · 20 × 30/);
     assert.equal(await evaluate('window.attachments.length'), 0, 'no attachment before confirmation');
     assert.deepEqual(await evaluate(`(() => {
       const image = document.querySelector('.capture__frame img'); const c = document.createElement('canvas');
