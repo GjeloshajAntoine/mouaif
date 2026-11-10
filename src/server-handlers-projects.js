@@ -121,6 +121,8 @@ async function handleProjects(req, res, parsed) {
     // key the DB row under a path nothing else looks up, and the opt-in
     // would silently do nothing.
     if (body.dbBacked === true) {
+    // Whatever artifacts an earlier registration left in the folder follow it.
+    if (!settings.isDbBacked(row.path)) require('./artifacts.js').moveStorage(row.path, true);
     settings.setDbBacked(row.path, true);
     }
     // Config file choices (only when the project is file-backed): adopt an

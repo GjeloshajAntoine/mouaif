@@ -717,12 +717,16 @@ function deleteChat(projectDir, chatId) {
     d.prepare(
       'DELETE FROM message_store WHERE project_dir = ? AND chat_id = ?'
     ).run(projectDir, chatId);
+    // Rows go with the chat; a chat's folder, if any, once this has committed.
+    try { require('./artifactStores.js').dbStore.removeChat(projectDir, chatId); } catch { /* an unusable key holds no rows */ }
     if (info.changes > 0 && (previous.total || previous.knownCount)) {
       require('./projects.js').adjustProjectTotalCost(projectDir, -previous.total, -previous.knownCount);
     }
     return info.changes > 0;
   });
-  return tx();
+  const removed = tx();
+  try { require('./artifactStores.js').fileStore.removeChat(projectDir, chatId); } catch { /* no folder to remove */ }
+  return removed;
 }
 
 // ---- Message CRUD ---------------------------------------------------------

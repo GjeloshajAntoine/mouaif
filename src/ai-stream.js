@@ -485,6 +485,12 @@ async function runSingleToolCall(c, cx) {
       + '\nSource: ' + (args.path || args.filename || '(missing filename)')
       + '\nNo installs, Node execution of app source, MCP server registration or permission changes.';
       }
+      // A copy of an artifact is a new file in the project: this tool's family
+      // Allow must not stand in for the file tools' own permission.
+      if (c.name === 'export_artifact') {
+        forcePrompt = true;
+        summary = 'Write a copy of artifact ' + (args && args.name) + ' to ' + (args && args.path);
+      }
       // hook_create always reaches the user, even for Allow and session
       // grants: a hook persists and runs code on later turns. A malformed
       // request is answered at once, without a card (src/tools/hooks.js).
