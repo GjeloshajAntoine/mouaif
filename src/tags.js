@@ -31,7 +31,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { err, relEscapes } = require('./util.js');
+const { err, relEscapes, canonicalPath } = require('./util.js');
 const settings = require('./settings.js');
 const hideFileContent = require('./hideFileContent.js');
 
@@ -94,16 +94,14 @@ function toAbsInside(projectDir, relPath) {
   if (!rel || relEscapes(rel)) {
     throw err('EOUTSIDE_PROJECT', 'Path escapes the project root', { path: relPath });
   }
-  // Symlink guard: if the file exists and its realpath leaves root, refuse.
-  try {
-    const real = fs.realpathSync(abs);
-    const realRel = path.relative(fs.realpathSync(rootResolved), real);
-    if (relEscapes(realRel)) {
-      throw err('EOUTSIDE_PROJECT', 'Symlink target escapes the project root', { path: relPath });
-    }
-  } catch (e) {
-    if (e.code === 'EOUTSIDE_PROJECT') throw e;
-    // ENOENT (stale path) is fine here — the caller handles missing files.
+  // Symlink guard: refuse when the file, or the place it would be created,
+  // really lies outside root. Checking only a path that exists let a write
+  // to `link/new.txt` (link → an outside folder) or to a dangling link
+  // create its file outside; canonicalPath resolves both. A missing path is
+  // fine here — the caller handles missing files.
+  const realRel = path.relative(canonicalPath(rootResolved), canonicalPath(abs));
+  if (relEscapes(realRel)) {
+    throw err('EOUTSIDE_PROJECT', 'Symlink target escapes the project root', { path: relPath });
   }
   return abs;
 }

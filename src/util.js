@@ -207,25 +207,40 @@ function relEscapes(rel) {
   return rel === '..' || rel.startsWith('..' + path.sep) || rel.startsWith('../') || path.isAbsolute(rel);
 }
 
-// canonicalPath(value) — the realpath of `value`, or, when it does not exist
-// yet, the realpath of its nearest existing ancestor with the missing tail
-// re-joined. Path checks compare against a realpath'd root, so a path given
-// through the symlink alias the project was opened with must be resolved the
-// same way before it is compared.
+// canonicalPath(value) — where a read or write of `value` really lands: its
+// realpath, or, when it does not exist yet, the realpath of its nearest
+// existing ancestor with the missing tail re-joined. Path checks compare
+// against a realpath'd root, so a path given through the symlink alias the
+// project was opened with must be resolved the same way before it is
+// compared.
+//
+// A segment that fails realpath is not always missing: a dangling symlink
+// fails it too, and writing to it (or below it, after mkdir -p) creates the
+// link's target. Treating it as a missing name let a containment check pass
+// a write that landed wherever the link pointed, so a symlink segment is
+// replaced by its target and the walk goes on from there. A link loop gives
+// up and returns the path as written; the kernel refuses to open it anyway.
 function canonicalPath(value) {
   const absolute = path.resolve(value);
   let probe = absolute;
   const suffix = [];
+  let hops = 0;
   while (true) {
     try {
-      const real = fs.realpathSync(probe);
-      return path.resolve(real, ...suffix.reverse());
-    } catch {
-      const parent = path.dirname(probe);
-      if (parent === probe) return absolute;
-      suffix.push(path.basename(probe));
-      probe = parent;
+      return path.join(fs.realpathSync(probe), ...suffix);
+    } catch { /* missing, or a dangling link */ }
+    let link = null;
+    try { if (fs.lstatSync(probe).isSymbolicLink()) link = fs.readlinkSync(probe); }
+    catch { /* missing */ }
+    if (link !== null) {
+      if (++hops > 40) return absolute;
+      probe = path.resolve(canonicalPath(path.dirname(probe)), link);
+      continue;
     }
+    const parent = path.dirname(probe);
+    if (parent === probe) return absolute;
+    suffix.unshift(path.basename(probe));
+    probe = parent;
   }
 }
 

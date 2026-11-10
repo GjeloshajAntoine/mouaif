@@ -61,7 +61,7 @@ These native tools are in the **Chats** family, so they follow its Off / Ask / A
 | `read_artifact` | Reads text a page at a time. `offset` and `limit` move through it, and `nextOffset` gives the next page. A PNG, JPEG, WebP or GIF up to 4 MB comes back as the picture. |
 | `save_artifact` | Creates or replaces one from `content`, or copies a file with `path`. `description` is optional. Lines hidden with [Hide file content](./hide-file-content.md) stay hidden in the copy, and a hide rule also applies to an artifact stored as a file. |
 | `delete_artifact` | Deletes one. |
-| `export_artifact` | Writes a copy to a new file in the chat's working folder, so a command or file tool can use it. It always asks first, even when the family is **Allow**, and never replaces an existing file. |
+| `export_artifact` | Writes a copy to a new file in the chat's working folder, so a command or file tool can use it. It always asks first, even when the family is **Allow**, and never replaces an existing file. A path that would land outside the folder through a symlink, including a new file below a linked folder or a dangling link, is refused. |
 
 The agent is also told the names of the chat's artifacts at the start of each turn, so it doesn't need a call to learn what exists.
 

@@ -152,58 +152,14 @@ function toRelPath(root, p) {
   return rel.split(path.sep).join('/');
 }
 
-// Resolve a stored relPath back to an absolute path, with symlink check.
-// For files that exist on disk, realpath is used so a symlink that
-// points outside the project root is rejected. For files that don't
-// exist yet (write_file, mkdir -p), we walk up to the first existing
-// ancestor, realpath that, and verify the join is still inside the
-// root. The path safety contract is "no escape", not "file exists",
-// so the two cases share the same final check.
+// Resolve a stored relPath back to the absolute path a read or write lands
+// on, refusing one outside the root. canonicalPath realpaths what exists,
+// re-joins what does not (write_file, mkdir -p) onto its nearest existing
+// ancestor, and follows a dangling symlink to its target, so a symlink
+// leading out is refused whether or not its target exists. The contract is
+// "no escape", not "file exists".
 function toAbsInside(root, rel) {
-  const abs = path.resolve(root, rel);
-  // Fast path: file exists, realpath it, verify containment.
-  let real;
-  try { real = fs.realpathSync(abs); }
-  catch { real = null; }
-  if (real) {
-    const rel2 = path.relative(root, real);
-    if (!rel2 || relEscapes(rel2)) {
-      throw err('EOUTSIDE_PROJECT', 'Path escapes the project root', { path: rel });
-    }
-    return real;
-  }
-  // Slow path: file (or a parent) doesn't exist. Walk up until we find an
-  // ancestor that does, realpath that, then re-join the peeled segments and
-  // check containment of the result.
-  //
-  // A segment that fails realpath is not always missing: a dangling symlink
-  // fails it too, and writing to it creates the link's target. Peeling it
-  // like a missing name let write_file create a file anywhere a link inside
-  // the project pointed. So a symlink segment is replaced by its target and
-  // the walk goes on from there; the final check then sees where the write
-  // would really land.
-  let probe = abs;
-  const suffix = [];
-  let hops = 0;
-  let resolved;
-  while (true) {
-    try {
-      resolved = path.join(fs.realpathSync(probe), ...suffix);
-      break;
-    } catch { /* missing, or a dangling link */ }
-    let link = null;
-    try { if (fs.lstatSync(probe).isSymbolicLink()) link = fs.readlinkSync(probe); }
-    catch { /* missing */ }
-    if (link !== null) {
-      if (++hops > 40) throw err('ELOOP', 'Too many levels of symbolic links', { path: rel });
-      probe = path.resolve(canonicalPath(path.dirname(probe)), link);
-      continue;
-    }
-    const parent = path.dirname(probe);
-    if (parent === probe) { resolved = path.join(probe, ...suffix); break; }
-    suffix.unshift(path.basename(probe));
-    probe = parent;
-  }
+  const resolved = canonicalPath(path.resolve(root, rel));
   const rel2 = path.relative(root, resolved);
   if (!rel2 || relEscapes(rel2)) {
     throw err('EOUTSIDE_PROJECT', 'Path escapes the project root', { path: rel });

@@ -69,6 +69,23 @@ check('toRelPath keeps a ..-prefixed file name', tags.toRelPath(PROJ, '..notes.m
 throws('toRelPath refuses absolute outside', () => tags.toRelPath(PROJ, path.resolve(os.tmpdir(), 'x.js')), 'EOUTSIDE_PROJECT');
 throws('toRelPath refuses empty', () => tags.toRelPath(PROJ, ''), 'EBADINPUT');
 
+// toAbsInside guards artifact_export's write, so a path that does not exist
+// yet must still be refused when a symlink in it leads out. A separate
+// folder keeps the links out of the scan below.
+{
+  const linked = fs.mkdtempSync(path.join(HOME, 'linked-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-tags-out-'));
+  fs.symlinkSync(outside, path.join(linked, 'out-dir'));
+  fs.symlinkSync(path.join(outside, 'gone'), path.join(linked, 'dangling'));
+  fs.mkdirSync(path.join(linked, 'real'));
+  throws('toAbsInside refuses a new file below a symlink to an outside folder', () => tags.toAbsInside(linked, 'out-dir/new/x.txt'), 'EOUTSIDE_PROJECT');
+  throws('toAbsInside refuses a dangling symlink leading out', () => tags.toAbsInside(linked, 'dangling'), 'EOUTSIDE_PROJECT');
+  throws('toAbsInside refuses a new file below a dangling symlink leading out', () => tags.toAbsInside(linked, 'dangling/x.txt'), 'EOUTSIDE_PROJECT');
+  check('toAbsInside keeps a new file inside the project', tags.toAbsInside(linked, 'real/new/x.txt') === path.join(linked, 'real', 'new', 'x.txt'));
+  fs.rmSync(linked, { recursive: true, force: true });
+  fs.rmSync(outside, { recursive: true, force: true });
+}
+
 // ---- Scan ---------------------------------------------------------------
 
 const scan = tags.scanFiles(PROJ);
