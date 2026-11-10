@@ -254,6 +254,8 @@ export function formatToolArgs(args, toolName) {
   if (name === 'start_chat') return [args.chatId, args.content].filter(Boolean).join(': ');
   if (name === 'attach_chat_image') return args.path || '';
   if (name === 'list_chat_attachments') return args.chatId || '';
+  if (name === 'read_artifact' || name === 'save_artifact' || name === 'delete_artifact') return args.name || '';
+  if (name === 'export_artifact') return [args.name, args.path].filter(Boolean).join(' → ');
   if (name === 'create_mcp_app') return args.message ? [args.name, args.message].filter(Boolean).join(': ') : (args.name || args.filename || args.path || '');
   if (name === 'subagent_status') return args.callId || 'all workers';
   if (name === 'subagent_messages' || name === 'subagent_stop') return args.callId || '';
@@ -468,6 +470,10 @@ export function formatResultSummary(name, r) {
     }
     return null;
   }
+  if (n === 'list_artifacts') return Array.isArray(r.artifacts) ? r.artifacts.length + ' artifact' + (r.artifacts.length === 1 ? '' : 's') : null;
+  if (n === 'save_artifact') return r.created === true ? 'created' : r.created === false ? 'replaced' : null;
+  if (n === 'delete_artifact') return r.removedArtifact ? 'deleted' : null;
+  if (n === 'export_artifact') return r.path || null;
   if (n === 'get_settings' || n === 'update_settings') return r.scope || null;
   if (n === 'list_projects') {
     return Array.isArray(r.projects) ? r.projects.length + ' project' + (r.projects.length === 1 ? '' : 's') : null;
@@ -477,7 +483,7 @@ export function formatResultSummary(name, r) {
     const keys = Object.keys(r).filter(k => k !== 'ok');
     return keys.length ? keys.length + ' features' : null;
   }
-  if (n === 'create_mcp_app') return (r.mode === 'request' || r.chatId) ? 'draft' : r.mode === 'message' ? 'sent' : r.updated ? 'updated' : (r.path ? 'ready' : null);
+  if (n === 'create_mcp_app') return (r.mode === 'request' || r.chatId) ? 'draft' : r.mode === 'message' ? 'sent' : r.relinked ? 'data link updated' : r.updated ? 'updated' : (r.path ? 'ready' : null);
   if (n === 'webpreview') return r.mode || null;
   if (n === 'schedule_wake' && r.recurring) return (r.repeat || 'recurring').toLowerCase() + (r.replacedPrevious ? ' · replaced the previous' : '');
   if (n === 'schedule_wake') return r.dueInSeconds != null ? 'due in ' + (r.dueInSeconds >= 3600 ? Math.round(r.dueInSeconds / 360) / 10 + 'h' : r.dueInSeconds >= 60 ? Math.round(r.dueInSeconds / 60) + 'm' : r.dueInSeconds + 's') + (r.every ? ' · every ' + r.every : '') : null;

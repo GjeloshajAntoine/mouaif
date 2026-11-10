@@ -4,7 +4,7 @@ const TITLES = {
   read_file: 'Read file', list_files: 'List files', search_files: 'Search files', write_file: 'Write file', edit_file: 'Edit file',
   group_read: 'Read files', group_edit: 'Edit files', list_chats: 'List chats', get_chat: 'Read chat', create_chat: 'Create chat',
   update_chat: 'Update chat', change_working_folder: 'Change working folder', search_models: 'Search models', start_chat: 'Start chat',
-  delete_chat: 'Delete chat', search_chats: 'Search chats', attach_chat_image: 'Attach image', list_chat_attachments: 'List chat images',
+  delete_chat: 'Delete chat', search_chats: 'Search chats', attach_chat_image: 'Attach image', list_artifacts: 'List artifacts', read_artifact: 'Read artifact', save_artifact: 'Save artifact', delete_artifact: 'Delete artifact', export_artifact: 'Export artifact', list_chat_attachments: 'List chat images',
   get_settings: 'Read settings', update_settings: 'Change settings', list_projects: 'List projects', get_app_info: 'Read app info',
   restart_app: 'Restart app', schedule_wake: 'Schedule a wake-up', schedule_list: 'List wake-ups', schedule_cancel: 'Cancel wake-up', webhook_create: 'Create a webhook', webhook_status: 'Read the webhook', webhook_delete: 'Delete the webhook', hook_create: 'Add a hook', hook_list: 'List hooks', hook_delete: 'Delete a hook', run_start: 'Start a long-running run', run_status: 'Read run status', run_end: 'End the run', create_mcp_app: 'Create MCP App', task: 'Update tasks', webpreview: 'Open preview',
   subagent_messages: 'Read worker messages', subagent_status: 'Check worker', subagent_stop: 'Stop worker', subagent_send: 'Message worker',
@@ -37,6 +37,7 @@ export function approvalTitle(request) {
   const args = request.details?.args || request.args || {};
   if (request.tool === 'create_mcp_app' && args.request !== undefined) return 'Prepare app draft';
   if (request.tool === 'create_mcp_app' && args.message !== undefined) return 'Message MCP App';
+  if (request.tool === 'create_mcp_app' && args.relink !== undefined) return 'Change MCP App data';
   if (request.tool === 'create_mcp_app' && args.path !== undefined && args.source !== undefined) return 'Update MCP App';
   if (request.tool === 'task') return ({ list: 'List tasks', create: 'Create task', update_progress: 'Update task', complete: 'Complete task' })[args.action] || 'Manage task';
   if (request.tool === 'subagent_group_update') return ({ approve: 'Approve group decision', reject: 'Reject group decision', arbitrate: 'Arbitrate group conflict', cancel: 'Cancel worker group' })[args.action] || 'Update worker group';

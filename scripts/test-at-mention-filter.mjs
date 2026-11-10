@@ -93,5 +93,25 @@ test('removes mentioned file token cleanly from draft',
   afterRemove === 'Check and @users.js now',
   afterRemove);
 
+// Artifacts: a tagged artifact is a chip like a file, and stays apart from one.
+const artifactCatalog = [
+  { category: 'files', label: 'sales.json', insert: 'data/sales.json', size: 10 },
+  { category: 'artifacts', label: 'sales.json', insert: 'artifact:sales.json', size: 20, searchText: 'sales.json artifact' },
+  { category: 'artifacts', label: 'photo.png', insert: 'artifact:photo.png', size: 900 * 1024, sizeExempt: true, searchText: 'photo.png artifact' },
+  { category: 'artifacts', label: 'big.csv', insert: 'artifact:big.csv', size: 900 * 1024, searchText: 'big.csv artifact' }
+];
+const artifactChips = resolveMentionedFiles('Use @artifact:sales.json @artifact:photo.png @artifact:big.csv', artifactCatalog);
+test('an artifact mention resolves to the artifact, not the file of the same name',
+  artifactChips.length === 3 && artifactChips[0].path === 'artifact:sales.json' && artifactChips[0].name === 'sales.json', artifactChips);
+test('only text is limited by size: an image is sent as an image',
+  artifactChips[1].oversized === false && artifactChips[2].oversized === true, artifactChips);
+test('removing an artifact chip removes its token',
+  removeMentionedFileFromText('Use @artifact:sales.json now', artifactChips[0], artifactCatalog) === 'Use now');
+test('the Artifacts chip narrows a typed query to artifacts',
+  filterAtMentionItems(artifactCatalog, 'sales', 'artifacts').every(item => item.category === 'artifacts')
+  && filterAtMentionItems(artifactCatalog, 'sales', 'artifacts').length === 1);
+test('typing the prefix offers every artifact',
+  filterAtMentionItems(artifactCatalog, 'artifact:', null).filter(item => item.category === 'artifacts').length === 3);
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

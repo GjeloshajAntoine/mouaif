@@ -65,8 +65,8 @@ assert.equal(categories.length, 2, 'one row per category');
 same(categories.map((g) => g.name), ['Chats', 'mouaif'], 'two categories, named for what they cover');
 same(categories[0].tools.map((t) => t.id), [
   'list_chats', 'get_chat', 'create_chat', 'update_chat', 'change_working_folder', 'search_models', 'start_chat',
-  'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments', 'ask_user', 'task', 'report_progress', 'webpreview'
-], 'the chats category lists its fifteen tools');
+  'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments', 'list_artifacts', 'read_artifact', 'save_artifact', 'delete_artifact', 'export_artifact', 'ask_user', 'task', 'report_progress', 'webpreview'
+], 'the chats category lists its twenty tools');
 same(categories[1].tools.map((t) => t.id), [
   'create_mcp_app', 'get_settings', 'update_settings', 'list_projects', 'restart_app', 'list_features', 'group_cli', 'schedule_wake', 'schedule_list', 'schedule_cancel', 'webhook_create', 'webhook_status', 'webhook_delete', 'hook_create', 'hook_list', 'hook_delete'
 ], 'the settings category lists its ten tools');
@@ -137,7 +137,7 @@ same(
   'category ids match src/tools/mouaif.js GROUPS'
 );
 const actions = new Set(categories.flatMap((g) => g.tools.map((t) => t.id)));
-assert.equal(actions.size, 31, 'thirty-one tools, each listed once');
+assert.equal(actions.size, 36, 'thirty-six tools, each listed once');
 
 // The two app tools sit in the mouaif row now, not as rows of their own:
 // one tree row per tool family, and `restart_app` / `list_features` are

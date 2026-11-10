@@ -1226,6 +1226,17 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
       }
     }
   } catch { /* non-fatal; stream proceeds without tagged files */ }
+  // @artifact:<name> mentions (src/artifacts.js) attach for this turn, like a
+  // mentioned file, and name the artifact when it could not be attached.
+  try {
+    let maxBytes;
+    try { maxBytes = settings.getApp().fileTagMaxBytes; } catch { /* default applies */ }
+    const mentioned = require('./artifacts.js').mentionMessages(projectDir, chatId, content, { maxBytes });
+    if (mentioned.length) {
+      for (const m of mentioned) upstreamMessages.push({ role: m.role, content: m.content });
+      if (traceStream) trace.write(traceStream, 'artifacts', { files: mentioned.map(m => ({ path: m.relPath })) });
+    }
+  } catch { /* non-fatal; stream proceeds without artifacts */ }
   // The custom prompt, read from the chat's PINNED snapshot rather than
   // from the prompt store: a chat keeps the text it was attached with, so
   // editing a shared prompt never rewrites an existing chat. Chats written

@@ -461,6 +461,8 @@ function parseReferences(projectDir, text) {
   let m;
   while ((m = re.exec(text)) !== null) {
     const raw = m[1];
+    // `@artifact:<name>` belongs to the chat, not the project (src/artifacts.js).
+    if (raw.startsWith('artifact:')) continue;
     // A slash means the user typed a path (`@src/api/users.js`) — resolve
     // it exactly. A bare token (`@users.js`) is a basename hint; leave it
     // for the resolution pass below so `@a.js` resolves to src/a.js
@@ -514,7 +516,9 @@ function parseReferences(projectDir, text) {
 module.exports = {
   DEFAULT_MAX_BYTES,
   DEFAULT_EXTS,
+  isTextBuffer,
   toRelPath,
+  toAbsInside,
   getTags,
   setTags,
   removeTag,

@@ -69,6 +69,7 @@ const { handleSettings } = require('./server-handlers-settings.js');
 const { handleThemes } = require('./server-handlers-themes.js');
 const { handleHooks, handleChatHooks, isChatHooksPath } = require('./server-handlers-hooks.js');
 const { handleExtensions } = require('./server-handlers-extensions.js');
+const { handleArtifacts, isArtifactsPath } = require('./server-handlers-artifacts.js');
 const { handleChats } = require('./server-handlers-chats.js');
 const { handleProjects, handleFileEditor } = require('./server-handlers-projects.js');
 const { handleAI } = require('./server-handlers-ai.js');
@@ -228,6 +229,10 @@ function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '',
   // A chat's own hooks; matched before the generic /api/chats/* router.
   if (isChatHooksPath(urlPath)) {
     return handleChatHooks(req, res, parsed);
+  }
+  // A chat's artifacts (docs/features/chat-artifacts.md).
+  if (isArtifactsPath(urlPath)) {
+    return handleArtifacts(req, res, parsed);
   }
 
   // Settings API
@@ -507,7 +512,7 @@ function createServer(port = DEFAULT_PORT, options = {}) {
   }
   const sessionToken = crypto.randomBytes(32).toString('base64url');
   const lifecycle = (options && typeof options === 'object') ? (options.lifecycle || {}) : {};
-  const mcpAppsHost = require('./server-handlers-mcp-apps.js').createMcpAppsHost(options.mcpAppsSandbox || {}, lifecycle);
+  const mcpAppsHost = require('./server-handlers-mcp-apps.js').createMcpAppsHost(lifecycle);
   const serverConfig = { publicOrigin, authEnabled: options.authEnabled === true, mcpAppsHost };
   const server = http.createServer((req, res) => {
     // Bind port to the request handler

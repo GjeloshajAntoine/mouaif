@@ -8,6 +8,8 @@
 //          setBadge?, bridge() -> live bridge | null, open?() }
 
 export const COMPOSER_INSERT = 'mouaif:composer-insert';
+// A chat's artifacts changed: mounted apps check their data, and the @ list refreshes.
+export const ARTIFACTS_CHANGED = 'mouaif:artifacts-changed';
 // A view changed the model context of a chat (AppContextBar.jsx reloads).
 export const APP_CONTEXT_CHANGED = 'mouaif:app-context-changed';
 
@@ -20,7 +22,13 @@ export function unregisterSurface(entry) { entries.delete(entry); }
 export function surfacesOf(projectDir, chatId, extensionId) {
   const out = [];
   for (const e of entries) {
-    if (e.projectDir === projectDir && (!chatId || !e.chatId || e.chatId === chatId) && (!extensionId || e.extensionId === extensionId)) out.push(e);
+    if (e.projectDir !== projectDir) continue;
+    // A chat-bound view must only ever match that exact chat. A project
+    // surface has no chat and must not receive chat events or actions from
+    // an arbitrary chat in the same project.
+    if ((e.chatId || null) !== (chatId || null)) continue;
+    if (extensionId && e.extensionId !== extensionId) continue;
+    out.push(e);
   }
   return out;
 }
@@ -46,7 +54,9 @@ export function performHostAction(action, where) {
     window.dispatchEvent(new CustomEvent(COMPOSER_INSERT, { detail: { projectDir: where.projectDir, chatId: where.chatId, text: action.text } }));
   } else if (action.type === 'badge') {
     setDockBadge(where.projectDir, where.chatId, where.extensionId, action.text ? { text: action.text, tone: action.tone } : null);
-  } else if (action.type === 'open_sheet') {
+  } else if (action.type === 'open_sheet' && where.chatId) {
+    // A project-card view has no chat and must not open a sheet inside an
+    // unrelated active chat.
     openExtensionSheet({ extensionId: action.extensionId, surfaceId: action.surfaceId });
   }
 }

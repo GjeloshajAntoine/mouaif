@@ -61,7 +61,7 @@ async function main() {
     const covered = mouaif.GROUPS.flatMap((g) => g.areas).sort().join(',');
     return covered === Object.keys(mouaif.AREAS).sort().join(',');
   })());
-  check('the first category is the chats half', mouaif.GROUPS[0].areas.join(',') === 'chats,attachments');
+  check('the first category is the chats half', mouaif.GROUPS[0].areas.join(',') === 'chats,attachments,artifacts');
   // Each category lists its own actions — that is what the tools tree renders
   // as child rows, so a category reads as a category and not as one more tool.
   // The lists are derived from ACTIONS, so this asserts the derivation, not a
@@ -70,9 +70,9 @@ async function main() {
     const listed = mouaif.GROUPS.flatMap((g) => g.actions).sort();
     return listed.join(',') === mouaif.ACTION_NAMES.slice().sort().join(',');
   })());
-  check('a category lists only its own areas\u2019 actions', mouaif.GROUPS[0].actions.every((a) => ['chats', 'attachments'].includes(mouaif.ACTIONS[a]))
+  check('a category lists only its own areas\u2019 actions', mouaif.GROUPS[0].actions.every((a) => ['chats', 'attachments', 'artifacts'].includes(mouaif.ACTIONS[a]))
     && mouaif.GROUPS[1].actions.every((a) => ['settings', 'apps', 'projects'].includes(mouaif.ACTIONS[a])));
-  check('the chats category lists chat, model, and attachment actions', mouaif.GROUPS[0].actions.join(',') === 'list,get,create,update,delete,search,model_search,start,attach,list_attachments,working_folder');
+  check('the chats category lists chat, model, attachment and artifact actions', mouaif.GROUPS[0].actions.join(',') === 'list,get,create,update,delete,search,model_search,start,attach,list_attachments,working_folder,artifact_list,artifact_read,artifact_save,artifact_delete,artifact_export');
   check('the app category lists settings, app creation and project actions', mouaif.GROUPS[1].actions.join(',') === 'settings_get,settings_update,app_create,project_list');
 
   // --- 2) Authorization category -----------------------------------------

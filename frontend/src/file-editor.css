@@ -232,6 +232,11 @@
 }
 .fe__editor-actions { flex: 0 0 auto; display: flex; gap: 4px; overflow-x: auto; }
 .fe__editor-actions .btn { min-height: var(--tap); padding: 0 10px; font-size: 0.8rem; }
+/* An artifact's extra button must not squeeze its name out on a phone. */
+@media (max-width: 480px) {
+  .fe__editor-actions--artifact .fe__draft-craft { min-width: var(--tap); justify-content: center; }
+  .fe__editor-actions--artifact .fe__draft-craft span { display: none; }
+}
 /* Full editor: this row is the sheet's only bar (it also carries the
    layout toggle and Close), so it packs tighter. Draft Craft keeps its
    label: as a bare icon it read as a second layout toggle. */

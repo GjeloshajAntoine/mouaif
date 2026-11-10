@@ -14,6 +14,9 @@
 // block rides the same `toolResultImageParts` path MCP image results use
 // (src/ai-stream.js). See docs/features/read-file-images.md.
 //
+// `artifact:<name>` reads one of the calling chat's artifacts in the read-only
+// tools, wherever the project stores it (docs/features/chat-artifacts.md).
+//
 // Public surface:
 //   SPECS                       : specs keyed by FILE_TOOL_NAMES
 //                                 each value is an OpenAI-compatible function spec
@@ -173,6 +176,75 @@ function toAbsInside(root, rel) {
   return abs;
 }
 
+// ---- artifact: paths ---------------------------------------------------
+
+const ARTIFACT_PREFIX = 'artifact:';
+
+function isArtifactPath(p) {
+  return typeof p === 'string' && p.trim().startsWith(ARTIFACT_PREFIX);
+}
+
+// An artifact belongs to a chat and to the project as configured, so this uses
+// the project's own path, not the working folder.
+function artifactScope(opts) {
+  if (!opts.chatId) throw err('EBADINPUT', 'artifact: paths belong to a chat');
+  return { artifacts: require('../artifacts.js'), owner: opts.settingsProjectDir || opts.projectDir, chatId: opts.chatId };
+}
+
+// Without this, write_file would create a project file literally named artifact:x.
+function refuseArtifactWrite(p) {
+  if (isArtifactPath(p)) throw err('EBADINPUT', 'An artifact can\'t be changed with a file tool. Use save_artifact to replace it.');
+}
+
+function readArtifactFile(opts) {
+  const { artifacts, owner, chatId } = artifactScope(opts);
+  const artifact = artifacts.get(owner, chatId, opts.args.path.trim());
+  const ext = path.extname(artifact.name).toLowerCase();
+  if (isImageExt(ext) && !TEXT_EXTS.has(ext)) {
+    assertImageFits(artifact.size, opts.settings);
+    return imageResult(artifact.link, artifacts.readBytes(owner, chatId, artifact.name).bytes, mimeForExt(ext));
+  }
+  const byteCap = readByteCap(opts.settings);
+  if (artifact.size > byteCap) {
+    throw err('ETOOL_CAP', 'artifact is ' + formatBytes(artifact.size) + ', exceeds cap ' + formatBytes(byteCap)
+      + ' (use read_artifact to read it a page at a time)', { bytes: artifact.size, cap: byteCap });
+  }
+  const { whole } = artifacts.readWhole(owner, chatId, artifact.name, false);
+  // Only an artifact stored as a file has a path a hide rule can name.
+  return textResult(opts, artifact.link, artifact.path || artifact.link, whole);
+}
+
+function listArtifactFiles(opts, pattern, cap) {
+  const { artifacts, owner, chatId } = artifactScope(opts);
+  const re = globToRegExp(pattern.slice(ARTIFACT_PREFIX.length) || '*');
+  const out = [];
+  let skipped = 0;
+  for (const artifact of artifacts.list(owner, chatId)) {
+    if (!re.test(artifact.name)) continue;
+    const ext = path.extname(artifact.name).toLowerCase();
+    const image = !TEXT_EXTS.has(ext) && isImageExt(ext);
+    if (!image && artifact.kind !== 'text') { skipped++; continue; }
+    if (out.length >= cap) return { entries: out, skipped, truncated: true, cap, pattern };
+    out.push(image ? { path: artifact.link, image: true } : { path: artifact.link });
+  }
+  return { entries: out, skipped, truncated: false, cap, pattern };
+}
+
+function searchArtifactFiles(opts) {
+  const { artifacts, owner, chatId } = artifactScope(opts);
+  const name = opts.args.path.trim().slice(ARTIFACT_PREFIX.length);
+  const include = searchEngine.sanitizeInclude(opts.args.include);
+  const held = name ? [artifacts.get(owner, chatId, name)] : artifacts.list(owner, chatId);
+  const entries = held
+    .filter((artifact) => artifact.kind === 'text' && searchEngine.includeMatches(include, artifact.name))
+    .map((artifact) => ({
+      label: artifact.link,
+      ruleRel: artifact.path || artifact.link,
+      read: () => artifacts.readWhole(owner, chatId, artifact.name, false).whole
+    }));
+  return searchEngine.searchTexts(opts, entries);
+}
+
 // ---- read_file ---------------------------------------------------------
 
 // Read a file. Optional `startLine` / `endLine` (1-indexed, inclusive) pin
@@ -185,6 +257,7 @@ function toAbsInside(root, rel) {
 // use, and the extension is on the text allowlist.
 async function runReadFile(opts) {
   const { projectDir, args, settings } = opts;
+  if (isArtifactPath(args && args.path)) return readArtifactFile(opts);
   const root = resolveSandbox(projectDir);
   const rel = toRelPath(root, args && args.path);
   const abs = toAbsInside(root, rel);
@@ -199,13 +272,8 @@ async function runReadFile(opts) {
   // Refuse oversized text before decoding it. This protects the server even
   // when a one-line file would otherwise bypass the line-count cap; callers
   // can use the shell tool to extract a smaller copy before reading it.
-  const cap = (settings && settings.fileReadMaxLines) || DEFAULT_READ_MAX_LINES;
-  const byteCap = (settings && Number.isInteger(settings.fileReadMaxBytes) && settings.fileReadMaxBytes > 0)
-    ? settings.fileReadMaxBytes : DEFAULT_READ_MAX_BYTES;
-  const startLine = Number.isInteger(args && args.startLine) ? args.startLine : null;
-  const endLine = Number.isInteger(args && args.endLine) ? args.endLine : null;
-  const isSlice = startLine != null && endLine != null && endLine >= startLine;
-  if (!isSlice && st.size > byteCap) {
+  const byteCap = readByteCap(settings);
+  if (!isSliceRead(args) && st.size > byteCap) {
     throw err('ETOOL_CAP', 'file is ' + formatBytes(st.size) + ', exceeds cap ' + formatBytes(byteCap)
       + ' (use startLine/endLine)', { bytes: st.size, cap: byteCap });
   }
@@ -231,7 +299,26 @@ async function runReadFile(opts) {
   if (rawBuffer.length > byteCap) {
     throw err('ETOOL_CAP', 'file exceeds cap ' + formatBytes(byteCap) + ' (use a smaller file)', { bytes: rawBuffer.length, cap: byteCap });
   }
-  const raw = rawBuffer.toString('utf8');
+  return textResult(opts, rel, rel, rawBuffer.toString('utf8'));
+}
+
+function readByteCap(settings) {
+  return (settings && Number.isInteger(settings.fileReadMaxBytes) && settings.fileReadMaxBytes > 0)
+    ? settings.fileReadMaxBytes : DEFAULT_READ_MAX_BYTES;
+}
+
+function isSliceRead(args) {
+  return Number.isInteger(args && args.startLine) && Number.isInteger(args && args.endLine) && args.endLine >= args.startLine;
+}
+
+// textResult(opts, rel, ruleRel, raw) -> the whole text or the requested lines.
+// `rel` is what the result names, `ruleRel` the path a hide rule would name.
+function textResult(opts, rel, ruleRel, raw) {
+  const { projectDir, args, settings } = opts;
+  const cap = (settings && settings.fileReadMaxLines) || DEFAULT_READ_MAX_LINES;
+  const isSlice = isSliceRead(args);
+  const startLine = isSlice ? args.startLine : null;
+  const endLine = isSlice ? args.endLine : null;
   const totalLines = raw ? raw.split('\n').length : 0;
   // Project-level redaction: any 1-indexed line the user marked hidden in
   // project settings is replaced with the REDACT_MARKER before the model
@@ -242,7 +329,7 @@ async function runReadFile(opts) {
     if (totalLines > cap) {
       throw err('ETOOL_CAP', 'file has ' + totalLines + ' lines, exceeds cap ' + cap + ' (use startLine/endLine)', { lines: totalLines, cap });
     }
-    const out = hideFileContent.redactText(opts.settingsProjectDir || projectDir, rel, raw);
+    const out = hideFileContent.redactText(opts.settingsProjectDir || projectDir, ruleRel, raw);
     return {
       relPath: rel,
       startLine: 1,
@@ -261,7 +348,7 @@ async function runReadFile(opts) {
   const a = Math.max(1, startLine);
   const b = Math.min(totalLines, endLine);
   const slice = lines.slice(a - 1, b).join('\n');
-  const sliceOut = hideFileContent.redactText(opts.settingsProjectDir || projectDir, rel, slice, a);
+  const sliceOut = hideFileContent.redactText(opts.settingsProjectDir || projectDir, ruleRel, slice, a);
   return {
     relPath: rel,
     startLine: a,
@@ -289,20 +376,27 @@ async function runReadFile(opts) {
 // with ETOOL_CAP — the model can downscale with the shell tool and read
 // again, and the transcript does not grow by tens of megabytes.
 async function readImageFile(rel, abs, st, settings) {
-  const capBytes = (settings && Number.isInteger(settings.fileReadMaxImageBytes) && settings.fileReadMaxImageBytes > 0)
-    ? settings.fileReadMaxImageBytes
-    : DEFAULT_READ_MAX_IMAGE_BYTES;
-  if (st.size > capBytes) {
-    throw err('ETOOL_CAP', 'image is ' + formatBytes(st.size) + ', exceeds cap ' + formatBytes(capBytes)
-      + ' (downscale it — e.g. with the shell tool — then read it again)', { size: st.size, cap: capBytes });
-  }
+  assertImageFits(st.size, settings);
   let buf;
   try { buf = await fsp.readFile(abs); }
   catch (e) {
     if (e.code === 'EACCES') throw err('EACCES', e.message, { path: abs });
     throw e;
   }
-  const mime = mimeForExt(path.extname(abs).toLowerCase());
+  return imageResult(rel, buf, mimeForExt(path.extname(abs).toLowerCase()));
+}
+
+function assertImageFits(size, settings) {
+  const capBytes = (settings && Number.isInteger(settings.fileReadMaxImageBytes) && settings.fileReadMaxImageBytes > 0)
+    ? settings.fileReadMaxImageBytes
+    : DEFAULT_READ_MAX_IMAGE_BYTES;
+  if (size > capBytes) {
+    throw err('ETOOL_CAP', 'image is ' + formatBytes(size) + ', exceeds cap ' + formatBytes(capBytes)
+      + ' (downscale it — e.g. with the shell tool — then read it again)', { size, cap: capBytes });
+  }
+}
+
+function imageResult(rel, buf, mime) {
   return {
     relPath: rel,
     kind: 'image',
@@ -347,6 +441,7 @@ async function runListFiles(opts) {
   const cap = (settings && settings.fileListMaxEntries) || DEFAULT_LIST_MAX_ENTRIES;
 
   const pattern = (args && typeof args.pattern === 'string' && args.pattern.trim()) ? args.pattern.trim() : null;
+  if (isArtifactPath(pattern)) return listArtifactFiles(opts, pattern, cap);
   // Compile a simple glob: '*' matches any path segment, '**' matches
   // any number of segments. Anything else is a literal segment match.
   // A bare (non-glob) pattern is resolved against the filesystem first:
@@ -496,6 +591,7 @@ function escapeGlob(pattern) {
 // return the same result shape the formatter and the tests expect.
 async function runSearchFiles(opts) {
   const { projectDir, args, settings } = opts;
+  if (isArtifactPath(args && args.path)) return searchArtifactFiles(opts);
   return await searchEngine.runSearch({ projectDir, args, settings, settingsProjectDir: opts.settingsProjectDir });
 }
 
@@ -756,6 +852,7 @@ async function runWriteFile(opts) {
   const { projectDir, args, settings } = opts;
   const root = resolveSandbox(projectDir);
   const requestedPath = args && (args.path || args.file);
+  refuseArtifactWrite(requestedPath);
   const rel = toRelPath(root, requestedPath);
   const abs = toAbsInside(root, rel);
   if (!args || typeof args.content !== 'string') throw err('EBADINPUT', 'content is required');
@@ -934,6 +1031,7 @@ async function runEditFile(opts) {
   const { projectDir, args, settings } = opts;
   const root = resolveSandbox(projectDir);
   const requestedPath = args && (args.path || args.file);
+  refuseArtifactWrite(requestedPath);
   const rel = toRelPath(root, requestedPath);
   const abs = toAbsInside(root, rel);
   const oldText = args && (typeof args.oldText === 'string' ? args.oldText : args.old_string);
@@ -1129,11 +1227,11 @@ const SINGLE_FILE_SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'read_file',
-      description: 'Read a text file from the chat\'s working folder (the project by default), or open an image (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`, `.ico`) by attaching its pixels as an image part so a vision model can see it. A text read returns the file body with a header that shows the path, line range, and total line count. Use startLine/endLine (1-indexed, inclusive) to read a slice of a large file; text reads over 10000 lines or 4 MB are refused. Lines the user marked hidden come back replaced by a redaction marker, with line numbers unchanged. An image read returns a header (path, MIME type, size) plus the picture; images over 4 MB are refused — downscale first.',
+      description: 'Read a text file from the chat\'s working folder (the project by default), or open an image (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`, `.ico`) by attaching its pixels as an image part so a vision model can see it. A text read returns the file body with a header that shows the path, line range, and total line count. Use startLine/endLine (1-indexed, inclusive) to read a slice of a large file; text reads over 10000 lines or 4 MB are refused. Lines the user marked hidden come back replaced by a redaction marker, with line numbers unchanged. An image read returns a header (path, MIME type, size) plus the picture; images over 4 MB are refused — downscale first. `artifact:<name>` reads one of this chat\'s artifacts the same way.',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'POSIX path relative to the chat\'s working folder (e.g. "src/index.js").' },
+          path: { type: 'string', description: 'POSIX path relative to the chat\'s working folder (e.g. "src/index.js"), or artifact:<name> for one of this chat\'s artifacts.' },
           startLine: { type: 'integer', description: 'Optional 1-indexed start line for a slice.' },
           endLine: { type: 'integer', description: 'Optional 1-indexed inclusive end line for a slice.' }
         },
@@ -1146,7 +1244,7 @@ const SINGLE_FILE_SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'list_files',
-      description: 'List text and image files in the chat\'s working folder (the project by default). Honors a simple glob pattern ("src/**/*.js", "**/*.test.*", "README.md"). Image files are marked "(image)" — read them with read_file to see the picture. Skips ' + searchEngine.SKIP_DIRS.join(', ') + ' (a fixed list; .gitignore is not read). Result is capped at ' + DEFAULT_LIST_MAX_ENTRIES + ' entries.',
+      description: 'List text and image files in the chat\'s working folder (the project by default). Honors a simple glob pattern ("src/**/*.js", "**/*.test.*", "README.md"). Image files are marked "(image)" — read them with read_file to see the picture. Skips ' + searchEngine.SKIP_DIRS.join(', ') + ' (a fixed list; .gitignore is not read). Result is capped at ' + DEFAULT_LIST_MAX_ENTRIES + ' entries. A pattern starting with artifact: lists this chat\'s artifacts instead ("artifact:*", "artifact:*.json").',
       parameters: {
         type: 'object',
         properties: {
@@ -1165,7 +1263,7 @@ const SINGLE_FILE_SPECS = Object.freeze({
         type: 'object',
         properties: {
           query: { type: 'string', description: 'Ripgrep-style regular expression, matched one line at a time. `(?i)` for case-insensitive is honored. `(?s)` is not: matches are reported and redacted per line, so search for the two anchors separately. Lookaround and backreferences are rejected with an error.' },
-          path: { type: 'string', description: 'Optional directory or single file to scope the search. Use "." or omit for the whole working folder.' },
+          path: { type: 'string', description: 'Optional directory or single file to scope the search. Use "." or omit for the whole working folder. artifact:<name> searches one of this chat\'s artifacts, and artifact: searches all of them.' },
           include: { type: 'string', description: 'Optional glob to filter the files searched, e.g. "*.js", "*.{ts,tsx}", "src/**/*.test.js", "src/[ab].js".' }
         },
         required: ['query'],
@@ -1259,6 +1357,8 @@ module.exports = {
   isFileToolName,
   runFileTool,
   resolveSandbox,
+  assertImageFits,
+  imageResult,
   // exposed for tests
   globToRegExp,
   // constants

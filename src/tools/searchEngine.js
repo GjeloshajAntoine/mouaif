@@ -283,6 +283,37 @@ async function runSearch(opts) {
   return runWalk({ ...opts, query, pattern, ignoreCase, cap, scope, include });
 }
 
+// Search text that is not in the working folder: a chat's artifacts. Each entry
+// is { label, ruleRel, read }: `label` is what a match shows, `ruleRel` is the
+// path a hide rule would name, and `read()` gives the text, so one call stops
+// loading files once the caps are reached.
+function searchTexts(opts, entries) {
+  const cap = capFor(opts.settings);
+  const query = (opts.args && typeof opts.args.query === 'string') ? opts.args.query : '';
+  if (!query) throw err('EBADINPUT', 'query is required');
+  const { pattern, ignoreCase, multiline } = normalizePattern(query);
+  assertPatternSupported(pattern, multiline);
+  let re;
+  try { re = new RegExp(pattern, ignoreCase ? 'i' : ''); }
+  catch (e) { throw err('EBADINPUT', 'invalid regex: ' + e.message); }
+  const ruleIndex = hideFileContent.buildRuleIndex(opts.settingsProjectDir || opts.projectDir);
+  const matches = [];
+  const matched = new Set();
+  let matchedChars = 0;
+  let truncated = false;
+  for (const entry of entries) {
+    if (matches.length >= cap.matches || matchedChars >= cap.bytes) { truncated = true; break; }
+    const start = matches.length;
+    const found = scanContent(entry.read(), entry.ruleRel, re, ruleIndex, matches, cap);
+    for (let i = start; i < matches.length; i++) matches[i].path = entry.label;
+    matchedChars += found.chars;
+    if (found.rows) matched.add(entry.label);
+  }
+  const result = { query, matches, filesScanned: matched.size, truncated, engine: 'artifacts' };
+  if (truncated) { result.capMatches = cap.matches; result.capBytes = cap.bytes; }
+  return result;
+}
+
 // ---- path scope --------------------------------------------------------
 
 // Sanitize the model-supplied `include` glob. The value reaches ripgrep as a
@@ -944,6 +975,7 @@ function gitignoreToRegExp(body, anchored) {
 
 module.exports = {
   runSearch,
+  searchTexts,
   findRipgrepBinary,
   normalizePattern,
   resolveScope,

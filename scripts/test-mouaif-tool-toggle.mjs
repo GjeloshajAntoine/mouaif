@@ -178,7 +178,7 @@ function cardHandlers(filter, toolAuth) {
   props.onToggleTool('chats', 'list_chats', false);
   assert.equal(s._seenTool.name, 'list_chats');
   props.onToggleGroup('chats', false);
-  assert.equal(s._seenGroup.names.length, 15);
+  assert.equal(s._seenGroup.names.length, 20);
   assert.equal(s._seenGroup.names[0], 'list_chats');
   // ask_user / task / report_progress / webpreview are the last four leaves
   // of the chats family now — the tools the model uses *inside* a chat.

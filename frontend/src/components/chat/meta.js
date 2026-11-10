@@ -13,6 +13,7 @@ import { setChatStatus } from './usage.js';
 import { updateSkillsCard } from './cards.js';
 import { skillStateFromResponse } from './skillState.js';
 import { autoresize } from './composer.js';
+import { ARTIFACTS_CHANGED } from './extensionEvents.js';
 
 // updateMetaLine(refs, state)
 //
@@ -106,6 +107,11 @@ export async function applyMouaifToolResult(data, state, refs) {
     await Promise.all(data.result.toolEvents
       .filter((event) => event && event.name === 'tool_result')
       .map((event) => applyMouaifToolResult(event.data, state, refs)));
+    return;
+  }
+  // The agent changed an artifact: the app reading it reloads now, not at its next check.
+  if (data && (data.name === 'save_artifact' || data.name === 'delete_artifact') && data.ok === true) {
+    window.dispatchEvent(new CustomEvent(ARTIFACTS_CHANGED, { detail: { projectDir: state.props.projectDir, chatId: state.props.chatId } }));
     return;
   }
   if (!data || !['create_chat', 'update_chat', 'change_working_folder', 'start_chat', 'delete_chat', 'attach_chat_image', 'mouaif'].includes(data.name)

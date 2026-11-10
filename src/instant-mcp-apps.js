@@ -8,6 +8,8 @@ const { MAX_HTML_BYTES } = require('./mcp-apps.js');
 
 const APP_DIR = '.mouaif/mcp-apps';
 const MAX_SOURCE_BYTES = 512 * 1024;
+// An app with data links carries that data inline (docs/features/chat-artifacts.md).
+const MAX_LINKED_HTML_BYTES = 8 * 1024 * 1024;
 
 function projectRoot(projectDir) {
   if (typeof projectDir !== 'string' || !projectDir.trim()) throw err('EBADINPUT', 'projectDir is required');

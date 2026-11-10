@@ -76,7 +76,12 @@ const ACTIONS = Object.freeze({
   settings_get: 'settings',
   settings_update: 'settings',
   app_create: 'apps',
-  project_list: 'projects'
+  project_list: 'projects',
+  artifact_list: 'artifacts',
+  artifact_read: 'artifacts',
+  artifact_save: 'artifacts',
+  artifact_delete: 'artifacts',
+  artifact_export: 'artifacts'
 });
 
 const AREAS = Object.freeze({
@@ -84,7 +89,8 @@ const AREAS = Object.freeze({
   attachments: 'Attach an image file from the project to a chat draft or to a user message.',
   settings: 'Read and write app-level settings and the project\u2019s .mouaif.json.',
   apps: 'Create local single-file MCP Apps or prepare development drafts.',
-  projects: 'List the projects registered in the app.'
+  projects: 'List the projects registered in the app.',
+  artifacts: 'List, read, save and delete the files kept with this chat.'
 });
 
 const ACTION_NAMES = Object.freeze(Object.keys(ACTIONS));
@@ -95,10 +101,10 @@ const GROUPS = Object.freeze([
   Object.freeze({
     id: 'mouaif',
     name: 'Chats',
-    description: 'list \u00b7 read \u00b7 create \u00b7 rename \u00b7 delete \u00b7 search \u00b7 attach images',
-    areas: Object.freeze(['chats', 'attachments']),
+    description: 'list \u00b7 read \u00b7 create \u00b7 rename \u00b7 delete \u00b7 search \u00b7 attach images \u00b7 artifacts',
+    areas: Object.freeze(['chats', 'attachments', 'artifacts']),
     actions: Object.freeze(
-      ACTION_NAMES.filter((name) => ['chats', 'attachments'].includes(ACTIONS[name]))
+      ACTION_NAMES.filter((name) => ['chats', 'attachments', 'artifacts'].includes(ACTIONS[name]))
     )
   }),
   Object.freeze({
@@ -130,6 +136,8 @@ const PARAMETERS = {
         filename: { type: 'string', description: 'Required when creating a new file with source (omit when updating an existing path): .html/.htm or browser .js/.mjs filename.' },
         source: { type: 'string', description: 'Self-contained HTML or browser JavaScript, at most 512 KiB. Combine with filename to create a new app file, or with an existing path to update that app in place and reload it in the chat. No external assets, imports, Node APIs or network. The host injects window.mouaifApp and window.mouaifAppReady; do not create another bridge. To communicate with the agent in this chat, await window.mouaifAppReady and call window.mouaifApp.sendMessage({ role: "user", content: [{ type: "text", text: "..." }] }); listen for agent messages via window.mouaifApp.addEventListener("toolresult", params => ...) or window.addEventListener("mouaif-app-message", e => ...).' },
         message: { type: 'string', description: 'Text (1–16384 bytes) to send to the MCP App mounted in this chat. The page receives it as a "toolresult" event and a "mouaif-app-message" event (see `source`).' },
+        relink: { type: 'object', description: 'With path alone: { "linked-artifact": "artifact-to-use-instead" } changes only those artifact: links in the app and reloads it, without resending its source and without a separate approval.' },
+        description: { type: 'string', description: 'One line saying what this artifact is (max 500 chars). Omit to keep the current one.' },
         request: { type: 'string', description: 'Prepare a separate unsent development chat draft (1–16000 characters); does not generate or start an app.' },
         topic: {
           type: 'string',
@@ -165,7 +173,7 @@ const PARAMETERS = {
         messageLimit: { type: 'number', description: 'Number of recent messages to return (default 10, max 50).' },
         path: {
           type: 'string',
-          description: 'Image path relative to the calling chat’s working folder (the project by default; e.g. "docs/features/images/shot.png").'
+          description: 'Image path relative to the calling chat’s working folder (the project by default; e.g. "docs/features/images/shot.png"), or artifact:<name> for one of that chat’s artifacts.'
         },
         directory: { type: 'string', description: 'An existing directory, relative to the original project or absolute (e.g. ".mouaif/workspaces/<name>"), or "" (or ".") to return to the original project folder.' },
         target: {
@@ -201,7 +209,24 @@ const SPECS = Object.freeze(Object.fromEntries(TOOL_NAMES.map((name) => {
     properties.limit = { ...properties.limit, description: 'Maximum models to return (default 20, max 100).' };
     properties.providerId = { type: 'string', description: 'Restrict results to this provider connection id; omit to search all configured providers.' };
   }
-  if (name === 'create_mcp_app') properties.path = { type: 'string', description: 'Existing HTML/browser-JS path relative to the original project folder, not the chat working folder. Pass path alone to open/reload an existing app file, or path + source to update it in place. Must resolve inside the project.' };
+  if (name === 'create_mcp_app') {
+    properties.path = { type: 'string', description: 'Existing HTML/browser-JS path relative to the original project folder, not the chat working folder, or artifact:<name> for one of this chat’s artifacts. Pass path alone to open/reload an existing app file, path + source to update it in place, or path + relink to change only its data links. Must resolve inside the project.' };
+    properties.source = { ...properties.source, description: properties.source.description + ' To keep data out of the source, save it with save_artifact and link it: <script type="application/json" id="data" src="artifact:sales.json"></script> then JSON.parse(document.getElementById("data").textContent), or <img src="artifact:logo.png">. Links are resolved in HTML when the app opens, and a mounted app reloads when a linked artifact changes, so new data needs only save_artifact, never new source.' };
+  }
+  if (name === 'read_artifact' || name === 'save_artifact' || name === 'delete_artifact' || name === 'export_artifact') {
+    properties.name = { type: 'string', description: 'Artifact file name with its extension, e.g. "sales.json": letters, digits, ".", "_" and "-", no folders.' };
+  }
+  if (name === 'read_artifact') {
+    properties.offset = { type: 'integer', minimum: 0, description: 'Character to start from (default 0); pass nextOffset from the previous read.' };
+    properties.limit = { type: 'integer', minimum: 1, maximum: 200000, description: 'Characters to return (default 65536, max 200000).' };
+  }
+  if (name === 'save_artifact') {
+    properties.content = { type: 'string', description: 'The artifact’s full text. Saving an existing name replaces it, and any app linking it reloads. Use path instead for a binary or very large file.' };
+    properties.path = { type: 'string', description: 'Copy this file from the chat’s working folder instead of passing content.' };
+  }
+  if (name === 'export_artifact') {
+    properties.path = { type: 'string', description: 'Where to write the copy, relative to the chat\u2019s working folder. Must not exist yet.' };
+  }
   if (name === 'update_chat') properties.modelId = { ...properties.modelId, description: properties.modelId.description + ' "" clears the model choice.' };
   if (name === 'create_chat') properties.draft = { type: 'string', description: 'Opening composer draft for the new chat (max ' + MAX_TOPIC_CHARS + ' chars); not sent.' };
   if (name === 'start_chat') properties.content = { type: 'string', description: 'Prompt to send to the selected chat (required, max 200000 chars). Starts an AI turn, not a draft.' };
@@ -327,7 +352,7 @@ function requireChat(projectDir, chatId) {
 function modelSelection(projectDir, providerId, modelId) {
   try {
     const model = require('../server-shared.js').resolveModel(modelId, projectDir, providerId);
-    return { providerId: model.provider, modelId: model.id };
+    return { providerId: require('../providerConnections.js').connectionIdOf(model), modelId: model.id };
   } catch (e) {
     throw typedError('EBADINPUT', e.message || String(e));
   }
@@ -355,10 +380,10 @@ async function runChats(args, opts) {
     const query = trimString(args.query, 500).toLowerCase();
     const providerId = trimString(args.providerId, 128);
     const { ai } = require('../server-shared.js');
-    if (providerId && !ai.ENDPOINTS[providerId]) throw typedError('EBADINPUT', 'unknown provider: ' + providerId);
+    const { connectionType, listConnections, providerTypeOf } = require('../providerConnections.js');
+    if (providerId && !ai.ENDPOINTS[providerTypeOf(providerId)]) throw typedError('EBADINPUT', 'unknown provider: ' + providerId);
     const saved = settings.getResolved(projectDir).models || [];
-    const connections = settings.getApp().providers || [];
-    const providers = connections.filter((p) => p && ai.ENDPOINTS[p.id] && (!providerId || p.id === providerId)).map((p) => p.id);
+    const providers = listConnections().filter((p) => ai.ENDPOINTS[connectionType(p)] && (!providerId || p.id === providerId)).map((p) => p.id);
     const live = args.includeLive === false ? { list: [], failures: [] }
       : await require('../modelList.js').liveModelsForMany([...new Set(providers)]);
     const rows = new Map();
@@ -542,25 +567,48 @@ async function runChats(args, opts) {
 
 // ---- attachments area ----------------------------------------------------
 
-async function loadImageAttachment(projectDir, relPath) {
-  const files = require('../files.js');
-  const media = await files.readMedia(projectDir, relPath, { maxBytes: MAX_IMAGE_BYTES });
-  const attachment = {
-    type: 'image',
-    mimeType: media.mime,
-    dataUrl: media.dataUrl,
-    name: path.basename(relPath)
-  };
-  // The chat store validates attachments with the same rules the composer
-  // uses. Normalizing here means an oversized image is reported as a tool
-  // error instead of being silently dropped by the merge write.
+// The chat store validates attachments with the same rules the composer
+// uses. Normalizing here means an oversized image is reported as a tool
+// error instead of being silently dropped by the merge write.
+function checkedAttachment(attachment, label) {
   const normalized = messages.normalizeAttachments([attachment]);
   if (!normalized.length) {
     throw typedError('ETOOLARGE',
       'image rejected by the chat attachment rules (max ' + MAX_ATTACHMENTS +
-      ' images, ' + Math.round(MAX_IMAGE_BYTES / (1024 * 1024)) + ' MB each): ' + relPath);
+      ' images, ' + Math.round(MAX_IMAGE_BYTES / (1024 * 1024)) + ' MB each): ' + label);
   }
-  return { attachment: normalized[0], bytes: media.size, relPath: media.relPath, mime: media.mime };
+  return normalized[0];
+}
+
+async function loadImageAttachment(projectDir, relPath) {
+  const files = require('../files.js');
+  const media = await files.readMedia(projectDir, relPath, { maxBytes: MAX_IMAGE_BYTES });
+  const attachment = checkedAttachment({
+    type: 'image',
+    mimeType: media.mime,
+    dataUrl: media.dataUrl,
+    name: path.basename(relPath)
+  }, relPath);
+  return { attachment, bytes: media.size, relPath: media.relPath, mime: media.mime };
+}
+
+// An image kept with the calling chat, wherever the project stores it.
+function loadArtifactAttachment(projectDir, chatId, link) {
+  const files = require('../files.js');
+  const { artifact, bytes } = require('../artifacts.js').readBytes(projectDir, chatId, link);
+  const ext = path.extname(artifact.name).toLowerCase();
+  if (!files.isImageExt(ext)) throw typedError('ENOTIMAGE', artifact.name + ' is not an image, so it can\u2019t be attached');
+  if (bytes.length > MAX_IMAGE_BYTES) {
+    throw typedError('ETOOLARGE', artifact.name + ' is larger than the ' + Math.round(MAX_IMAGE_BYTES / (1024 * 1024)) + ' MB limit for an attached image');
+  }
+  const mime = files.mimeForExt(ext);
+  const attachment = checkedAttachment({
+    type: 'image',
+    mimeType: mime,
+    dataUrl: 'data:' + mime + ';base64,' + bytes.toString('base64'),
+    name: artifact.name
+  }, artifact.link);
+  return { attachment, bytes: bytes.length, relPath: artifact.link, mime };
 }
 
 async function runAttachments(args, opts) {
@@ -602,8 +650,10 @@ async function runAttachments(args, opts) {
 
   const relPath = trimString(args.path, 4096);
   if (!relPath) throw typedError('EBADINPUT', 'path is required for action "attach"');
-  const workingDir = require('../chatWorkingFolder.js').resolveForCall(projectDir, (opts && opts.chatId) || chatId, opts && opts.workspaceChatId);
-  const loaded = await loadImageAttachment(workingDir, relPath);
+  const callingChat = (opts && opts.chatId) || chatId;
+  const loaded = relPath.startsWith('artifact:')
+    ? loadArtifactAttachment(projectDir, callingChat, relPath)
+    : await loadImageAttachment(require('../chatWorkingFolder.js').resolveForCall(projectDir, callingChat, opts && opts.workspaceChatId), relPath);
   // Loading bytes yields to concurrent calls and composer saves. Re-read
   // after that await; keep validation, merge, and write synchronous.
   const latest = requireChat(projectDir, chatId);
@@ -787,12 +837,86 @@ function runProjects(args, opts) {
 }
 
 async function runApps(args, opts) {
-  const projectDir = require('../instant-mcp-apps.js').projectRoot(resolveProjectDir(opts));
+  const declaredDir = resolveProjectDir(opts);
+  const projectDir = require('../instant-mcp-apps.js').projectRoot(declaredDir);
   if (opts.signal?.aborted) throw typedError('EABORTED', 'App creation cancelled');
-  const result = { ok: true, ...require('../instant-mcp-apps.js').createApp(projectDir, args) };
+  const result = { ok: true, ...require('../instant-mcp-apps.js').createApp(projectDir, args, { chatId: opts.chatId, projectDir: declaredDir }) };
   if (result.chatId || result.mode === 'message') return ok(result);
   result.content = [{ type: 'text', text: result.name + (result.updated ? ' was updated in this chat.' : ' is ready in this chat.') }];
   return ok(result);
+}
+
+// ---- artifacts area ------------------------------------------------------
+
+// Where a chat's file tool would put `relPath`, refusing a way out of the folder.
+function workingFile(projectDir, chatId, relPath, opts) {
+  const tags = require('../tags.js');
+  const workingDir = require('../chatWorkingFolder.js').resolveForCall(projectDir, chatId, opts && opts.workspaceChatId);
+  return tags.toAbsInside(workingDir, tags.toRelPath(workingDir, relPath));
+}
+
+// The bytes of a file in the chat's working folder. Text keeps the project's
+// hidden-line redaction, so copying a file cannot reveal what reading it hides.
+function importedBytes(projectDir, chatId, relPath, opts) {
+  const fs = require('fs');
+  const tags = require('../tags.js');
+  const hide = require('../hideFileContent.js');
+  const artifacts = require('../artifacts.js');
+  const file = workingFile(projectDir, chatId, relPath, opts);
+  const stat = fs.statSync(file);
+  if (!stat.isFile()) throw typedError('EBADINPUT', 'path must be a file: ' + relPath);
+  if (stat.size > artifacts.MAX_ARTIFACT_BYTES) throw typedError('ETOOLARGE', 'An artifact can be at most 16 MiB: ' + relPath);
+  const bytes = fs.readFileSync(file);
+  if (!tags.isTextBuffer(bytes.subarray(0, 8192))) return bytes;
+  const projectRelative = path.relative(projectDir, file).split(path.sep).join('/');
+  return Buffer.from(hide.redactText(projectDir, projectRelative, bytes.toString('utf8')).text, 'utf8');
+}
+
+function runArtifacts(args, opts) {
+  const projectDir = resolveProjectDir(opts);
+  const chatId = resolveChatId({}, opts);
+  requireChat(projectDir, chatId);
+  const artifacts = require('../artifacts.js');
+  const action = args.action;
+  if (action === 'artifact_list') {
+    const list = artifacts.list(projectDir, chatId);
+    return ok({ ok: true, chatId, returned: list.length, artifacts: list });
+  }
+  if (action === 'artifact_read') {
+    const current = artifacts.get(projectDir, chatId, args.name);
+    if (current.kind === 'image') {
+      const files = require('./files.js');
+      files.assertImageFits(current.size, opts && opts.appSettings);
+      const image = files.imageResult(current.link, artifacts.readBytes(projectDir, chatId, current.name).bytes, current.mimeType);
+      return ok({ ok: true, artifact: current, ...image }, JSON.stringify({ ok: true, artifact: current, note: image.note }, null, 2));
+    }
+    const read = artifacts.readText(projectDir, chatId, args.name, { offset: args.offset, limit: args.limit });
+    return ok({ ok: true, artifact: read.artifact, text: read.text, totalChars: read.totalChars, nextOffset: read.nextOffset });
+  }
+  if (action === 'artifact_delete') {
+    return ok({ ok: true, chatId, removedArtifact: artifacts.remove(projectDir, chatId, args.name) });
+  }
+  if (action === 'artifact_export') {
+    const fs = require('fs');
+    const relPath = trimString(args.path, 4096);
+    if (!relPath) throw typedError('EBADINPUT', 'path is required');
+    const { artifact, bytes } = artifacts.readBytes(projectDir, chatId, args.name);
+    const file = workingFile(projectDir, chatId, relPath, opts);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    // `wx`: a copy never replaces a file that is already there.
+    try { fs.writeFileSync(file, bytes, { flag: 'wx' }); }
+    catch (e) {
+      if (e.code === 'EEXIST') throw typedError('EEXIST', 'A file already exists at ' + relPath + '; choose another path');
+      throw e;
+    }
+    return ok({ ok: true, chatId, artifact, path: relPath, absolutePath: file, bytes: bytes.length });
+  }
+  const hasContent = typeof args.content === 'string';
+  const hasPath = typeof args.path === 'string' && !!args.path.trim();
+  if (hasContent === hasPath) throw typedError('EBADINPUT', 'Provide exactly one of content or path');
+  const data = hasPath ? importedBytes(projectDir, chatId, args.path.trim(), opts) : args.content;
+  const saved = artifacts.save(projectDir, chatId, args.name, data, { description: args.description, createdBy: 'agent' });
+  return ok({ ok: true, chatId, created: saved.created, artifact: saved.artifact });
 }
 
 // ---- Dispatcher ----------------------------------------------------------
@@ -802,7 +926,8 @@ const HANDLERS = {
   attachments: runAttachments,
   settings: (args, opts) => runSettings(args, opts),
   apps: runApps,
-  projects: runProjects
+  projects: runProjects,
+  artifacts: runArtifacts
 };
 
 // Providers do not all enforce JSON schemas. Validate the published shape

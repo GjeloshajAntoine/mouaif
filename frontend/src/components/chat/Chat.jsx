@@ -29,7 +29,7 @@ import { HooksDock } from './HooksDock.jsx';
 import { ProjectHooksBar } from './ProjectHooksBar.jsx';
 import { ExtensionDocks, useExtensionSurfaces } from './ExtensionDocks.jsx';
 import { ExtensionSheet } from './ExtensionSheet.jsx';
-import { registerSheetOpener, COMPOSER_INSERT } from './extensionEvents.js';
+import { registerSheetOpener, COMPOSER_INSERT, ARTIFACTS_CHANGED } from './extensionEvents.js';
 import { setToolRenderers } from './extensionRenderer.js';
 import { AppContextBar } from './AppContextBar.jsx';
 import { PreviewUrlPrompt } from './PreviewUrlPrompt.jsx';
@@ -85,6 +85,8 @@ const [FileEditor, setFileEditor] = useState(null);
 const [fileEditorInitialPath, setFileEditorInitialPath] = useState('');
 const [atMentionItems, setAtMentionItems] = useState(() => getAtMentionItems());
 const [screenCaptureOpen, setScreenCaptureOpen] = useState(false);
+// The chat's artifacts sheet: null when closed, otherwise the artifact to show ('' for the list).
+const [artifactsTarget, setArtifactsTarget] = useState(null);
 // Extension sheets (docs/features/extensions.md): listed in the file menu,
 // one open at a time; a view can ask to open one of its own.
 const extensionSheets = useExtensionSurfaces(projectDir, 'chat.sheet');
@@ -119,6 +121,14 @@ useEffect(() => {
   return () => window.removeEventListener(COMPOSER_INSERT, onInsert);
 }, [projectDir, chatId]);
 const ScreenCapturePanel = useLazyView(screenCaptureOpen, () => import('./ScreenCapturePanel.jsx'), 'ScreenCapturePanel');
+const ArtifactsModal = useLazyView(artifactsTarget !== null, () => import('./ArtifactsModal.jsx'), 'ArtifactsModal');
+useEffect(() => { setArtifactsTarget(null); }, [projectDir, chatId]);
+// Whatever changed an artifact, the @ list and the chips follow.
+useEffect(() => {
+  const onChanged = () => refreshAtMentionItems();
+  window.addEventListener(ARTIFACTS_CHANGED, onChanged);
+  return () => window.removeEventListener(ARTIFACTS_CHANGED, onChanged);
+}, []);
 const capturedImagesSaveRef = useRef(Promise.resolve());
 useEffect(() => {
   setScreenCaptureOpen(false);
@@ -450,7 +460,7 @@ setPreviewPromptOpen(false);
       cleanup();
       clearInterval(timer);
     };
-  }, [refs.promptInput, refs.promptInput.current, s.state.props && s.state.props.projectDir]);
+  }, [refs.promptInput, refs.promptInput.current, s.state.props && s.state.props.projectDir, s.state.props && s.state.props.chatId]);
 
   return h('section', { class: 'chat-view' },
     h('div', { class: 'chat-view__head' },
@@ -847,13 +857,24 @@ h('div', { class: 'chat-view__status-row' + (composerTools.status ? '' : ' chat-
   )
 ),
 openSheet && chatId
-? h(ExtensionSheet, { projectDir, chatId, surface: openSheet, onClose: () => setOpenSheet(null) })
+? h(ExtensionSheet, { projectDir, chatId, surface: openSheet, onClose: () => setOpenSheet(null),
+  onAuthorize: (request, signal) => authorizationCard({ ...request, signal }, projectDir, chatId, refs) })
+: null,
+artifactsTarget !== null && ArtifactsModal
+? h(ArtifactsModal, {
+  projectDir, chatId, initialName: artifactsTarget, onClose: () => setArtifactsTarget(null),
+  onOpenInEditor: link => { setArtifactsTarget(null); setFileEditorInitialPath(link); setFileEditorOpen(true); }
+})
 : null,
 screenCaptureOpen && ScreenCapturePanel
 ? h(ScreenCapturePanel, { onClose: () => setScreenCaptureOpen(false), onAttach: onCapturedImages, availableSlots: Math.max(0, 8 - imageAttachments.length) })
 : null,
 fileEditorOpen && FileEditor
-? h(FileEditor, { projectDir, initialPath: fileEditorInitialPath, onClose: () => { setFileEditorOpen(false); setFileEditorInitialPath(''); }, onDraftCraftAdded })
+? h(FileEditor, {
+  projectDir, chatId, initialPath: fileEditorInitialPath, onDraftCraftAdded,
+  onClose: () => { setFileEditorOpen(false); setFileEditorInitialPath(''); },
+  onManageArtifact: name => { setFileEditorOpen(false); setFileEditorInitialPath(''); setArtifactsTarget(name); }
+})
 : null,
 webPreviewOpen && webPreviewPayload && WebpreviewModal
 ? h(WebpreviewModal, {

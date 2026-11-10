@@ -143,6 +143,16 @@ if (Array.isArray(mcpServers) && mcpServers.length) {
     feat.push('[file tagging] active — tags found in project');
   }
 
+  // --- Artifacts ---
+  // Named here so the agent knows what this chat holds without a tool call.
+  try {
+    const held = chat && chat.id ? require('./artifacts.js').list(projectDir, chat.id) : [];
+    if (held.length) {
+      const names = held.slice(0, 20).map((item) => item.name).join(', ');
+      feat.push('[artifacts] ' + held.length + ' in this chat: ' + names + (held.length > 20 ? ', …' : '') + ' — use read_artifact or save_artifact');
+    }
+  } catch { /* safe default */ }
+
   // --- Trace ---
   const traceOn = chat && chat.trace === true;
   if (traceOn) {

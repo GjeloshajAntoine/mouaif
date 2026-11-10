@@ -22,6 +22,9 @@
 //
 // On phones the two panes stack vertically (list on top, editor
 // below); see the CSS.
+//
+// A chat's artifacts open here too (docs/features/chat-artifacts.md), as
+// `artifact:<name>` paths under a virtual folder at the top of the project.
 // This component is lazy-loaded on demand (see Chat.jsx), so its CSS is
 // imported here rather than via the global style.css chain — it only
 // downloads when the file editor is opened.
@@ -31,6 +34,7 @@ import { h, Fragment } from 'preact';
 import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'preact/hooks';
 import { fetchJson } from '../api.js';
 import { useBackClose } from '../hooks/useBackClose.js';
+import { ARTIFACTS_CHANGED } from './chat/extensionEvents.js';
 import { EditorState } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, placeholder } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -80,6 +84,66 @@ function langExtForPath(filePath) {
 
 // ---- API helpers -------------------------------------------------------
 
+const ARTIFACTS_DIR = 'artifact:';
+const isArtifact = (p) => typeof p === 'string' && p.startsWith(ARTIFACTS_DIR);
+const shownPath = (p) => (isArtifact(p) ? p.slice(ARTIFACTS_DIR.length) : p);
+
+function artifactUrl(projectDir, chatId, name) {
+  return '/api/chats/' + encodeURIComponent(chatId || '') + '/artifacts' + (name ? '/' + encodeURIComponent(name) : '')
+    + '?projectDir=' + encodeURIComponent(projectDir);
+}
+
+// The chat's artifacts in the shape a folder listing has. An artifact that is
+// neither text nor an image can't open here, so its row opens the sheet instead.
+async function apiListArtifacts(projectDir, chatId) {
+  if (!chatId) return { error: 'Artifacts belong to a chat' };
+  const r = await fetchJson(artifactUrl(projectDir, chatId));
+  if (r.status !== 200) return { error: (r.body && r.body.error) || ('HTTP ' + r.status) };
+  const entries = r.body.artifacts.map((a) => ({
+    type: 'file',
+    name: a.name,
+    path: a.link,
+    relPath: a.link,
+    size: a.size,
+    mime: a.mimeType,
+    updatedAt: a.updatedAt,
+    image: a.kind === 'image' || a.mimeType === 'image/svg+xml',
+    sheetOnly: a.kind === 'binary'
+  }));
+  return { body: { dir: ARTIFACTS_DIR, entries } };
+}
+
+async function apiFindArtifact(projectDir, chatId, link) {
+  const r = await apiListArtifacts(projectDir, chatId);
+  if (r.error) return r;
+  const entry = r.body.entries.find((e) => e.relPath === link);
+  return entry ? { entry } : { error: 'This artifact is no longer in this chat.' };
+}
+
+async function apiReadArtifact(projectDir, chatId, link) {
+  const name = link.slice(ARTIFACTS_DIR.length);
+  const r = await fetchJson(artifactUrl(projectDir, chatId, name) + '&text=1');
+  if (r.status !== 200) return { error: (r.body && r.body.error) || ('HTTP ' + r.status) };
+  return { body: { relPath: link, path: link, content: r.body.text, size: r.body.artifact.size, ext: '' } };
+}
+
+// A raster image is drawn from its own route, so a large photo needs no data
+// URL. The file route never draws an SVG, so it goes through the <img> below as a
+// data URL, which keeps it a script-disabled document.
+async function apiReadArtifactMedia(projectDir, chatId, link) {
+  const found = await apiFindArtifact(projectDir, chatId, link);
+  if (found.error) return found;
+  const { entry } = found;
+  const svg = entry.mime === 'image/svg+xml';
+  let dataUrl = artifactUrl(projectDir, chatId, entry.name) + '&inline=1&v=' + encodeURIComponent(entry.updatedAt);
+  if (svg) {
+    const text = await apiReadArtifact(projectDir, chatId, link);
+    if (text.error) return text;
+    dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(text.body.content);
+  }
+  return { body: { relPath: link, path: link, dataUrl, mime: entry.mime, size: entry.size, ext: svg ? '.svg' : '' } };
+}
+
 async function apiList(projectDir, dir) {
   const params = new URLSearchParams();
   if (projectDir) params.set('projectDir', projectDir);
@@ -91,7 +155,8 @@ async function apiList(projectDir, dir) {
   return { body: r.body };
 }
 
-async function apiRead(projectDir, filePath) {
+async function apiRead(projectDir, filePath, chatId) {
+  if (isArtifact(filePath)) return apiReadArtifact(projectDir, chatId, filePath);
   const params = new URLSearchParams();
   if (projectDir) params.set('projectDir', projectDir);
   params.set('path', filePath);
@@ -102,7 +167,15 @@ async function apiRead(projectDir, filePath) {
   return { body: r.body };
 }
 
-async function apiWrite(projectDir, filePath, content) {
+async function apiWrite(projectDir, filePath, content, chatId) {
+  if (isArtifact(filePath)) {
+    const r = await fetchJson(artifactUrl(projectDir, chatId, filePath.slice(ARTIFACTS_DIR.length)), {
+      method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: content
+    });
+    if (r.status !== 200) return { error: (r.body && r.body.error) || ('HTTP ' + r.status), code: r.body && r.body.code };
+    window.dispatchEvent(new CustomEvent(ARTIFACTS_CHANGED, { detail: { projectDir, chatId } }));
+    return { body: { size: r.body.artifact.size } };
+  }
   const r = await fetchJson('/api/file', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -117,7 +190,8 @@ async function apiWrite(projectDir, filePath, content) {
 // data URL. The server returns the bytes inline so the modal does
 // not need a separate auth-bearing URL; the same `projectDir` +
 // `path` shape as the text read keeps the UI consistent.
-async function apiReadMedia(projectDir, filePath) {
+async function apiReadMedia(projectDir, filePath, chatId) {
+  if (isArtifact(filePath)) return apiReadArtifactMedia(projectDir, chatId, filePath);
   const params = new URLSearchParams();
   if (projectDir) params.set('projectDir', projectDir);
   params.set('path', filePath);
@@ -131,10 +205,12 @@ async function apiReadMedia(projectDir, filePath) {
 // ---- Component ---------------------------------------------------------
 
 export function FileEditorView(props) {
-  // props: { projectDir, initialPath, onClose }
+  // props: { projectDir, chatId, initialPath, onClose, onManageArtifact }
   const projectDir = props.projectDir || '';
+  const chatId = props.chatId || '';
   const initialPath = props.initialPath || '';
   const onClose = props.onClose || (() => {});
+  const onManageArtifact = props.onManageArtifact;
 
   // currentDirRef holds the directory we're listing. We keep it in a
   // ref (not just state) because typing in the path input should not
@@ -167,6 +243,9 @@ export function FileEditorView(props) {
   // binding would capture a stale save reference (and fail to write
   // when the user changed the open file).
   const saveRef = useRef(null);
+  // What the open artifact holds on the server, so its own save isn't mistaken
+  // for a change the agent made.
+  const savedContentRef = useRef(null);
 
   // ---- listDir --------------------------------------------------------
 
@@ -174,7 +253,7 @@ export function FileEditorView(props) {
     const target = (typeof dir === 'string' && dir) ? dir : currentDir.current || projectDir;
     setLoading(true);
     setListStatus('loading…');
-    const r = await apiList(projectDir, target);
+    const r = isArtifact(target) ? await apiListArtifacts(projectDir, chatId) : await apiList(projectDir, target);
     if (r.error) {
       setListStatus(r.error);
       setEntries([]);
@@ -183,11 +262,17 @@ export function FileEditorView(props) {
     }
     currentDir.current = r.body.dir;
     setDirDisplay(r.body.dir);
-    setBrowseTop(r.body.browseTop || '');
-    setEntries(Array.isArray(r.body.entries) ? r.body.entries : []);
-    setListStatus((r.body.entries ? r.body.entries.length : 0) + ' items');
+    // The artifacts folder has no boundary of its own: keep the project's.
+    if (!isArtifact(target)) setBrowseTop(r.body.browseTop || '');
+    const listed = Array.isArray(r.body.entries) ? r.body.entries : [];
+    setListStatus(listed.length + ' items');
+    // The chat's artifacts are reached from the top of its project.
+    const atProject = chatId && r.body.dir === r.body.projectDir;
+    setEntries(atProject
+      ? [{ type: 'dir', name: 'Artifacts of this chat', path: ARTIFACTS_DIR, relPath: ARTIFACTS_DIR, hasChildren: true }, ...listed]
+      : listed);
     setLoading(false);
-  }, [projectDir]);
+  }, [projectDir, chatId]);
 
   useEffect(() => { loadDir(projectDir); }, [loadDir, projectDir]);
 
@@ -211,7 +296,7 @@ export function FileEditorView(props) {
     setOpenMedia(null);
     setMediaStatus('');
     setEditorStatus('loading…');
-    const r = await apiRead(projectDir, relOrAbs);
+    const r = await apiRead(projectDir, relOrAbs, chatId);
     if (r.error) {
       setEditorStatus(r.error);
       return;
@@ -227,17 +312,12 @@ export function FileEditorView(props) {
       size: r.body.size,
       ext: r.body.ext
     };
+    savedContentRef.current = file.content;
     setOpenFile(file);
     setDirty(false);
     setEditorStatus(file.size + ' bytes');
-  }, [projectDir, confirmDiscardIfDirty]);
+  }, [projectDir, chatId, confirmDiscardIfDirty]);
 
-  // If the caller opened the editor for a specific file (e.g. tapping an
-  // @-mentioned file chip in the composer), open it immediately.
-  useEffect(() => {
-    if (!initialPath) return;
-    openPath(initialPath);
-  }, [initialPath, openPath]);
   // Open an image for preview. SVG can be edited as text, so callers
   // pass `forceText: true` when the user picks "Edit" from the
   // preview header; everything else is read-only here.
@@ -248,7 +328,7 @@ export function FileEditorView(props) {
     }
     setMediaLoading(true);
     setMediaStatus('loading…');
-    const r = await apiReadMedia(projectDir, relOrAbs);
+    const r = await apiReadMedia(projectDir, relOrAbs, chatId);
     setMediaLoading(false);
     if (r.error) {
       setMediaStatus(r.error);
@@ -272,7 +352,51 @@ export function FileEditorView(props) {
       ext: r.body.ext
     });
     setMediaStatus(r.body.size + ' bytes · ' + r.body.mime);
-  }, [projectDir, openPath]);
+  }, [projectDir, chatId, openPath]);
+
+  const manageArtifact = useCallback((link) => {
+    if (!onManageArtifact || !confirmDiscardIfDirty()) return;
+    onManageArtifact(link.slice(ARTIFACTS_DIR.length));
+  }, [onManageArtifact, confirmDiscardIfDirty]);
+
+  // A chip only knows an artifact's name, so ask what it is before choosing a pane.
+  const openArtifact = useCallback(async (link) => {
+    const found = await apiFindArtifact(projectDir, chatId, link);
+    if (found.error) { setEditorStatus(found.error); return; }
+    if (found.entry.sheetOnly) manageArtifact(link);
+    else if (found.entry.image) openMediaPath(link);
+    else openPath(link);
+  }, [projectDir, chatId, manageArtifact, openMediaPath, openPath]);
+
+  // If the caller opened the editor for a specific file (e.g. tapping an
+  // @-mentioned file chip in the composer), open it immediately. Through a ref:
+  // the open callbacks change as the file gets dirty, and that must not open it
+  // again over what is being typed.
+  const openInitialRef = useRef(null);
+  openInitialRef.current = isArtifact(initialPath) ? openArtifact : openPath;
+  useEffect(() => {
+    if (initialPath) openInitialRef.current(initialPath);
+  }, [initialPath]);
+
+  // The agent or another view changed an artifact: the list follows, and so does
+  // an open artifact unless it has edits that a reload would lose.
+  useEffect(() => {
+    if (!chatId) return undefined;
+    const onChanged = async (event) => {
+      const detail = (event && event.detail) || {};
+      if (detail.chatId && detail.chatId !== chatId) return;
+      if (isArtifact(currentDir.current)) loadDir(ARTIFACTS_DIR);
+      if (openMedia && isArtifact(openMedia.relPath)) openMediaPath(openMedia.relPath);
+      if (!openFile || !isArtifact(openFile.relPath) || dirty) return;
+      const r = await apiRead(projectDir, openFile.relPath, chatId);
+      if (r.error || r.body.content === savedContentRef.current) return;
+      savedContentRef.current = r.body.content;
+      setOpenFile({ ...openFile, content: r.body.content, size: r.body.size });
+      setEditorStatus('updated · ' + r.body.size + ' bytes');
+    };
+    window.addEventListener(ARTIFACTS_CHANGED, onChanged);
+    return () => window.removeEventListener(ARTIFACTS_CHANGED, onChanged);
+  }, [projectDir, chatId, openFile, openMedia, dirty, loadDir, openMediaPath]);
 
   useLayoutEffect(() => {
     if (!openFile) return;
@@ -366,15 +490,19 @@ export function FileEditorView(props) {
     setSaving(true);
     setEditorStatus('saving…');
     const content = viewRef.current.state.doc.toString();
-    const r = await apiWrite(projectDir, openFile.relPath, content);
+    // Set before the request: its change event can arrive before the response.
+    const previous = savedContentRef.current;
+    savedContentRef.current = content;
+    const r = await apiWrite(projectDir, openFile.relPath, content, chatId);
     setSaving(false);
     if (r.error) {
+      savedContentRef.current = previous;
       setEditorStatus('save failed: ' + r.error);
       return;
     }
     setDirty(false);
     setEditorStatus('saved · ' + r.body.size + ' bytes');
-  }, [openFile, projectDir]);
+  }, [openFile, projectDir, chatId]);
 
   // Keep saveRef in sync with the latest save callback so the
   // CodeMirror Ctrl+S keymap (configured once per open) always hits
@@ -409,6 +537,7 @@ export function FileEditorView(props) {
   function goUp() {
     const d = currentDir.current || '';
     if (!d) return;
+    if (isArtifact(d)) { loadDir(projectDir); return; }
     // Already at the browse boundary — nothing above to go to.
     const top = browseTop || '';
     if (top && d === top) return;
@@ -450,6 +579,10 @@ export function FileEditorView(props) {
     // Image files open in the preview pane. The list marks them
     // with `binary: true` so the icon is consistent, but the
     // preview is a first-class action and not a "rejection".
+    if (entry.sheetOnly) {
+      manageArtifact(entry.relPath);
+      return;
+    }
     if (entry.image) {
       openMediaPath(entry.relPath);
       return;
@@ -482,6 +615,7 @@ export function FileEditorView(props) {
   function parentRel() {
     const d = currentDir.current || '';
     if (!d) return null;
+    if (isArtifact(d)) return projectDir;
     const top = browseTop || '';
     if (top && d === top) return null;
     const norm = d.replace(/[\\/]+$/, '');
@@ -500,6 +634,12 @@ export function FileEditorView(props) {
   function renderBreadcrumb() {
     const base = browseTop || projectDir || '';
     const cur = currentDir.current || base;
+    if (isArtifact(cur)) {
+      return h(Fragment, null,
+        h('button', { key: 'root', type: 'button', class: 'fe__crumb fe__crumb--root', onClick: () => loadDir(projectDir) }, projectDir.split(/[\\/]+/).pop() || projectDir),
+        h('span', { key: 'sep', class: 'fe__crumb-sep', 'aria-hidden': 'true' }, '/'),
+        h('span', { key: 'artifacts', class: 'fe__crumb' }, 'Artifacts of this chat'));
+    }
     if (!base || cur === base) {
       return h(Fragment, null,
         h('span', { class: 'fe__crumb fe__crumb--root' }, base || 'project')
@@ -564,6 +704,10 @@ export function FileEditorView(props) {
   // top bar: the left screen edge is the phone's back-gesture zone.
   // With nothing open there is no file row, so the top bar stays.
   const navInPane = editorFull && hasPane;
+  // Renaming, deleting and the rest of an artifact's actions stay in its sheet.
+  const manageBtn = (relPath) => (isArtifact(relPath) && onManageArtifact
+    ? h('button', { class: 'btn', type: 'button', onClick: () => manageArtifact(relPath), title: 'Rename, delete, download or use it in a message' }, 'Manage')
+    : null);
 
   return h('div', {
     class: 'fe__overlay',
@@ -667,7 +811,7 @@ export function FileEditorView(props) {
           openMedia
             ? h(Fragment, null,
                 h('div', { class: 'fe__editor-head' },
-                  h('div', { class: 'fe__editor-path', title: openMedia.absPath }, openMedia.relPath),
+                  h('div', { class: 'fe__editor-path', title: openMedia.absPath }, shownPath(openMedia.relPath)),
                   h('div', { class: 'fe__editor-actions' },
                     // SVG is also a text file; offer to
                     // switch to the editor for it. Other
@@ -680,6 +824,7 @@ export function FileEditorView(props) {
                           title: 'Open this file in the code editor'
                         }, 'Edit')
                       : null,
+                    manageBtn(openMedia.relPath),
                     h('button', {
                       class: 'btn',
                       type: 'button',
@@ -714,8 +859,9 @@ export function FileEditorView(props) {
             : openFile
               ? h(Fragment, null,
                 h('div', { class: 'fe__editor-head' },
-                  h('div', { class: 'fe__editor-path', title: openFile.absPath }, openFile.relPath + (dirty ? ' •' : '')),
-h('div', { class: 'fe__editor-actions' },
+                  h('div', { class: 'fe__editor-path', title: openFile.absPath }, shownPath(openFile.relPath) + (dirty ? ' •' : '')),
+h('div', { class: 'fe__editor-actions' + (isArtifact(openFile.relPath) ? ' fe__editor-actions--artifact' : '') },
+manageBtn(openFile.relPath),
 h('button', {
 class: 'btn fe__draft-craft',
 type: 'button',
@@ -754,6 +900,9 @@ title: 'Revert to the last saved version'
                 )
               )
             : h('div', { class: 'fe__editor-empty' },
+// A file that failed to open has no status bar of its own to say why.
+editorStatus && editorStatus !== 'loading…' ? h('p', { role: 'alert' }, editorStatus) : null,
+mediaStatus && !mediaLoading ? h('p', { role: 'alert' }, mediaStatus) : null,
 h('p', null, 'Pick a file from the list to start editing, or tap an image to preview it.'),
 h('p', { class: 'fe__editor-hint' }, 'Tip: type a path above or use the breadcrumb to jump to a folder.')
 )

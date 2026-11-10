@@ -8,13 +8,13 @@
 // user dismisses it with Escape, taps outside, or completes a
 // selection with Enter/Tab.
 
-import { fetchJson } from '../../api.js';
+import { fetchJson, providerLabel } from '../../api.js';
 import { parseDirectRestartInvocation } from './tools.js';
 
 // ---- Categories ---------------------------------------------------------
 
-const CATEGORY = { FILES: 'files', AGENTS: 'agents', ACTIONS: 'actions', TOOLS: 'tools', MCP: 'mcp', MODEL: 'model' };
-const ICON_MAP = { file: '📄', agent: '🧑‍🔧', action: '⚡', tool: '🛠️', mcp: '🔌', model: '🤖' };
+const CATEGORY = { FILES: 'files', ARTIFACTS: 'artifacts', AGENTS: 'agents', ACTIONS: 'actions', TOOLS: 'tools', MCP: 'mcp', MODEL: 'model' };
+const ICON_MAP = { file: '📄', artifact: '📦', agent: '🧑‍🔧', action: '⚡', tool: '🛠️', mcp: '🔌', model: '🤖' };
 const MAX_FILE_RESULTS = 200;
 const DEFAULT_MAX_FILE_BYTES = 256 * 1024;
 // At rest (empty query), show only this many items per category so the
@@ -52,6 +52,7 @@ const SCAN_TTL_MS = 10000;
 let activeFilter = null;
 const FILTER_ORDER = [
   { key: CATEGORY.FILES, label: 'Files' },
+  { key: CATEGORY.ARTIFACTS, label: 'Artifacts' },
   { key: CATEGORY.AGENTS, label: 'Agents' },
   { key: CATEGORY.ACTIONS, label: 'Actions' },
   { key: CATEGORY.TOOLS, label: 'Tools' },
@@ -259,6 +260,31 @@ async function buildItems(projectDir, opts) {
     });
   }
 
+  // 2b. This chat's artifacts. `@artifact:<name>` can never be mistaken for a
+  // project file of the same name, and attaches on send (src/artifacts.js).
+  const artifactChatId = uiState && uiState.props && uiState.props.chatId;
+  if (artifactChatId) {
+    try {
+      const ar = await fetchJson('/api/chats/' + encodeURIComponent(artifactChatId) + '/artifacts?projectDir=' + encodeURIComponent(projectDir));
+      if (ar.status === 200 && Array.isArray(ar.body && ar.body.artifacts)) {
+        for (const a of ar.body.artifacts) {
+          out.push({
+            id: 'artifact:' + a.name,
+            label: a.name,
+            subtitle: a.description || 'Artifact of this chat',
+            category: CATEGORY.ARTIFACTS, icon: 'artifact',
+            insert: 'artifact:' + a.name,
+            size: a.size,
+            // An image goes to the model as an image, whatever the text limit is.
+            excerpt: null,
+            sizeExempt: a.kind === 'image',
+            searchText: (a.name + ' artifact ' + (a.description || '')).toLowerCase()
+          });
+        }
+      }
+    } catch { /* no artifacts to offer */ }
+  }
+
 // 3. Tools from the catalog. Native model tools and MCP tools are separate
 // categories so neither is confused with a saved project action.
 const toolNames = new Set();
@@ -339,15 +365,15 @@ params: null
     out.push({
       id: 'model:current',
       label: chat.modelId,
-      subtitle: chat.providerId || 'model',
+      subtitle: providerLabel(chat.providerId) || 'model',
       category: CATEGORY.MODEL, icon: 'model',
       insert: chat.modelId,
-      searchText: (chat.modelId + ' ' + (chat.providerId || '')).toLowerCase()
+      searchText: (chat.modelId + ' ' + (providerLabel(chat.providerId) || '')).toLowerCase()
     });
   }
 
   out.sort((a, b) => {
-const catOrder = { files: 0, agents: 1, actions: 2, tools: 3, mcp: 4, model: 5 };
+const catOrder = { files: 0, artifacts: 0.5, agents: 1, actions: 2, tools: 3, mcp: 4, model: 5 };
 const ca = catOrder[a.category] ?? 6;
 const cb = catOrder[b.category] ?? 6;
     if (ca !== cb) return ca - cb;
@@ -890,7 +916,7 @@ export function resolveMentionedFiles(text, candidateItems = items, opts = {}) {
     ? opts.maxBytes
     : DEFAULT_MAX_FILE_BYTES;
   const fileList = Array.isArray(candidateItems)
-    ? candidateItems.filter(i => i && (!i.category || i.category === CATEGORY.FILES) && typeof (i.insert || i.path) === 'string')
+    ? candidateItems.filter(i => i && (!i.category || i.category === CATEGORY.FILES || i.category === CATEGORY.ARTIFACTS) && typeof (i.insert || i.path) === 'string')
     : [];
   if (!fileList.length) return [];
 
@@ -904,7 +930,8 @@ export function resolveMentionedFiles(text, candidateItems = items, opts = {}) {
       path: rel,
       name: item.label || base,
       size: typeof item.size === 'number' ? item.size : null,
-      excerpt: item.excerpt || null
+      excerpt: item.excerpt || null,
+      sizeExempt: !!item.sizeExempt
     };
     byRel.set(rel, entry);
     if (!byBase.has(base)) byBase.set(base, []);
@@ -933,7 +960,7 @@ export function resolveMentionedFiles(text, candidateItems = items, opts = {}) {
     const rawToken = '@' + raw;
     let rec = byResolvedPath.get(target.path);
     if (!rec) {
-      const oversized = !target.excerpt && typeof target.size === 'number' && target.size > maxBytes;
+      const oversized = !target.excerpt && !target.sizeExempt && typeof target.size === 'number' && target.size > maxBytes;
       rec = {
         path: target.path,
         name: target.name,

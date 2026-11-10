@@ -88,7 +88,7 @@ async function fetchGitStats(projectDir) {
 }
 
 export function FileToolbar(props) {
-const { projectDir, onOpenFileEditor, onOpenPreview, onOpenScreenCapture, customActions, onRunCustomAction, onRefreshCustomActions, orb, extensionSheets, onOpenExtensionSheet } = props;
+const { projectDir, onOpenFileEditor, onOpenPreview, onOpenScreenCapture, onOpenArtifacts, customActions, onRunCustomAction, onRefreshCustomActions, orb, extensionSheets, onOpenExtensionSheet } = props;
 const [menuOpen, setMenuOpen] = useState(false);
   const [gitOpen, setGitOpen] = useState(false);
   const [cliOpen, setCliOpen] = useState(false);
@@ -432,6 +432,10 @@ h('button', { class: 'file-toolbar__menu-item', role: 'menuitem', type: 'button'
 h('span', { class: 'file-toolbar__menu-icon' }, '\u{1F4DD}'),
 h('span', null, 'Files')
 ),
+      onOpenArtifacts ? h('button', { class: 'file-toolbar__menu-item file-toolbar__menu-item--artifacts', role: 'menuitem', type: 'button', 'aria-haspopup': 'dialog', onClick: () => { setMenuOpen(false); onOpenArtifacts(); } },
+        h('span', { class: 'file-toolbar__menu-icon', 'aria-hidden': 'true' }, '\u{1F4E6}'),
+        h('span', null, 'Artifacts')
+      ) : null,
       h('button', { class: 'file-toolbar__menu-item', role: 'menuitem', type: 'button', onClick: handlePreview },
         h('span', { class: 'file-toolbar__menu-icon' }, '\u{1F4F1}'),
         h('span', null, 'Preview')

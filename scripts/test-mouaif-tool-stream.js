@@ -186,7 +186,7 @@ async function main() {
   assert.equal(out.ok, true);
   assert.equal(out.returned.name, 'Inline counter');
   assert.equal(out.returned.server, undefined, 'native tool does not register a project MCP server');
-  assert.equal(fs.readFileSync(path.join(projectDir, out.returned.path), 'utf8'), appArgs.source);
+  assert.equal(require('../src/artifacts.js').readBytes(projectDir, host.id, out.returned.path).bytes.toString('utf8'), appArgs.source);
   assert.ok(out.events.find(event => event.type === 'authorization_required').payload.summary.includes('counter.html'));
   assert.equal(mcp.listServers(projectDir).length, appCount, 'server list remains untouched');
   out = await call(host, { action: 'app_create', request: 'Build a checklist' });

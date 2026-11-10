@@ -2,7 +2,7 @@
 
 ## Overview
 
-31 ordinary native functions in two families let the assistant manage this project's chats and working folders, model discovery and background turns, image attachments, app and project settings, the registered project list, and the app itself (restart, feature report, wake-ups, webhooks and hooks): **15 in the Chats family** and **16 in mouaif**. Each tool has its own function name, argument schema, checkbox, and Off / Ask / Allow permission—just like the other native tools. There is no `mouaif` function or `action` argument. Two more are advertised without a row of their own: `activate_skill`, gated by the Skills switches in **Settings → Project**, and the `mcp__<server>__<tool>` specs, gated through `.mcp.json`. See [Tool groups](./tool-groups.md) for the complete native surface.
+36 ordinary native functions in two families let the assistant manage this project's chats and working folders, model discovery and background turns, image attachments, chat artifacts, app and project settings, the registered project list, and the app itself (restart, feature report, wake-ups, webhooks and hooks): **20 in the Chats family** and **16 in mouaif**. Each tool has its own function name, argument schema, checkbox, and Off / Ask / Allow permission—just like the other native tools. There is no `mouaif` function or `action` argument. Two more are advertised without a row of their own: `activate_skill`, gated by the Skills switches in **Settings → Project**, and the `mcp__<server>__<tool>` specs, gated through `.mcp.json`. See [Tool groups](./tool-groups.md) for the complete native surface.
 
 ## Usage
 
@@ -31,6 +31,11 @@ What is my default prompt size, and switch this project to agentFiles off.
 | `search_chats` | Search titles, drafts, and message text (`query`). Results retain `matchField` and a bounded matching `snippet`. |
 | `attach_chat_image` | Put an image from the project into a chat: `path` is relative to the calling chat's working folder (the project by default), `target` is `draft` (default — the composer holds it until the user presses send) or `message` (appends a real user message carrying the image, with optional `content`). |
 | `list_chat_attachments` | Show draft, user-message, and subagent-generated image names/types and `imageRef` values, not pixels. Scans the newest 200 messages by default; follow `nextBeforeSeq` with `beforeSeq` to retrieve older images. |
+| `list_artifacts` | List the current chat's [artifacts](./chat-artifacts.md), with each one's link. |
+| `read_artifact` | Read a text artifact a page at a time. `offset` and `limit` move through it. |
+| `save_artifact` | Create or replace an artifact from `content`, or copy a file with `path`. An app linking it reloads. |
+| `delete_artifact` | Delete an artifact. |
+| `export_artifact` | Write a copy of an artifact to a new file in the working folder. Always asks first and never replaces a file. |
 | `create_mcp_app` | Show an interactive single-file MCP App in the current chat, one mode per call: `source` + `filename` creates one, `path` + `source` updates one in place, `path` alone reopens one, `message` sends text to the mounted app, `request` only prepares an unsent development draft. Requires explicit approval, auto-expands or reloads in its tool card, does not register a project MCP server; the app can message the agent via `window.mouaifApp.sendMessage`. See [On-the-fly MCP Apps](./on-the-fly-mcp-apps.md). |
 | `get_settings` | Read settings. `scope` (required) is `app` or `project`; `keys` narrows the result. |
 | `update_settings` | Merge `patch` into the chosen `scope` (required, `app` or `project`); `unset` removes keys (project scope). |
@@ -74,7 +79,7 @@ The tools appear in two families in Settings → Project → Tools, the chat Too
 
 | Family (gate) | Native functions |
 | --- | --- |
-| **Chats** (`tools.chats`) | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `change_working_folder`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments`, `ask_user`, `task`, `report_progress`, `webpreview` |
+| **Chats** (`tools.chats`) | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `change_working_folder`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments`, `list_artifacts`, `read_artifact`, `save_artifact`, `delete_artifact`, `export_artifact`, `ask_user`, `task`, `report_progress`, `webpreview` |
 | **mouaif** (`tools.mouaif`) | `create_mcp_app`, `get_settings`, `update_settings`, `list_projects`, `restart_app`, `list_features`, `group_cli`, `schedule_wake`, `schedule_list`, `schedule_cancel`, `webhook_create`, `webhook_status`, `webhook_delete`, `hook_create`, `hook_list`, `hook_delete` |
 
 The Chats family carries the app functions above *and* the four tools the model uses inside one chat: **Ask user** (`ask_user`, binary Off / Ask), **Task** (`task`), **Report progress** (`report_progress`) and **Web preview** (`webpreview`, see [Web preview](./webpreview.md)). They used to be rows of their own; a stored `tools.<leaf>` still works as that leaf's override.

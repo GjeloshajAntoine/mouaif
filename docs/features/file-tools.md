@@ -56,6 +56,7 @@ Every tool:
 - Skips generated/private directories during walks (`node_modules`, `.git`, `.mouaif`, `dist`, `build`).
 - Refuses text reads over `fileReadMaxLines` (default 10000 lines) or `fileReadMaxBytes` (default 4 MiB), including slices. This bounds server memory before decoding a large single-line file.
 - Attaches an image read as a picture (see [read-file-images.md](./read-file-images.md)) and refuses one over `fileReadMaxImageBytes` (default 4 MB). `startLine` / `endLine` do not apply to images.
+- `read_file`, `group_read`, `list_files` and `search_files` also reach the chat's [artifacts](./chat-artifacts.md) through `artifact:<name>`. `write_file` and `edit_file` refuse it.
 - Honors per-project [hide-file-content](./hide-file-content.md) rules: `read_file` returns `[hidden]` for each marked line, and `search_files` drops matches on marked lines and matches inside marked character spans. `write_file` / `edit_file` and `list_files` are unaffected.
 - Caps `write_file` content at `fileWriteMaxBytes` (default 1 MB).
 - Caps `list_files` at `fileListMaxEntries` entries (default 1000) and `search_files` at `fileSearchMaxMatches` matches / `fileSearchMaxBytes` chars of matched line text (default 200 / 2 MB; the counter counts characters, not bytes). When a search is truncated, the cap values appear inline in the `# Matches` header line. The search engine's own read ceiling is separate and is documented in [search-engine.md](./search-engine.md).
