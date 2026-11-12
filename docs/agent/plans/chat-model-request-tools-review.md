@@ -15,6 +15,14 @@ How each issue was checked is stated on it:
 
 The existing test suite was not run and no source file was changed.
 
+## Fix status
+
+Fixed on 2026-11-10 except S9, with regression checks in `scripts/test-chat-request-fixes.js` and `scripts/test-provider-request-shape.js`.
+
+- S9 is not fixed. Stored tool rows carry no round marker, so replay cannot tell two calls of one round from two rounds that produced no text. Fixing it needs a round id on persisted tool rows. The related Anthropic point is fixed: the tool results of a live round now ride one user message.
+- F4 is handled through the server: a reply that ended early gets a saved ⚠ note row (`finishNotice` in `src/server-handlers-chats.js`), sent on `done` as `notice` and drawn as an error card.
+- F3: a retry posts `retry: true`; the server reuses the saved prompt when only error rows follow it, and saves a new one otherwise (the request must end on a user turn).
+
 ## Summary
 
 | # | Area | Issue | Severity | Status |

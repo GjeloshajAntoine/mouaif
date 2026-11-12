@@ -274,6 +274,33 @@ if (Array.isArray(content)) return content.concat([{ type: 'text', text: context
 return content;
 }
 // ---- Reconstruct upstream history (unchanged) -----------------------------
+// isTurnErrorRow(m) — a failed turn persisted by the stream handler
+// (persistStreamError): a `system` row whose content starts with the ⚠
+// marker. The chat UI classifies it the same way (frontend messageKind.js).
+// It is a transcript note for the user, never model context.
+const TURN_ERROR_RE = /^\u26a0(?:\s|$)/;
+function isTurnErrorRow(m) {
+return !!(m && m.role === 'system' && typeof m.content === 'string' && TURN_ERROR_RE.test(m.content));
+}
+
+// retryableUserRow(list, content, attachmentCount) — the saved prompt a
+// retry re-runs. After a failed turn the user row is already stored; when
+// nothing but error rows follows it and it carries the same prompt, a retry
+// re-runs that row instead of saving a second copy. Anything the model
+// produced after the prompt (text, tool rows) means a new row is needed,
+// since the request must end on a user turn.
+function retryableUserRow(list, content, attachmentCount) {
+const rows = Array.isArray(list) ? list : [];
+for (let i = rows.length - 1; i >= 0; i--) {
+const m = rows[i];
+if (isTurnErrorRow(m)) continue;
+if (!m || m.role !== 'user') return null;
+const count = Array.isArray(m.attachments) ? m.attachments.length : 0;
+return String(m.content || '') === String(content || '') && count === (attachmentCount || 0) ? m : null;
+}
+return null;
+}
+
 function reconstructUpstreamHistory(list, contentForMessage, options) {
 const source = Array.isArray(list) ? list : [];
 const contentOf = typeof contentForMessage === 'function'
@@ -288,6 +315,10 @@ let pairNumber = 0;
 for (let i = 0; i < source.length; i++) {
 const m = source[i];
 if (!m || typeof m !== 'object') continue;
+// Error rows stay out: replayed, they reached the model with system
+// authority and (on Anthropic, which folds system rows into the cached
+// system block) invalidated the prompt cache for every later turn.
+if (isTurnErrorRow(m)) continue;
 if (m.role === 'tool') {
 if (!includeTools) continue;
 if (m.phase !== 'call') continue;
@@ -356,6 +387,8 @@ return out;
 }
 module.exports = {
 VALID_ROLES,
+isTurnErrorRow,
+retryableUserRow,
 withHookContext,
 normalizeHooksMeta,
 CHAT_ID_RE,

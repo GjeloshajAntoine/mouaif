@@ -115,9 +115,9 @@ const ENDPOINTS = {
     // /v1/models beta is OAuth-only and is not reachable with a
     // standard API key. Ship a curated catalog that mirrors the
     // models documented at https://docs.claude.com/en/docs/about-claude/models.
-    // Every current Claude model supports extended thinking with a raw
-    // token budget, so the descriptor is uniform across the catalog.
-    listModels: async () => parseCuratedModels(ANTHROPIC_MODEL_CATALOG, { kind: 'budget' }),
+    // Each entry's thinking descriptor follows the model: effort levels
+    // for adaptive-thinking models, a token budget for the older ones.
+    listModels: async () => parseCuratedModels(ANTHROPIC_MODEL_CATALOG, anthropicThinkingFor),
     // Per the official `ant` CLI source and the platform.claude.com
     // docs: API-key auth uses the `x-api-key` header; OAuth user_oauth
     // tokens use `Authorization: Bearer ...` and require the
@@ -1469,8 +1469,7 @@ function openAIMessageToAnthropic(m) {
   }
   if (m.role === 'assistant') {
     const blocks = [];
-    if (typeof m.content === 'string' && m.content) blocks.push({ type: 'text', text: m.content });
-    else if (Array.isArray(m.content)) blocks.push(...openAIContentToAnthropic(m.content));
+    const toolUses = [];
     if (Array.isArray(m.tool_calls)) {
       for (const tc of m.tool_calls) {
         const fn = tc.function || {};
@@ -1480,9 +1479,28 @@ function openAIMessageToAnthropic(m) {
         } else if (fn.arguments && typeof fn.arguments === 'object') {
           input = fn.arguments;
         }
-        blocks.push({ type: 'tool_use', id: tc.id || undefined, name: fn.name || 'tool', input });
+        toolUses.push({ type: 'tool_use', id: tc.id || undefined, name: fn.name || 'tool', input });
       }
     }
+    // A live tool round recorded Anthropic's own content blocks (thinking
+    // with signatures, text, tool_use slots) in the order they streamed.
+    // Replay that order exactly; the tool_use slots take this message's
+    // calls, whose ids the loop may have rewritten.
+    if (Array.isArray(m.anthropicBlocks) && m.anthropicBlocks.length) {
+      let next = 0;
+      for (const b of m.anthropicBlocks) {
+        if (!b || typeof b !== 'object') continue;
+        if (b.type === 'tool_use') { if (next < toolUses.length) blocks.push(toolUses[next++]); }
+        else if (b.type === 'thinking') blocks.push({ type: 'thinking', thinking: b.thinking || '', signature: b.signature || '' });
+        else if (b.type === 'redacted_thinking') blocks.push({ type: 'redacted_thinking', data: b.data || '' });
+        else if (b.type === 'text' && b.text) blocks.push({ type: 'text', text: b.text });
+      }
+      blocks.push(...toolUses.slice(next));
+      return blocks.length ? { role: 'assistant', content: blocks } : null;
+    }
+    if (typeof m.content === 'string' && m.content) blocks.push({ type: 'text', text: m.content });
+    else if (Array.isArray(m.content)) blocks.push(...openAIContentToAnthropic(m.content));
+    blocks.push(...toolUses);
     if (!blocks.length) return null;
     return { role: 'assistant', content: blocks };
   }
@@ -1590,6 +1608,101 @@ function injectOpenRouterAnthropicCache(messages) {
   return out;
 }
 
+// anthropicModelTraits(id) -> { known, maxOutput, thinking, efforts }
+//
+// What a Claude model accepts, read from its id (first-party
+// `claude-opus-4-7`, dotted catalog ids such as `claude-opus-4.5`, Bedrock's
+// `anthropic.` prefix and dated snapshots all parse). `thinking` is
+//   'adaptive' — `thinking: { type: 'adaptive' }` + `output_config.effort`;
+//                a `budget_tokens` request is rejected with a 400 on
+//                Opus 4.7+, Sonnet 5+ and every Claude 5 model
+//   'budget'   — `thinking: { type: 'enabled', budget_tokens }`
+//   'none'     — no extended thinking (Claude 3.5 and older)
+// `maxOutput` is the model's output ceiling, used to size the default
+// `max_tokens`. An id that is not a Claude model (an Anthropic-compatible
+// proxy serving another family) keeps the budget form and a moderate cap
+// that such endpoints accept.
+function anthropicModelTraits(id) {
+  const s = String(id || '').toLowerCase();
+  let family = '';
+  let major = 0;
+  let minor = 0;
+  let m = /claude-(opus|sonnet|haiku|fable|mythos)-(\d+)(?:[.-](\d{1,2})(?!\d))?/.exec(s);
+  if (m) { family = m[1]; major = Number(m[2]); minor = Number(m[3] || 0); }
+  else if ((m = /claude-(\d+)(?:[.-](\d))?-(opus|sonnet|haiku)/.exec(s))) {
+    family = m[3]; major = Number(m[1]); minor = Number(m[2] || 0);
+  }
+  const ALL = ['low', 'medium', 'high', 'xhigh', 'max'];
+  if (!family) {
+    if (/claude/.test(s)) return { known: false, maxOutput: 64000, thinking: 'adaptive', efforts: ALL };
+    return { known: false, maxOutput: 16000, thinking: 'budget', efforts: [] };
+  }
+  if (family === 'fable' || family === 'mythos' || major >= 5) {
+    return { known: true, maxOutput: 128000, thinking: 'adaptive', efforts: ALL };
+  }
+  if (major === 4) {
+    if (minor >= 7) return { known: true, maxOutput: 128000, thinking: 'adaptive', efforts: ALL };
+    if (minor === 6) return { known: true, maxOutput: 128000, thinking: 'adaptive', efforts: ['low', 'medium', 'high', 'max'] };
+    if (family === 'opus' && minor < 5) return { known: true, maxOutput: 32000, thinking: 'budget', efforts: [] };
+    return { known: true, maxOutput: 64000, thinking: 'budget', efforts: [] };
+  }
+  if (major === 3 && minor >= 7) return { known: true, maxOutput: 64000, thinking: 'budget', efforts: [] };
+  if (major === 3 && minor >= 5) return { known: true, maxOutput: 8192, thinking: 'none', efforts: [] };
+  return { known: true, maxOutput: 4096, thinking: 'none', efforts: [] };
+}
+
+// anthropicThinkingFor(model) — the picker's thinking descriptor for one
+// catalog entry: effort levels for adaptive models, a raw budget for the
+// older ones, nothing for models without extended thinking.
+function anthropicThinkingFor(m) {
+  const traits = anthropicModelTraits(m && m.id);
+  if (traits.thinking === 'adaptive') return { kind: 'levels', levels: traits.efforts.slice() };
+  if (traits.thinking === 'budget') return { kind: 'budget' };
+  return undefined;
+}
+
+// anthropicEffort(level, efforts) — map a chat's thinking level onto an
+// adaptive model's `output_config.effort`. A raw token budget (the older
+// models' setting, still stored on chats and agents) maps to the nearest
+// effort; a level the model lacks steps down to the closest one it has.
+function anthropicEffort(level, efforts) {
+  const tl = String(level || '').trim().toLowerCase();
+  if (!tl || tl === 'none' || tl === 'off') return '';
+  let effort = tl;
+  if (tl === 'minimal') effort = 'low';
+  else if (/^\d+$/.test(tl)) {
+    const n = parseInt(tl, 10);
+    if (!(n > 0)) return '';
+    effort = n <= 4096 ? 'low' : n <= 12000 ? 'medium' : n <= 32000 ? 'high' : 'xhigh';
+  }
+  const order = ['low', 'medium', 'high', 'xhigh', 'max'];
+  if (!order.includes(effort)) return '';
+  if (efforts.includes(effort)) return effort;
+  for (let i = order.indexOf(effort); i >= 0; i--) if (efforts.includes(order[i])) return order[i];
+  return efforts[0] || '';
+}
+
+// mergeAnthropicToolResults(messages) — fold the tool_result messages of
+// one round into a single user message. The tool loop appends one `tool`
+// message per call; Anthropic expects every result of a round together
+// (split results teach the model to stop making parallel calls). Other user
+// content (image follow-ups, the next prompt) stays in its own message so
+// the penultimate cache breakpoint keeps landing on the results.
+function mergeAnthropicToolResults(messages) {
+  const onlyToolResults = (msg) => msg && msg.role === 'user' && Array.isArray(msg.content)
+    && msg.content.length > 0 && msg.content.every((b) => b && b.type === 'tool_result');
+  const out = [];
+  for (const msg of messages) {
+    const prev = out[out.length - 1];
+    if (onlyToolResults(prev) && onlyToolResults(msg)) {
+      out[out.length - 1] = { role: 'user', content: prev.content.concat(msg.content) };
+    } else {
+      out.push(msg);
+    }
+  }
+  return out;
+}
+
 function buildAnthropicRequest(model, messages, stream, specs) {
   const systemMsgs = messages.filter(m => m.role === 'system');
   const systemContent = systemMsgs.map(m => systemContentText(m.content)).filter(Boolean).join('\n\n');
@@ -1607,7 +1720,12 @@ function buildAnthropicRequest(model, messages, stream, specs) {
   // tool loop could never run against Claude. Conversion happens first
   // because empty segments drop out — the penultimate breakpoint below
   // must target the array actually sent upstream.
-  const convertedMessages = chatMessages.map(openAIMessageToAnthropic).filter(Boolean);
+  const convertedMessages = mergeAnthropicToolResults(chatMessages.map(openAIMessageToAnthropic).filter(Boolean));
+  const traits = anthropicModelTraits(model.id);
+  // Without an explicit cap, ask for the model's room: a streamed reply
+  // has no HTTP timeout to fear, and a low default (this used to be 1024)
+  // silently cut answers and tool arguments short.
+  const defaultMaxTokens = stream ? Math.min(64000, traits.maxOutput) : Math.min(16000, traits.maxOutput);
   // Cache breakpoint on the penultimate message. Anthropic only honors a
   // cache_control marker when the prompt prefix before it exceeds the
   // per-model minimum cacheable length (1024 tokens for Sonnet 3.5/3.7,
@@ -1621,7 +1739,7 @@ function buildAnthropicRequest(model, messages, stream, specs) {
   if (convertedMessages.length >= 2) markPenultimateMessage(convertedMessages);
   const body = {
     model: model.id,
-    max_tokens: maxOutputNum || 1024,
+    max_tokens: maxOutputNum || defaultMaxTokens,
     // Anthropic prompt caching: the system message (profile + agent files +
     // custom prompt + feature summary) is stable across every turn of a
     // multi-tool conversation, so marking it with cache_control means the
@@ -1645,30 +1763,38 @@ function buildAnthropicRequest(model, messages, stream, specs) {
     body.tools = tools;
     body.tools[body.tools.length - 1].cache_control = { type: 'ephemeral' };
   }
-  // Inject thinking budget for Anthropic. The thinking level maps to
-  // a budget_tokens value. When the level is a plain number string, use
-  // it directly as budget_tokens. Known presets: "low"=2048, "medium"=8192, "high"=16384.
-  // An empty string means no thinking block (default).
-  if (model.thinkingLevel) {
+  // Thinking. Current models (Opus 4.6+, Sonnet 5+, every Claude 5) take
+  // adaptive thinking with an effort level and reject `budget_tokens`;
+  // their thinking text is omitted by default, so `display: 'summarized'`
+  // keeps the chat's Thinking block filling in. Older models take a raw
+  // token budget: "low"=2048, "medium"=8192, "high"=16384, or a number.
+  // An empty level sends no thinking field (the model's default).
+  if (model.thinkingLevel && traits.thinking === 'adaptive') {
+    const effort = anthropicEffort(model.thinkingLevel, traits.efforts);
+    if (effort) {
+      body.thinking = { type: 'adaptive', display: 'summarized' };
+      body.output_config = { effort };
+    }
+  } else if (model.thinkingLevel && traits.thinking === 'budget') {
     const tl = String(model.thinkingLevel).trim();
     let budget = 0;
-    if (tl === 'low') budget = 2048;
+    if (tl === 'low' || tl === 'minimal') budget = 2048;
     else if (tl === 'medium') budget = 8192;
-    else if (tl === 'high') budget = 16384;
+    else if (tl === 'high' || tl === 'xhigh' || tl === 'max') budget = 16384;
     else {
       const n = parseInt(tl, 10);
       if (isFinite(n) && n > 0) budget = n;
     }
     if (budget > 0) {
     // The budget is capped so a bogus "999999" from a project file cannot
-    // ask for an absurd thinking window. max_tokens must clear the
-    // thinking budget (Anthropic rejects the request otherwise), so it is
-    // derived from the same capped value — computing it from the
-    // uncapped `budget` produced `budget_tokens: 100000` next to
-    // `max_tokens: 200256` for a 200000-token request.
-    const capped = Math.min(budget, 100000);
+    // ask for an absurd thinking window (Anthropic's minimum is 1024), and
+    // so budget plus answer room stays within the model's output ceiling.
+    // max_tokens must clear the thinking budget with room left for the
+    // answer and any tool arguments; 256 tokens of headroom truncated
+    // most replies, so at least 4096 are kept beyond the budget.
+    const capped = Math.max(1024, Math.min(budget, 100000, traits.maxOutput - 4096));
     body.thinking = { type: 'enabled', budget_tokens: capped };
-    if (body.max_tokens < capped + 256) body.max_tokens = capped + 256;
+    if (body.max_tokens < capped + 4096) body.max_tokens = capped + 4096;
     }
   }
   return {
@@ -2022,28 +2148,44 @@ function* parseAnthropicSSE(eventName, data, toolAcc) {
         } };
       }
       break;
-    case 'content_block_start':
-      if (obj.content_block && obj.content_block.type === 'tool_use') {
-        const block = obj.content_block;
-        acc.set(obj.index, { id: block.id, name: block.name, partial: '' });
+    case 'content_block_start': {
+      // Every block is tracked so the round's assistant content can be
+      // replayed in order: a tool round with thinking on must send its
+      // thinking blocks (and their signatures) back unchanged, ahead of the
+      // tool_use blocks they produced, or the follow-up request is refused.
+      const block = obj.content_block || {};
+      if (block.type === 'tool_use') {
+        acc.set(obj.index, { kind: 'tool_use', id: block.id, name: block.name, partial: '' });
+      } else if (block.type === 'thinking') {
+        acc.set(obj.index, { kind: 'thinking', thinking: block.thinking || '', signature: block.signature || '' });
+      } else if (block.type === 'redacted_thinking') {
+        acc.set(obj.index, { kind: 'redacted_thinking', data: block.data || '' });
+      } else if (block.type === 'text') {
+        acc.set(obj.index, { kind: 'text', text: block.text || '' });
       }
       break;
-    case 'content_block_delta':
+    }
+    case 'content_block_delta': {
+      const entry = acc.get(obj.index);
       if (obj.delta && obj.delta.type === 'text_delta' && typeof obj.delta.text === 'string') {
+        if (entry && entry.kind === 'text') entry.text += obj.delta.text;
         yield { name: 'message', data: { delta: obj.delta.text } };
       } else if (obj.delta && obj.delta.type === 'thinking_delta' && typeof obj.delta.thinking === 'string') {
+        if (entry && entry.kind === 'thinking') entry.thinking += obj.delta.thinking;
         yield { name: 'reasoning', data: { delta: obj.delta.thinking } };
       } else if (obj.delta && obj.delta.type === 'signature_delta') {
-        // Anthropic signs extended-thinking blocks; the signature is not user-facing.
+        // Not user-facing, but required to replay the block in a tool round.
+        if (entry && entry.kind === 'thinking' && typeof obj.delta.signature === 'string') entry.signature += obj.delta.signature;
       } else if (obj.delta && obj.delta.type === 'input_json_delta' && typeof obj.delta.partial_json === 'string') {
-        const entry = acc.get(obj.index);
-        if (entry) entry.partial += obj.delta.partial_json;
+        if (entry && entry.kind === 'tool_use') entry.partial += obj.delta.partial_json;
       }
       break;
+    }
     case 'content_block_stop': {
       const entry = acc.get(obj.index);
-      if (entry && entry.name) {
-        acc.delete(obj.index);
+      if (!entry) break;
+      acc.delete(obj.index);
+      if (entry.kind === 'tool_use' && entry.name) {
         yield {
           name: 'tool_call_delta',
           data: {
@@ -2052,12 +2194,27 @@ function* parseAnthropicSSE(eventName, data, toolAcc) {
             function: { name: entry.name, arguments: entry.partial || '{}' }
           }
         };
+        yield { name: 'assistant_block', data: { type: 'tool_use' } };
+      } else if (entry.kind === 'thinking') {
+        yield { name: 'assistant_block', data: { type: 'thinking', thinking: entry.thinking, signature: entry.signature } };
+      } else if (entry.kind === 'redacted_thinking') {
+        yield { name: 'assistant_block', data: { type: 'redacted_thinking', data: entry.data } };
+      } else if (entry.kind === 'text' && entry.text) {
+        yield { name: 'assistant_block', data: { type: 'text', text: entry.text } };
       }
       break;
     }
     case 'message_delta':
       if (obj.usage && typeof obj.usage.output_tokens === 'number') {
         yield { name: 'usage_output', data: { completionTokens: obj.usage.output_tokens } };
+      }
+      // `max_tokens`, `refusal`, `pause_turn` and friends must reach the
+      // tool loop (a cut-off tool call is not dispatched) and the chat UI
+      // (a truncated reply is labelled). `tool_use` maps to the OpenAI name
+      // the loop already filters out.
+      if (obj.delta && typeof obj.delta.stop_reason === 'string' && obj.delta.stop_reason) {
+        const reason = obj.delta.stop_reason === 'tool_use' ? 'tool_calls' : obj.delta.stop_reason;
+        yield { name: 'finish', data: { reason } };
       }
       break;
     case 'message_stop':
@@ -2164,5 +2321,7 @@ endpointFor,
   // Copilot token cache clear (OAuth refresher + tests)
   copilotCacheClear,
   // exposed for scripts/test-copilot-provider.js
-  safeCopilotApiBase
+  safeCopilotApiBase,
+  // exposed for scripts/test-anthropic-request.js
+  anthropicModelTraits
 };

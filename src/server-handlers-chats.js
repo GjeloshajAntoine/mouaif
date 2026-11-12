@@ -993,9 +993,21 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
   // The client's id for its unsaved user bubble; stored and echoed so the
   // UI swaps that bubble for this row by id (docs/features/chat-client-row-ids.md).
   const userClientId = messages.normalizeClientId(body && body.clientId) || messages.newClientId('u');
-  try { userMsg = messages.appendMessage(projectDir, chatId, { role: 'user', content, attachments, clientId: userClientId, origin: internal.origin, hooks: promptHooks }); }
-  catch (e) { return sendJSON(res, 400, { error: e.message }); }
-  if (appContextSent) {
+  // A retry of a failed turn (the error card's Retry, or the auto-retry)
+  // re-runs the prompt that is already saved rather than storing it again;
+  // each retry used to add another copy to the transcript and to the
+  // history sent upstream.
+  if (body && body.retry === true) {
+    try {
+      userMsg = messages.retryableUserRow(messages.listMessagesWindow(projectDir, chatId, { limit: 20 }), content, attachments.length) || undefined;
+    } catch { userMsg = undefined; }
+  }
+  const reusedUserRow = !!userMsg;
+  if (!userMsg) {
+    try { userMsg = messages.appendMessage(projectDir, chatId, { role: 'user', content, attachments, clientId: userClientId, origin: internal.origin, hooks: promptHooks }); }
+    catch (e) { return sendJSON(res, 400, { error: e.message }); }
+  }
+  if (appContextSent && !reusedUserRow) {
     try { require('./app-context.js').markSent(projectDir, chatId, appContextSent); } catch { /* best-effort */ }
   }
   // Read the full transcript once and reuse across the title-derivation
@@ -1053,7 +1065,7 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
   hostEvent('turn.start', { model: model.id });
 
   // What `prompt.submit` hooks did to this prompt, for the user bubble.
-  if (promptHooks) {
+  if (promptHooks && !reusedUserRow) {
     try { res.write('event: prompt_hooks\ndata: ' + JSON.stringify({ clientId: userMsg.clientId, seq: userMsg.seq, hooks: promptHooks }) + '\n\n'); }
     catch { /* socket closed */ }
   }
@@ -1061,7 +1073,12 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
   // Open the trace file. No-op writer if trace is off or the file
   // system is read-only.
   const traceStream = chat.trace ? trace.open(projectDir, chatId) : null;
+  // The final round's finish reason, when a provider reports one: a reply
+  // cut at the output limit or stopped by a filter would otherwise look
+  // like a normal completion (see finishNotice below).
+  let turnFinishReason = '';
   function emit(name, data) {
+    if (name === 'finish' && data && typeof data.reason === 'string') turnFinishReason = data.reason;
     if (name === 'tool_result') {
       turnToolCount++;
       hostEvent('tool.after', { tool: data && data.name, ok: !!(data && data.ok), callId: data && data.id,
@@ -1860,6 +1877,18 @@ promptSize: resolvedProfileId,
         }
         // The saved final row's id rides `done` so the UI keys its bubble by it.
         if (assistantMsg && assistantMsg.clientId) enriched = Object.assign({}, enriched, { clientId: assistantMsg.clientId });
+        // A reply that ended for a reason other than completion gets a
+        // note row after it, persisted like a turn error (⚠ marker) so it
+        // survives a reload and stays out of the model's history.
+        const notice = finishNotice(turnFinishReason);
+        if (notice) {
+          let noticeClientId = '';
+          try {
+            const row = messages.appendMessage(projectDir, chatId, { role: 'system', content: '\u26a0 ' + notice, clientId: messages.newClientId('e') });
+            noticeClientId = (row && row.clientId) || '';
+          } catch { /* best-effort */ }
+          enriched = Object.assign({}, enriched, { notice: { reason: turnFinishReason, message: notice, clientId: noticeClientId || undefined } });
+        }
         if (traceStream && assistantMsg) {
           const event = trace.eventForMessage(assistantMsg);
           trace.write(traceStream, event.type, event.payload);
@@ -2061,3 +2090,20 @@ promptSize: resolvedProfileId,
 }
 
 module.exports = { handleChats, handleChatStream, startChatTurn };
+
+// finishNotice(reason) -> string | '' — the transcript note for a reply that
+// ended early. Providers name the same causes differently (OpenAI `length` /
+// `content_filter`, Anthropic `max_tokens` / `refusal` / `pause_turn`,
+// Gemini `MAX_TOKENS` / `SAFETY`); normal endings return ''.
+function finishNotice(reason) {
+  const r = String(reason || '');
+  if (/^(length|max_tokens|max_output_tokens|MAX_TOKENS)$/.test(r)) {
+    return 'ETRUNCATED: The reply was cut off at the output-token limit (' + r + '). Raise the chat\'s max output tokens, or ask the model to continue.';
+  }
+  if (r === 'refusal') return 'EREFUSAL: The model declined to continue this reply (refusal).';
+  if (r === 'pause_turn') return 'EPAUSED: The provider paused this turn (pause_turn). Send a follow-up to let the model continue.';
+  if (/^(content_filter|SAFETY|RECITATION|PROHIBITED_CONTENT|BLOCKLIST|SPII|IMAGE_SAFETY)$/.test(r)) {
+    return 'EFILTERED: The provider\'s content filter stopped the reply (' + r + ').';
+  }
+  return '';
+}

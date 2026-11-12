@@ -18,9 +18,10 @@ The value is per chat, not per model: switching models keeps the same cap (or yo
 - **How the cap is sent.** On each streamed turn the frontend includes `maxOutputTokens` in the `POST /api/chats/:id/messages/stream` body. It rides the chat record even when the field is left untouched, so a value set once keeps applying to later turns and across reloads.
 - **Provider mapping.** The single value is translated differently per provider family:
   - **OpenAI-compatible providers** (`openai-compatible`, `openrouter`, `azure`, `mistral`, `groq`, `deepseek`, `github-copilot`) send `max_completion_tokens`.
-  - **Anthropic** sends `max_tokens` (Anthropic's name for the output cap). When a thinking budget is set, Anthropic still bumps `max_tokens` to `budget + 256` so the thinking budget fits inside the cap.
+  - **Anthropic** sends `max_tokens` (Anthropic's name for the output cap). When a thinking budget is set on an older Claude model, `max_tokens` is raised to at least `budget + 4096` so the answer still has room after the thinking.
 - **Validation.** Only a positive all-numeric string is honoured. Empty, non-numeric, or `<= 0` input means **no override** — the field is not sent and the provider default applies. Invalid input is silently discarded rather than persisted.
-- **Default remains 1024** when no override is set on the Anthropic path, matching prior behaviour.
+- **Anthropic default.** With no override, a streamed Anthropic request asks for `min(64000, model ceiling)` output tokens (8192 for Claude 3.5, 32000 for Opus 4 / 4.1, 64000 for current models); a non-streamed one asks for at most 16000. An id that is not a Claude model (an Anthropic-compatible proxy) gets 16000. The old default of 1024 cut most replies short.
+- **Truncation is shown.** A reply that ends at the cap (`length`, `max_tokens`, Gemini's `MAX_TOKENS`) gets a ⚠ note in the transcript after it, saved like a turn error so it survives a reload and is never sent to the model. Filtered (`content_filter`, `SAFETY`, …), refused (`refusal`) and paused (`pause_turn`) replies get the same kind of note. A round cut off while writing a tool call fails with `ETRUNCATED` instead of running the tool with half-written arguments.
 
 ## Related
 

@@ -18,7 +18,9 @@
 In `src/ai.js`:
 
 - `buildOpenAIRequest` — passes any non-empty `model.thinkingLevel` verbatim as `body.reasoning_effort`. The valid set is provider-defined, so there is no client-side whitelist to lag new upstream values.
-- `buildAnthropicRequest` — derives a `budget_tokens` number from the thinking level string and sets `body.thinking = { type: 'enabled', budget_tokens }`. Low=2048, Medium=8192, High=16384. Custom values are parsed via `parseInt` and capped at 100000. `max_tokens` is raised to at least `budget_tokens + 256`.
+- `buildAnthropicRequest` — reads `anthropicModelTraits(model.id)` (src/ai-endpoints.js). Adaptive models (Opus 4.6+, Sonnet 5+, Claude 5) get `thinking: { type: 'adaptive', display: 'summarized' }` and `output_config.effort` from `anthropicEffort()`; a numeric level maps to an effort. Older models get `{ type: 'enabled', budget_tokens }`: Low=2048, Medium=8192, High=16384, custom via `parseInt`, capped at `min(100000, maxOutput - 4096)`, and `max_tokens` is raised to at least `budget_tokens + 4096`.
+- `parseAnthropicSSE` emits `assistant_block` events (thinking with signature, redacted thinking, text, tool_use slots) in streamed order; the tool loop stores them on the round's assistant message as `anthropicBlocks`, and `openAIMessageToAnthropic` replays them unchanged in the next request.
+- `onPickerPick` (frontend/src/components/chat/modelPicker.js) runs `reconcileThinkingLevel()` from thinking.js against the new model's descriptor and saves the adjusted level with the model change.
 - `buildGeminiRequest` — maps presets/custom numbers to `generationConfig.thinkingConfig.thinkingBudget`.
 - `buildOllamaRequest` — any non-empty thinking level sets `body.think = true`.
 

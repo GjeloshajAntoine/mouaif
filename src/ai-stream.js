@@ -22,7 +22,11 @@ const { withHookContext } = require('./messages.js');
 
 // Walks an SSE byte stream and yields {eventName, data} pairs.
 // `stream` is a ReadableStream<Uint8Array> from fetch().
-async function* readSSE(stream) {
+// `onChunk` runs for every raw chunk read, before any frame is parsed:
+// the idle watchdog uses it, so SSE comment lines (gateway keep-alives
+// such as OpenRouter's ": OPENROUTER PROCESSING") count as signs of life
+// even though they never become events.
+async function* readSSE(stream, onChunk) {
   const decoder = new TextDecoder('utf-8');
   let buf = '';
   // SSE frames are separated by a blank line. The spec allows LF, CRLF,
@@ -37,6 +41,7 @@ async function* readSSE(stream) {
   // `\n`-based field splitting sees a clean frame.
   const FRAME_SEP = /(?:\r\n|\r|\n){2}/;
   for await (const chunk of stream) {
+    if (onChunk) onChunk();
     buf += decoder.decode(chunk, { stream: true });
     let idx;
     while ((idx = buf.search(FRAME_SEP)) !== -1) {
@@ -76,10 +81,11 @@ function parseSSEFrame(frame) {
 }
 
 // Walks an NDJSON byte stream and yields one parsed object per line.
-async function* readNDJSON(stream) {
+async function* readNDJSON(stream, onChunk) {
   const decoder = new TextDecoder('utf-8');
   let buf = '';
   for await (const chunk of stream) {
+    if (onChunk) onChunk();
     buf += decoder.decode(chunk, { stream: true });
     let idx;
     while ((idx = buf.indexOf('\n')) !== -1) {
@@ -316,7 +322,7 @@ async function runSingleToolCall(c, cx) {
     callEmitted = true;
     onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result: exec.result });
     pushToolMessage(c.name, modelContentForTool(c.name, exec));
-    return exec;
+    return { exec, imageParts: [] };
   }
   try {
     // The tools the server answers WITHOUT an approval card: a UI progress
@@ -504,7 +510,7 @@ async function runSingleToolCall(c, cx) {
           callEmitted = true;
           onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result: exec.result });
           pushToolMessage(c.name, modelContentForTool(c.name, exec));
-          return exec;
+          return { exec, imageParts: [] };
         }
       }
       // A delegation that shares chat images names them on the approval
@@ -575,7 +581,7 @@ async function runSingleToolCall(c, cx) {
           callEmitted = true;
           onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result: exec.result });
           pushToolMessage(c.name, modelContentForTool(c.name, exec));
-          return exec;
+          return { exec, imageParts: [] };
         }
       }
 
@@ -774,7 +780,13 @@ async function streamChat(opts) {
 }
 
 async function streamChatInScope(opts) {
-  const { model, messages, signal, onEvent, onRoundUsage, onRoundCommit, thinkingLevel, maxOutputTokens } = opts || {};
+  const { messages, signal, onEvent, onRoundUsage, onRoundCommit, thinkingLevel, maxOutputTokens } = opts || {};
+  // The request builders read per-run fields (thinkingLevel,
+  // maxOutputTokens) off the model record, so each run works on its own
+  // shallow copy: the caller's object is shared with the chat, with
+  // subagents that inherit it and with the shell reviewer, and writing onto
+  // it leaked one run's thinking level into the next.
+  const model = opts && opts.model && typeof opts.model === 'object' ? Object.assign({}, opts.model) : (opts && opts.model);
   const orchestration = require('./tools/subagent-orchestration.js');
   const scope = opts.orchestrationScope;
   if (!model || !model.provider) {
@@ -795,7 +807,6 @@ async function streamChatInScope(opts) {
   if (typeof maxOutputTokens === 'string' && maxOutputTokens) {
     model.maxOutputTokens = maxOutputTokens;
   }
-  if (opts.noTools) model.noTools = true;
 
   let def, build, parse;
   try {
@@ -1154,7 +1165,11 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
         id: c.id || undefined,
         type: 'function',
         function: { name: c.name, arguments: c.arguments || '{}' }
-      }))
+      })),
+      // Anthropic only: the round's thinking blocks with their
+      // signatures, which the next request must send back unchanged
+      // (src/ai-endpoints.js openAIMessageToAnthropic).
+      ...(result.anthropicBlocks ? { anthropicBlocks: result.anthropicBlocks } : {})
     });
 
     // Close the streamed assistant segment before tool cards are emitted.
@@ -1265,7 +1280,8 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   // model): without a deadline the server waits forever, the chat shows
   // "streaming…" permanently, and the running marker wedges the chat
   // (every retry gets 409 EALREADY_RUNNING). The timer resets on every
-  // streamed byte, so a slow-but-chatty model never trips it — only a
+  // chunk read from the socket (keep-alive comments included), so a
+  // slow-but-chatty model never trips it — only a
   // genuinely silent one does. UPSTREAM_IDLE_MS covers the quiet gap
   // before the first token too (models can "think" for a long time
   // before emitting anything).
@@ -1335,6 +1351,14 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   // we assemble by `index`. The accumulator lives only for the
   // duration of one turn.
   const toolAcc = new Map(); // index -> { id, name, arguments }
+  // Deltas without a numeric `index` (some gateways omit it) are keyed by
+  // call id instead, so parallel calls stay separate.
+  let unindexedSlot = null;
+  let unindexedCount = 0;
+  // The round's finish reason (normalized by the parsers), and Anthropic's
+  // content blocks in streamed order for replay in the next tool round.
+  let finishReason = '';
+  const assistantBlocks = [];
   // Per-round usage trackers. OpenAI-shaped providers report usage once
   // on the final chunk (with stream_options.include_usage), but some
   // compatible gateways stamp a running total on every chunk. Summing
@@ -1362,17 +1386,30 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     if (req.responseFormat === 'json') {
     // Dedicated image APIs are one-shot JSON, not SSE. Keep the same
     // cancellation, error normalization, and round billing as chat calls.
-    for (const ev of parseTurn('', JSON.stringify(await upstream.json()))) apply(ev);
+    // The body is read chunk by chunk so a large image that is still
+    // arriving keeps the idle watchdog quiet.
+    const decoder = new TextDecoder('utf-8');
+    let text = '';
+    if (stream && typeof stream[Symbol.asyncIterator] === 'function') {
+      for await (const chunk of stream) { resetIdle(); text += decoder.decode(chunk, { stream: true }); }
+      text += decoder.decode();
+    } else {
+      text = await upstream.text();
+    }
+    let parsed;
+    try { parsed = JSON.parse(text); }
+    catch { throw new Error('Provider returned invalid JSON'); }
+    for (const ev of parseTurn('', JSON.stringify(parsed))) apply(ev);
     } else if (isNDJSON) {
-    for await (const obj of readNDJSON(stream)) {
-        resetIdle(); // any upstream byte proves the provider is alive
+    // resetIdle runs per chunk read: any upstream byte proves the
+    // provider is alive.
+    for await (const obj of readNDJSON(stream, resetIdle)) {
         for (const ev of parseTurn('', JSON.stringify(obj))) {
           apply(ev);
         }
       }
     } else {
-      for await (const ev of readSSE(stream)) {
-        resetIdle(); // any upstream byte proves the provider is alive
+      for await (const ev of readSSE(stream, resetIdle)) {
         for (const out of parseTurn(ev.eventName, ev.data)) {
           apply(out);
         }
@@ -1404,6 +1441,15 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   commitRoundUsage();
 
   if (sawError) return { ok: false, error: sawError };
+  // A reply cut at the output limit while writing a tool call carries
+  // half-written arguments. Dispatching it would run the tool with
+  // `{ __raw: … }` (or `{}` once replayed to Anthropic), so the round
+  // fails with a clear error instead.
+  if (/^(length|max_tokens|max_output_tokens|MAX_TOKENS)$/.test(finishReason) && [...toolAcc.values()].some((tc) => tc && tc.name)) {
+    const error = { code: 'ETRUNCATED', message: 'The reply hit the output-token limit while writing a tool call, so the call was not run. Raise the chat\'s max output tokens and retry.' };
+    onEvent('error', error);
+    return { ok: false, error };
+  }
   if (req.expectsImage && !images.length) {
     return { ok: false, error: { code: 'ENO_IMAGE', message: 'The image provider returned no image (possibly filtered). No artwork was generated.' } };
   }
@@ -1430,7 +1476,8 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     // delta the client already rendered.
     if (assistantText) onEvent('message', { delta: assistantText });
   }
-  return { ok: true, assistantText, toolCalls, images };
+  return { ok: true, assistantText, toolCalls, images,
+    ...(assistantBlocks.some((b) => b.type === 'thinking' || b.type === 'redacted_thinking') ? { anthropicBlocks: assistantBlocks } : {}) };
 
   function apply(ev) {
     if (ev.name === 'image') {
@@ -1546,19 +1593,32 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
         } catch { /* listener errors must not abort the stream */ }
       }
     } else if (ev.name === 'finish') {
+      if (ev.data && typeof ev.data.reason === 'string') finishReason = ev.data.reason;
       // The tool-call finish reason is handled by the outer loop
       // (it emits tool_call / tool_result). Pass through only the
       // non-tool finish reasons so the UI can show them.
       if (!(ev.data && ev.data.reason === 'tool_calls')) {
         onEvent('finish', ev.data);
       }
+    } else if (ev.name === 'assistant_block') {
+      if (ev.data && typeof ev.data === 'object') assistantBlocks.push(ev.data);
     } else if (ev.name === 'tool_call_delta') {
       // OpenAI streams tool calls as a list of deltas. Accumulate
       // by `index`. The first delta carries the `id`; subsequent
       // deltas fill in `function.name` (sometimes) and
       // `function.arguments` (a JSON string we concatenate).
       const d = ev.data;
-      const idx = (typeof d.index === 'number') ? d.index : 0;
+      let idx;
+      if (typeof d.index === 'number') idx = d.index;
+      else {
+        // No index: a delta naming a new call id opens a new call; one
+        // without an id continues the call in progress.
+        const current = unindexedSlot === null ? null : toolAcc.get(unindexedSlot);
+        if (unindexedSlot === null || (d.id && current && current.id && current.id !== d.id)) {
+          unindexedSlot = 'u' + (unindexedCount++);
+        }
+        idx = unindexedSlot;
+      }
       let cur = toolAcc.get(idx);
       if (!cur) { cur = { id: null, name: '', arguments: '' }; toolAcc.set(idx, cur); }
       if (d.id) cur.id = d.id;
@@ -2133,7 +2193,10 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       // a hard, typed error so the model can retry with a valid one
       // instead of silently delegating to a generic subagent.
       let agentTools = null;
-      let nestedModel = model; // default: inherit the chat's model
+      // Default: inherit the chat's model. A copy, because the thinking
+      // level below is written onto it and must not reach the parent run
+      // or a sibling subagent.
+      let nestedModel = Object.assign({}, model);
       // Default: inherit the chat's thinking level (null → inherit). An
       // explicit per-run override (authorization card) wins; otherwise an
       // agent's thinkingLevel applies. Empty string = "No thinking".
@@ -2181,7 +2244,11 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
           const r = { error: { code: 'EUNKNOWN_AGENT', message: 'Unknown agent "' + agentName + '"', available } };
           return { ok: false, content: JSON.stringify(r), result: r };
         }
-        nestedMessages.push({ role: 'system', content: [{ type: 'text', text: agent.isDefault ? agent.effectiveContent : agent.content, cache_control: { type: 'ephemeral' } }] });
+        // Plain string content: OpenAI-shaped providers take it verbatim
+        // (a block array with `cache_control` is rejected by strict ones),
+        // and the Anthropic and OpenRouter-Claude builders add the system
+        // cache breakpoint themselves.
+        nestedMessages.push({ role: 'system', content: agent.isDefault ? agent.effectiveContent : agent.content });
         agentTools = Array.isArray(agent.tools) && agent.tools.length ? agent.tools : null;
         // Per-agent thinking level (optional). Applies only when no
         // explicit per-run override was chosen on the approval card.
@@ -2189,10 +2256,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
           nestedThinkingLevel = agent.thinkingLevel;
         }
       } else {
-        nestedMessages.push({
-          role: 'system',
-          content: [{ type: 'text', text: require('./agents.js').DEFAULT_CONTENT, cache_control: { type: 'ephemeral' } }]
-        });
+        nestedMessages.push({ role: 'system', content: require('./agents.js').DEFAULT_CONTENT });
       }
       // Hydrate only the winning identity. Project records contribute safe
       // selection metadata, never the URL/credential of the app connection.
