@@ -563,7 +563,7 @@ async function testHookTools() {
     { event: 'tool.before', script: 'x'.repeat(9000) }]) {
     dispatched = []; events = [];
     out = await runSingleToolCall({ id: 'bad', name: 'hook_create', arguments: JSON.stringify(bad) }, cx(dispatched, events, null));
-    assert.equal(out.result.code, 'EBADINPUT', JSON.stringify(bad));
+    assert.equal(out.exec.result.code, 'EBADINPUT', JSON.stringify(bad));
     assert.ok(!events.some(([n]) => n === 'authorization_required'));
   }
 

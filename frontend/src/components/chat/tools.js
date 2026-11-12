@@ -111,16 +111,22 @@ export function parseToolArgs(text) {
 const s = (text || '').trim();
   if (!s) return null;
 
-  // 1. Raw JSON
-  try { return JSON.parse(s); } catch { /* not JSON */ }
+  // 1. Raw JSON. Tool arguments are an object: `42`, `"text"` or `[1]`
+  // parse as JSON but are no argument set, so they go to the model.
+  try {
+    const parsed = JSON.parse(s);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch { /* not JSON */ }
 
 // 2. key=value pairs (no regex – O(n) char walker, no backtracking).
 //
 // Accepts: key=val key="quoted val" key='quoted val' key=`quoted val`
 // (escape: \"), including the backticks inserted by the @-mention picker.
 // Rejects input with any non-kv=value token (e.g. plain words).
-// Capped at 2048 chars to avoid pathological inputs.
-  const len = Math.min(s.length, 2048);
+// Input longer than 2048 chars is not parsed (it goes to the model): reading
+// only the first 2048 chars cut the last value short without a word.
+  if (s.length > 2048) return null;
+  const len = s.length;
   const isNameChar = (ch) => (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
     || (ch >= '0' && ch <= '9') || ch === '_' || ch === '.' || ch === '-';
 

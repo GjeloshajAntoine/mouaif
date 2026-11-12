@@ -29,7 +29,7 @@ The browser is **not capped at the project root**: you can navigate up (via the 
 - **Preview** — header shows the relative path, **Edit** (only for SVG) + **Close**, the centered image, and a status row with the file size and MIME type. Every previewable image, SVG included, is painted by one `<img>` whose `src` is the `data:` URL the server returned. An SVG loaded that way is a separate document with scripting disabled: `<script>`, `on*` handlers, `<foreignObject>` HTML content and external fetches do not run. See **Why the SVG preview is an image, not markup** below.
 - **Empty state** — "Pick a file from the list to start editing, or tap an image to preview it."
 
-The two panes never appear together. Opening a text file clears the preview, opening an image clears the editor and destroys the CodeMirror view to free memory.
+The two panes never appear together. Opening a text file clears the preview, opening an image clears the editor and destroys the CodeMirror view to free memory. If the open file has unsaved changes, opening an image asks to discard them first, as opening another file does. When you tap several files quickly, only the last one you tapped opens, even if an earlier read finishes after it.
 
 ### Layout toggle — split vs full-editor
 The modal opens in **split view** by default. On tablet/desktop the file list sits on the left (38% width) and the editor/preview on the right. On phones the list is stacked above the editor. While no file is open, the list and the empty state share the body. Once a file or image is open, the list shrinks to fit its rows, up to 40% of the body, and scrolls past that. The editor gets the rest of the space.

@@ -729,6 +729,35 @@ export function clearLiveSegment(refs, state, preservePendingOutput = false) {
   if (!preservePendingOutput) refs._pendingShellOutput = null;
 }
 
+// appendImageToLive(image, refs)
+//
+// Draw a picture the chat's own model generated (top-level `image` event)
+// while the turn is still running. It gets its own row after the live
+// bubble — the bubble's body is re-rendered as text streams in, which would
+// erase it — marked `data-live-image` so clearLiveImages() drops it once
+// the end-of-turn sync brings the saved row that carries the same picture.
+export function appendImageToLive(image, refs) {
+  if (!refs.transcript.current || !image || !image.data) return;
+  const row = document.createElement('div');
+  // Not `chat-msg--assistant`: segment code finds the last assistant row
+  // to paint its meta line, and this placeholder has none.
+  row.className = 'chat-msg chat-msg--live-image';
+  row.dataset.liveImage = '1';
+  const body = document.createElement('div');
+  body.className = 'chat-msg__body';
+  renderSubagentImages(body, [image]);
+  row.appendChild(body);
+  const liveRow = refs.transcript.current.querySelector('[data-live="1"]');
+  if (liveRow && liveRow.parentNode) liveRow.parentNode.insertBefore(row, liveRow.nextSibling);
+  else refs.transcript.current.appendChild(row);
+  afterTranscriptAppend(refs, false);
+}
+
+export function clearLiveImages(refs) {
+  if (!refs.transcript.current) return;
+  for (const row of refs.transcript.current.querySelectorAll('[data-live-image="1"]')) row.remove();
+}
+
 // appendReasoningToLive(delta, refs, state)
 export function appendReasoningToLive(delta, refs, state) {
   if (!refs.transcript.current) return;

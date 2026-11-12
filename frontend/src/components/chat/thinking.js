@@ -28,6 +28,49 @@ export function thinkingDescriptorFor(state) {
   return (found && found.thinking) || null;
 }
 
+// reconcileThinkingLevel(level, descriptor) -> string
+//
+// Carry a chat's thinking level over to a newly picked model. The level is
+// sent as-is, so a value valid for one provider can be wrong for the next
+// (OpenAI-shaped providers pass it verbatim as `reasoning_effort`). A level
+// the new model offers is kept; otherwise the nearest one it has is used.
+// An unknown model (no descriptor) and "No thinking" keep the value.
+const LEVEL_ORDER = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+function levelRank(level) {
+  const v = String(level || '').trim().toLowerCase();
+  if (/^\d+$/.test(v)) {
+    const n = parseInt(v, 10);
+    return n <= 1024 ? 0 : n <= 4096 ? 1 : n <= 12000 ? 2 : n <= 32000 ? 3 : 4;
+  }
+  if (v === 'on') return 2;
+  const i = LEVEL_ORDER.indexOf(v);
+  return i < 0 ? 2 : i;
+}
+export function reconcileThinkingLevel(level, descriptor) {
+  const v = String(level || '').trim();
+  if (!v || !descriptor) return v;
+  if (descriptor.kind === 'toggle') return 'on';
+  if (descriptor.kind === 'budget') {
+    if (/^\d+$/.test(v) || FALLBACK_LEVELS.includes(v)) return v;
+    const rank = levelRank(v);
+    return rank <= 1 ? 'low' : rank === 2 ? 'medium' : 'high';
+  }
+  if (descriptor.kind === 'levels' && Array.isArray(descriptor.levels) && descriptor.levels.length) {
+    if (descriptor.levels.includes(v)) return v;
+    const want = levelRank(v);
+    let best = descriptor.levels[0];
+    let bestDist = Infinity;
+    for (const lv of descriptor.levels) {
+      const i = LEVEL_ORDER.indexOf(lv);
+      if (i < 0) continue;
+      const dist = Math.abs(i - want) + (i > want ? 0.5 : 0); // ties step down
+      if (dist < bestDist) { best = lv; bestDist = dist; }
+    }
+    return best;
+  }
+  return v;
+}
+
 // thinkingOptionsFor(descriptor) -> [{ value, label }]
 //
 // The "" value is always "No thinking". A '__custom__' sentinel

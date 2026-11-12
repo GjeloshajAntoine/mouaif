@@ -18,6 +18,8 @@ appendToolResultCard,
 findToolCard,
 rekeyToolCard,
 finalizeLiveMessage,
+appendImageToLive,
+clearLiveImages,
 handleShellOutputEvent,
 handleShellReviewEvent,
 handleSubagentStreamEvent,
@@ -107,24 +109,15 @@ function maybeAutoRetry(state, refs, payload) {
 
 // markToolUsed(state, refs, toolName)
 //
-// Record that a tool was called in this chat session. Two effects:
-//   1. If the tool is currently unchecked in the per-chat filter,
-//      checking it happens automatically ("tools are started when
-//      used") — the model clearly has it, so the filter should
-//      reflect reality. Persisted via the normal toggle path.
-//   2. The tool gets the "used" dot badge in the tree.
+// Record that a tool was called in this chat session: the tool gets the
+// "used" dot badge in the tree. It never changes the per-chat filter. The
+// server refuses a call to a tool the user switched off (ETOOL_DISABLED) and
+// still reports the call, so switching the tool back on here undid the
+// user's choice for every later turn.
 function markToolUsed(state, refs, toolName) {
   if (!state || !toolName) return;
   const name = normalizeToolName(toolName);
   if (!name) return;
-
-  // Auto-check: if the filter is an explicit array and this tool is
-  // missing, enable it. (filter === null already means "all on".)
-  const t = state.tools || { catalog: [], filter: null };
-  if (Array.isArray(t.filter) && t.filter.indexOf(name) < 0
-      && (t.catalog || []).some((x) => x && x.name === name)) {
-    if (typeof state._toggleTool === 'function') state._toggleTool(name, true);
-  }
 
   const current = state.usedTools || new Set();
   if (!current.has(name)) {
@@ -836,6 +829,9 @@ return count;
 export async function cancelRunningChat(state, refs) {
   const { projectDir, chatId } = state.props;
   if (!projectDir || !chatId) return;
+  // The server ends a stopped turn's stream without a `done` frame; this
+  // tells send() the close was asked for, not an interruption.
+  state.cancelRequested = true;
   setChatStatus(refs, 'cancelling…', 'busy');
   let r;
   try {
@@ -916,6 +912,7 @@ const { content, attachments, clearComposerDraft, setImageAttachments, retry, ma
 // instead of the merge guessing which unsaved row it belongs to.
 const userClientId = (options && typeof options.clientId === 'string' && options.clientId) || newClientId('u');
 const { projectDir, chatId } = state.props;
+state.cancelRequested = false;
   if (!projectDir || !chatId) return;
   const c = state.chat || {};
   const modelId = c.modelId || '';
@@ -1101,7 +1098,7 @@ resp = await fetch('/api/chats/' + encodeURIComponent(chatId) + '/messages/strea
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
 signal: streamAbort.signal,
-body: JSON.stringify({ projectDir, modelId, providerId, content: text, attachments: atts, clientId: userClientId, thinkingLevel: effectiveThinkingLevel, maxOutputTokens: state.maxOutputTokens || '' })
+body: JSON.stringify({ projectDir, modelId, providerId, content: text, attachments: atts, clientId: userClientId, thinkingLevel: effectiveThinkingLevel, maxOutputTokens: state.maxOutputTokens || '', ...(retry ? { retry: true } : {}) })
 });
 } catch (err) {
     // Leaving the chat aborts the fetch. That is not a network failure, so
@@ -1157,7 +1154,8 @@ state.messages = state.messages.filter((m) => m !== userMsg);
         refs.promptInput.current.value = text;
         refs._autoresize();
       }
-      setImageAttachments(localAtts);
+      // Retry payloads rebuilt from a saved error row carry no setter.
+      if (setImageAttachments) setImageAttachments(localAtts);
       if (state._updateChat) {
         saveComposerDraftNow(text, refs, state._updateChat, { draftAttachments: atts }).catch(() => {});
       }
@@ -1269,6 +1267,15 @@ state.messages = state.messages.filter((m) => m !== userMsg);
     updateUsageSummary(state, info, refs);
   }
   let streamFailed = false;
+  // The server reported the turn's failure (`error` frame). Unlike a
+  // dropped socket there is nothing to reconnect to: the run is over.
+  let serverError = false;
+  // A `done` frame arrived. A stream that closes without `done` or `error`
+  // (server restart, proxy cut) was interrupted, not finished.
+  let sawDone = false;
+  // A note the server saved after the final reply (cut at the output
+  // limit, filtered, refused); drawn after the reply bubble.
+  let turnNotice = null;
   // Set when this reader was aborted on purpose (chat switch / unmount).
   let aborted = false;
   function handleStreamEvent(ev, data) {
@@ -1323,7 +1330,11 @@ state.messages = state.messages.filter((m) => m !== userMsg);
         lastRepaintAt = now;
         repaintLiveRate();
       }
+    } else if (ev.eventName === 'image' && data && typeof data.data === 'string') {
+      appendImageToLive(data, refs);
     } else if (ev.eventName === 'done') {
+      sawDone = true;
+      if (data.notice && typeof data.notice.message === 'string') turnNotice = data.notice;
       // Merge rather than overwrite: usage_input/usage_output may
       // have accumulated a prompt/completion count before `done`.
       if (data.usage) {
@@ -1390,11 +1401,14 @@ state.messages = state.messages.filter((m) => m !== userMsg);
       if (isFinite(cr) && cr > 0) roundCacheReadTokens = cr;
       if (isFinite(cc) && cc > 0) roundCacheCreationTokens = cc;
     } else if (ev.eventName === 'usage_output') {
+      // Output counts within a round are cumulative (Anthropic reports a
+      // running total on each message_delta), so only the growth since
+      // the round's last report is added to the turn total.
       const c2 = Number(data && data.completionTokens);
-      if (isFinite(c2) && c2 > 0) {
+      if (isFinite(c2) && c2 > roundCompletionTokens) {
         usage = usage || {};
-        usage.completionTokens = (usage.completionTokens || 0) + c2;
-        roundCompletionTokens += c2;
+        usage.completionTokens = (usage.completionTokens || 0) + (c2 - roundCompletionTokens);
+        roundCompletionTokens = c2;
         repaintLiveRate();
       }
     } else if (ev.eventName === 'usage_update') {
@@ -1532,7 +1546,7 @@ state.messages = state.messages.filter((m) => m !== userMsg);
   // partial assistant row or via addChatCost) before closing,
   // and the recovery poll's costSnapshot will cover it.
   liveSubagentCost = 0;
-  streamFailed = true;
+  serverError = true;
 // Clear the per-round counters so a subsequent turn does not
 // inherit stale tokens from the failed exchange.
 roundPromptTokens = 0;
@@ -1607,6 +1621,9 @@ setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 
   // the authoritative answer — `abortStream` is the only thing that sets
   // it, and it is only ever called to detach (chat switch / unmount).
   if (streamAbort.signal.aborted) aborted = true;
+  // The stream may also close cleanly after the user moved to another
+  // chat; this turn's ending is then none of the mounted view's business.
+  if (state.props.projectDir !== projectDir || state.props.chatId !== chatId) aborted = true;
   if (aborted) {
     // Detach silently: the server still owns the turn, and the chat it
     // belongs to is no longer mounted. Hand the flags back so the chat the
@@ -1619,11 +1636,33 @@ setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 
     if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
     return;
   }
-  if (streamFailed) {
-    // The SSE socket dropped mid-turn, but the server-side agent
-    // may still be appending to the persisted transcript. Hand the
-    // partial turn over to a backoff poll that syncs from disk.
+  if (serverError) {
+    // The server ended the turn with an error and saved whatever it had
+    // (partial reply, error row). Sync once from disk and keep the error
+    // status: this is not a lost connection, and reporting "reconnected"
+    // afterwards read as success.
+    clearLiveSegment(refs, state);
+    clearLiveImages(refs);
+    counter.reset();
+    agentNetworkTurnEnded(state);
+    try {
+      const run = await fetchRunState(projectDir, chatId);
+      if (run) await syncToNextSeq(state, refs, run.nextSeq);
+    } catch (syncError) {
+      console.error('chat transcript reconciliation failed', syncError);
+    }
+    if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
+    state.streaming = false;
+    if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
+    return;
+  }
+  if (streamFailed || (!sawDone && !state.cancelRequested)) {
+    // The SSE socket dropped (or closed without a `done`) mid-turn, but
+    // the server-side agent may still be appending to the persisted
+    // transcript. Hand the partial turn over to a backoff poll that
+    // syncs from disk.
     clearLiveSegment(refs, state, true);
+    clearLiveImages(refs);
     counter.reset();
     startStreamRecovery(state, refs, assembled);
     return;
@@ -1661,6 +1700,15 @@ setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 
     finalLive.remove();
     updateUsageSummary(state, null, refs);
   }
+  if (turnNotice) {
+    // Keyed by the saved row's clientId, so the sync below reconciles onto
+    // this card instead of drawing the note twice.
+    const noticePayload = { content: text, attachments: atts, clientId: userClientId, clearComposerDraft, setImageAttachments, retry: true, manualRetry: true };
+    appendErrorCard(turnNotice.message, refs, state, {
+      clientId: typeof turnNotice.clientId === 'string' ? turnNotice.clientId : undefined,
+      onRetry: () => retryFailedTurn(state, refs, noticePayload)
+    });
+  }
   counter.reset();
   // The server transcript is authoritative. Reconcile after the
   // complete exchange so tool-heavy turns cannot leave the
@@ -1672,7 +1720,11 @@ setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 
   } catch (syncError) {
     console.error('chat transcript reconciliation failed', syncError);
   }
-  if (refs.status.current && refs.status.current.textContent === 'streaming…') {
+  // The saved rows now carry any generated pictures.
+  clearLiveImages(refs);
+  if (turnNotice) {
+    setChatStatus(refs, turnNotice.message.replace(/^[A-Z_]+:\s*/, ''), 'error');
+  } else if (refs.status.current && refs.status.current.textContent === 'streaming…') {
     const hasCounts = usage && (usage.promptTokens != null || usage.completionTokens != null);
     setChatStatus(
       refs,

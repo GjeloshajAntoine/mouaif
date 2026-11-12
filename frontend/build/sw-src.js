@@ -244,6 +244,13 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
+  // The page asks which build this worker is so it can tell, when a worker
+  // it did not ask for takes control, whether its own bundle is now stale.
+  if (event.data && event.data.type === 'GET_VERSION') {
+    const reply = { type: 'VERSION', version: CACHE_VERSION };
+    if (event.ports && event.ports[0]) event.ports[0].postMessage(reply);
+    else if (event.source) event.source.postMessage(reply);
+  }
   // iOS WebKit may drop the MessagePort transferred with a visibility
   // query. The page mirrors its answer as a regular service-worker message;
   // resolve the matching fresh query only when it came from that client.

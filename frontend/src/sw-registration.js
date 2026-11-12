@@ -23,6 +23,15 @@ let acceptedUpdate = false;
 // `acceptedUpdate` the moment a reload consumes the intent.
 let acceptedWorker = null;
 const observedWorkers = new WeakSet();
+// The build of the bundle this page runs, as reported by the worker that
+// controlled it at load (or first claimed it). null = unknown: an old worker
+// without the GET_VERSION handler, or no controller yet.
+let pageVersion = null;
+let pageVersionKnown = false;
+// Set when a worker this page did NOT ask for (another tab accepted the update,
+// or it activated before the tap) took control with a different build. There
+// is no waiting worker left to offer, so the banner's Reload is a plain reload.
+let pageStale = false;
 const UPDATE_CHECK_INTERVAL_MS = 60 * 1000;
 
 function isProduction() {
@@ -53,9 +62,37 @@ function observeInstallingWorker(reg, worker) {
   onStateChange();
 }
 
+// askWorkerVersion(worker) -> Promise<string|null>
+function askWorkerVersion(worker) {
+  return new Promise((resolve) => {
+    if (!worker || typeof MessageChannel === 'undefined') { resolve(null); return; }
+    const channel = new MessageChannel();
+    const timer = setTimeout(() => resolve(null), 1500);
+    channel.port1.onmessage = (event) => {
+      clearTimeout(timer);
+      resolve(event.data && typeof event.data.version === 'string' ? event.data.version : null);
+    };
+    try { worker.postMessage({ type: 'GET_VERSION' }, [channel.port2]); }
+    catch { clearTimeout(timer); resolve(null); }
+  });
+}
+
+function markStale() {
+  pageStale = true;
+  updateAvailable.value = true;
+}
+
 export function applyUpdate() {
   const worker = (registration && registration.waiting) || waitingWorker;
-  if (applyingUpdate || !worker) return;
+  if (applyingUpdate) return;
+  if (!worker || !isUpdateStillPending(worker.state)) {
+    // The new worker is already active (this tab's update was accepted
+    // elsewhere, or it activated before the tap), so this page runs an old
+    // bundle with nothing left to skip-wait. The user asked to reload: do it
+    // directly. No intent is latched, so no later claim can reload the page.
+    if (pageStale || worker) { applyingUpdate = true; window.location.reload(); }
+    return;
+  }
   // The bundle this tap asked to replace is only protected while the worker is
   // still WAITING. `waitingWorker` is retained (some engines don't expose
   // `registration.waiting` immediately), so by the time the banner is tapped the
@@ -66,11 +103,6 @@ export function applyUpdate() {
   // a later, unrelated claim. That stale intent was the random reload. The
   // banner is stale too: drop it, and apply it through the worker's activate
   // path like any other update instead of arming a reload that can never match.
-  if (!isUpdateStillPending(worker.state)) {
-    waitingWorker = null;
-    updateAvailable.value = false;
-    return;
-  }
   applyingUpdate = true;
   // The user asked for this update. Record the intent BEFORE the worker can
   // activate: the `controllerchange` it produces has to reload even when this
@@ -148,8 +180,32 @@ export function registerServiceWorker() {
       });
   });
 
+  const initialController = navigator.serviceWorker.controller;
+  if (initialController) {
+    askWorkerVersion(initialController).then((v) => { pageVersion = v; pageVersionKnown = true; });
+  }
+
   let refreshing = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
+    const controller = navigator.serviceWorker.controller;
+    if (!acceptedUpdate && controller && !refreshing) {
+      // An unrequested claim does not reload the page, but if it brings a
+      // different build the page's bundle is now stale and the user must be
+      // offered the reload — otherwise the banner never appears, since the
+      // worker that would have been "waiting" is already active.
+      askWorkerVersion(controller).then((v) => {
+        if (!pageVersionKnown) {
+          // First claim of a page that loaded uncontrolled: the page fetched
+          // its bundle from the network, so this worker's build is its own.
+          if (!initialController) { pageVersion = v; pageVersionKnown = true; return; }
+          // Controlled at load but the old worker never answered (predates
+          // GET_VERSION): a worker that does answer is a newer build.
+          if (v) markStale();
+          return;
+        }
+        if (v && v !== pageVersion) markStale();
+      });
+    }
     // A controller change on its own is never a reason to reload. The first
     // visit to an origin is one case: the worker's activate handler calls
     // clients.claim(), which controllerchanges the page that just painted, and

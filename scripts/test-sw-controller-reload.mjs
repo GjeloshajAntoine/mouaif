@@ -166,13 +166,17 @@ check('applyUpdate records the accepted update',
 // worker is a no-op that used to leave the one-shot intent latched for a later,
 // unrelated claim. The predicate is `isUpdateStillPending`, NOT a comparison
 // against the nonexistent 'waiting' state.
-check('applyUpdate refuses a worker that already activated',
-  /if \(!isUpdateStillPending\(worker\.state\)\) \{[\s\S]*?updateAvailable\.value = false;[\s\S]*?return;/.test(swReg), true);
+check('applyUpdate does not arm intent for a worker that already activated',
+  /if \(!worker \|\| !isUpdateStillPending\(worker\.state\)\) \{[\s\S]*?return;\s*\}/.test(swReg), true);
 check('the stale-worker branch runs BEFORE the intent is armed',
   swReg.indexOf('!isUpdateStillPending(worker.state)') < swReg.indexOf('acceptedUpdate = true;')
   && swReg.indexOf('!isUpdateStillPending(worker.state)') > 0, true);
-check('the banner is dismissed for a stale worker',
-  /!isUpdateStillPending\(worker\.state\)[\s\S]{0,220}updateAvailable\.value = false;/.test(swReg), true);
+// The page is then running an old bundle, so the tap reloads it directly
+// (no latched intent) instead of hiding the banner and leaving it stale.
+check('a tap on a stale page reloads directly',
+  /!isUpdateStillPending\(worker\.state\)\) \{[\s\S]{0,500}window\.location\.reload\(\);[\s\S]{0,40}return;/.test(swReg), true);
+check('an unrequested claim with a new build shows the banner',
+  /v !== pageVersion\) markStale\(\)/.test(swReg) && /GET_VERSION/.test(swReg), true);
 check('and it is NOT compared against a "waiting" string',
   /worker\.state !== 'waiting'/.test(swReg), false);
 

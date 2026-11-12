@@ -246,6 +246,8 @@ export function FileEditorView(props) {
   // What the open artifact holds on the server, so its own save isn't mistaken
   // for a change the agent made.
   const savedContentRef = useRef(null);
+  // Bumped by every open, so a slow read can't land over a later tap.
+  const openSeqRef = useRef(0);
 
   // ---- listDir --------------------------------------------------------
 
@@ -291,12 +293,14 @@ export function FileEditorView(props) {
 
   const openPath = useCallback(async (relOrAbs) => {
     if (!confirmDiscardIfDirty()) return;
+    const seq = ++openSeqRef.current;
     // Opening a text file means the preview pane is no longer
     // current. Clear it so the editor owns the right-hand pane.
     setOpenMedia(null);
     setMediaStatus('');
     setEditorStatus('loading…');
     const r = await apiRead(projectDir, relOrAbs, chatId);
+    if (seq !== openSeqRef.current) return;
     if (r.error) {
       setEditorStatus(r.error);
       return;
@@ -326,9 +330,13 @@ export function FileEditorView(props) {
       // Hand off to the text path; it owns the editor lifecycle.
       return openPath(relOrAbs);
     }
+    // Leaving a text file for a preview drops its buffer, so ask first.
+    if (!confirmDiscardIfDirty()) return;
+    const seq = ++openSeqRef.current;
     setMediaLoading(true);
     setMediaStatus('loading…');
     const r = await apiReadMedia(projectDir, relOrAbs, chatId);
+    if (seq !== openSeqRef.current) return;
     setMediaLoading(false);
     if (r.error) {
       setMediaStatus(r.error);
@@ -336,10 +344,7 @@ export function FileEditorView(props) {
       return;
     }
     // Close the editor when switching to preview so the right-hand
-    // pane swaps cleanly. The user's dirty text buffer is dropped
-    // here without a confirm() — preview is a different mode and
-    // discarding a half-typed file just to look at an image is the
-    // expected trade-off.
+    // pane swaps cleanly (the discard was confirmed above).
     setOpenFile(null);
     setDirty(false);
     setEditorStatus('');
@@ -352,7 +357,7 @@ export function FileEditorView(props) {
       ext: r.body.ext
     });
     setMediaStatus(r.body.size + ' bytes · ' + r.body.mime);
-  }, [projectDir, chatId, openPath]);
+  }, [projectDir, chatId, openPath, confirmDiscardIfDirty]);
 
   const manageArtifact = useCallback((link) => {
     if (!onManageArtifact || !confirmDiscardIfDirty()) return;
@@ -445,9 +450,11 @@ export function FileEditorView(props) {
       EditorView.lineWrapping,
       oneDark,
       EditorView.updateListener.of((u) => {
+        // Set through updaters: this listener lives as long as the view,
+        // so values read from the render that mounted it would be stale.
         if (u.docChanged) {
-          if (!dirty) setDirty(true);
-          if (editorStatus && editorStatus.indexOf('saved') !== 0) setEditorStatus('edited');
+          setDirty(true);
+          setEditorStatus((s) => (s && s.indexOf('saved') !== 0 ? 'edited' : s));
         }
       })
     ];
@@ -774,10 +781,11 @@ export function FileEditorView(props) {
               : entries.map((e) =>
                   h('li', {
                     key: e.path,
-                    class: 'fe__row' + (e.binary ? ' fe__row--binary' : '') + (e.image ? ' fe__row--image' : '') + ((openFile && openFile.relPath === e.relPath) || (openMedia && openMedia.relPath === e.relPath) ? ' is-open' : ''),
+                    // Images carry `binary` too, but they open in the preview.
+                    class: 'fe__row' + (e.binary && !e.image ? ' fe__row--binary' : '') + (e.image ? ' fe__row--image' : '') + ((openFile && openFile.relPath === e.relPath) || (openMedia && openMedia.relPath === e.relPath) ? ' is-open' : ''),
                     role: 'button',
-                    tabindex: e.binary ? -1 : 0,
-                    'aria-disabled': e.binary ? 'true' : 'false',
+                    tabindex: e.binary && !e.image ? -1 : 0,
+                    'aria-disabled': e.binary && !e.image ? 'true' : 'false',
                     title: (e.binary && !e.image) ? 'binary file — cannot be opened here' : (e.path),
                     onClick: () => onEntryClick(e),
                     onKeydown: (ev) => {

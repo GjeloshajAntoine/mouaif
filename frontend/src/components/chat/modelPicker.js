@@ -15,6 +15,7 @@
 // below.
 
 import { fetchJson, fetchLiveModels, invalidateModelsCache, touchRecentModel, loadRecentModels, connectionType, providerLabel } from '../../api.js';
+import { reconcileThinkingLevel } from './thinking.js';
 
 // ---- Model bookmarks (pinned + recent) -------------------------------
 
@@ -735,9 +736,15 @@ export async function onPickerPick(state, refs, providerId, modelId, updateChat)
   if (state.chat && state.chat.providerId === providerId && state.chat.modelId === modelId) return;
   // Track the pick in recently used models
   touchRecent(state, providerId, modelId);
-  state.chat = Object.assign({}, state.chat, { providerId, modelId });
+  // The thinking level follows the new model's reasoning controls.
+  const live = (state.liveByProvider && state.liveByProvider[providerId]) || [];
+  const entry = live.find((m) => m && m.id === modelId);
+  const prevLevel = (state.chat && state.chat.thinkingLevel) || '';
+  const thinkingLevel = reconcileThinkingLevel(prevLevel, entry && entry.thinking);
+  const patch = thinkingLevel !== prevLevel ? { providerId, modelId, thinkingLevel } : { providerId, modelId };
+  state.chat = Object.assign({}, state.chat, patch);
   updateModelTrigger(refs, state);
-  await updateChat({ providerId, modelId });
+  await updateChat(patch);
 }
 
 // fetchLiveForProvider(provider, state, force) — single
