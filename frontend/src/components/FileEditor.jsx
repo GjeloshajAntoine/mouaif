@@ -663,9 +663,11 @@ export function FileEditorView(props) {
     segs.forEach((seg, i) => {
       acc = acc + (acc.endsWith('\\') || acc.endsWith('/') ? '' : '/') + seg;
       items.push(h('span', { key: 'sep-' + i, class: 'fe__crumb-sep', 'aria-hidden': 'true' }, '/'));
+      // Capture this segment's path, not the accumulator mutated by later segments.
+      const segmentPath = acc;
       items.push(h('button', {
-        key: 'seg-' + i, type: 'button', class: 'fe__crumb',
-        onClick: () => loadDir(acc)
+      key: 'seg-' + i, type: 'button', class: 'fe__crumb',
+      onClick: () => loadDir(segmentPath)
       }, seg));
     });
     return h(Fragment, null, items);

@@ -14,6 +14,8 @@ Tap the **Files** item in the file toolbar dropdown (next to the composer). The 
 
 The browser is **not capped at the project root**: you can navigate up (via the **Up** button, the breadcrumb, or by typing an absolute path in the path input) to browse and edit files anywhere under the user's home directory. With `MOUAIF_ALLOW_ANY_ROOT=1` set on the server, the whole filesystem is reachable. The Up button and breadcrumb stop at the natural boundary (home, or `/` when allow-any-root is on) rather than at the project root, so the list never asks the server for a directory the home guard would reject.
 
+Each folder name in the breadcrumb is independently tappable: tap an ancestor to jump directly to that folder, or use the path input and **Go** to enter a path.
+
 | Tap on a list row | Result |
 |-------------------|--------|
 | Folder (`…`) | Recurse into that folder |
