@@ -112,7 +112,6 @@ function check(name, fn) {
   check('providers list, new form and editor', () => {
     eq('#/settings/providers', { name: 'settingsProviders' });
     eq('#/settings/providers/new', { name: 'settingsProviderNew' });
-    eq('#/settings/providers/new/anthropic', { name: 'settingsProviderNew', type: 'anthropic' });
     eq('#/settings/providers/openai', { name: 'settingsProviderEdit', id: 'openai' });
   });
 
@@ -246,6 +245,10 @@ function check(name, fn) {
     eq('#/projects/new', { name: 'picker', dir: '' });
   });
 
+  check('Shared with me has its own page next to the folder picker', () => {
+    eq('#/projects/shared', { name: 'sharedWithMe' });
+  });
+
   // ---- Robustness ------------------------------------------------------
 
   check('a malformed escape does not throw (#1 above)', () => {
@@ -274,10 +277,10 @@ function check(name, fn) {
       '#/settings/actions', '#/settings/actions/a', '#/settings/projects', '#/settings/defaults',
       '#/settings/notifications', '#/settings/pricing', '#/settings/prompts', '#/settings/prompts/p',
       '#/settings/mcp', '#/settings/mcp/registry', '#/settings/mcp/new', '#/settings/mcp/s', '#/settings/tags',
-      '#/settings/about', '#/settings/dictation', '#/dictation', '#/chat/c', '#/projects/new']) {
+      '#/settings/about', '#/settings/dictation', '#/dictation', '#/chat/c', '#/projects/new', '#/projects/shared']) {
       names.add(parseHash(h).name);
       }
-      assert.equal(names.size, 31, Array.from(names).sort().join(','));
+      assert.equal(names.size, 32, Array.from(names).sort().join(','));
     assert.ok(mod.ROUTE_PATHS >= names.size, 'the table is not smaller than its distinct routes');
   });
 

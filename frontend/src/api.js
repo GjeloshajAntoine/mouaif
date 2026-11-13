@@ -1,6 +1,5 @@
 // mouaif web — shared API client and settings helpers
 import { signal } from '@preact/signals';
-import { connectionHealth, healthWithoutAsking } from './providerChoices.js';
 
 // ---- API client --------------------------------------------------------
 
@@ -67,22 +66,6 @@ export async function loadAccounts({ force = false } = {}) {
   return _accountsCache;
 }
 
-// checkConnection(connection, { force }) — does this saved connection work?
-// Listing its models is the one call providers answer without spending anything.
-// Without `force` the server may answer from its model-list cache, so the provider
-// list can check every row on each visit.
-export async function checkConnection(connection, { force = false } = {}) {
-  const known = healthWithoutAsking(connection);
-  if (known) return known;
-  const query = 'provider=' + encodeURIComponent(connection.id) + (force ? '&_bust=1' : '');
-  try {
-    const r = await fetchJson('/api/ai/models/live?' + query);
-    return connectionHealth(r.status, r.body, connection);
-  } catch {
-    return { state: 'unknown', text: 'Couldn\'t check', detail: '' };
-  }
-}
-
 // ---- Models list cache ------------------------------------------------
 
 export async function loadModels(projectDir, { force = false } = {}) {
@@ -93,6 +76,22 @@ export async function loadModels(projectDir, { force = false } = {}) {
 
 export function invalidateModelsCache() {
   // No-op (relying entirely on server-side model cache)
+}
+
+export function connectionType(connection) {
+  return connection && (connection.type || connection.id || connection.provider) || '';
+}
+
+export async function checkConnection(connection, { force = false } = {}) {
+  const known = healthWithoutAsking(connection || {});
+  if (known) return known;
+  const provider = connectionType(connection);
+  try {
+    const r = await fetchJson('/api/ai/models/live?provider=' + encodeURIComponent(provider) + (force ? '&_bust=1' : ''));
+    return connectionHealth(r.status, r.body, connection || {});
+  } catch {
+    return { state: 'unknown', text: 'Couldn\'t check', detail: '' };
+  }
 }
 
 // ---- Live models cache ------------------------------------------------
@@ -121,40 +120,26 @@ export const SETTINGS_PROVIDERS = [
   // the OAuth auth option; the others are API-key only, and offering OAuth for
   // them just leads to a 404 from POST /api/auth/sign-in/<id>. `reserved`
   // implies OAuth-only (no API-key alternative).
-  //
-  // `signInWith` names the service on a browser sign-in button. Azure has no
-  // default URL because its address always contains your own names, so
-  // `urlPlaceholder` shows the shape instead of pre-filling text that can't work.
-  // The ways to add these providers are in ./providerChoices.js.
-  { id: 'openai-compatible', label: 'OpenAI compatible',  defaultBaseUrl: 'https://api.openai.com/v1',                hint: 'Any OpenAI-shaped API, hosted or on your own server. A local server may not need a key.' },
-  { id: 'anthropic',         label: 'Anthropic',          defaultBaseUrl: 'https://api.anthropic.com',                hint: 'Paste an API key, or sign in with Claude Pro or Max.', oauth: true, signInWith: 'Claude' },
-  { id: 'gemini',            label: 'Google Gemini',      defaultBaseUrl: 'https://generativelanguage.googleapis.com', hint: 'Paste an API key from Google AI Studio.' },
-  { id: 'codex',             label: 'OpenAI Codex',       defaultBaseUrl: 'https://chatgpt.com/backend-api/codex', hint: 'Sign in with a one-time ChatGPT code. Turn on device code authorization in ChatGPT under Settings → Security first. To use an API key, add OpenAI instead.', reserved: true, oauth: true, deviceAuth: true },
-  { id: 'ollama',            label: 'Ollama',             defaultBaseUrl: 'http://127.0.0.1:11434',                   hint: 'An Ollama server you run. No API key needed.' },
-  { id: 'openrouter',        label: 'OpenRouter',         defaultBaseUrl: 'https://openrouter.ai/api/v1',             hint: 'One account, many models. Paste an API key, or sign in and OpenRouter creates a key for mouaif.', oauth: true, signInWith: 'OpenRouter' },
-  { id: 'github-copilot',    label: 'GitHub Copilot',     defaultBaseUrl: 'https://api.githubcopilot.com',            hint: 'Sign in with a GitHub one-time code, from this device or any other. The account needs an active Copilot plan.', reserved: true, oauth: true, deviceAuth: true },
-  { id: 'azure',             label: 'Azure OpenAI',       urlPlaceholder: 'https://<resource>.openai.azure.com/openai/deployments/<deployment>', hint: 'Enter your deployment URL with your own resource and deployment names, then paste its key.' },
-  { id: 'mistral',           label: 'Mistral',            defaultBaseUrl: 'https://api.mistral.ai/v1',                hint: 'Paste an API key from console.mistral.ai.' },
-  { id: 'groq',              label: 'Groq',               defaultBaseUrl: 'https://api.groq.com/openai/v1',           hint: 'Paste an API key from console.groq.com.' },
-  { id: 'deepseek',          label: 'DeepSeek',           defaultBaseUrl: 'https://api.deepseek.com',                 hint: 'Paste an API key from platform.deepseek.com.' }
+  { id: 'openai-compatible', label: 'OpenAI compatible',  defaultBaseUrl: 'https://api.openai.com/v1',                hint: 'OpenAI, Together, Groq, LM Studio, llama.cpp (llama-server), any OpenAI-shaped API. Paste an API key, or leave it blank for a local server that needs none.', keyOptional: true },
+  { id: 'anthropic',         label: 'Anthropic',          defaultBaseUrl: 'https://api.anthropic.com',                hint: 'Claude Messages API. Use the OAuth flow below for Claude Pro/Max; otherwise paste an API key.', oauth: true },
+  { id: 'gemini',            label: 'Google Gemini',      defaultBaseUrl: 'https://generativelanguage.googleapis.com', hint: 'Google AI Studio / Gemini API. API key authentication.' },
+  { id: 'codex',             label: 'OpenAI Codex',       defaultBaseUrl: 'https://chatgpt.com/backend-api/codex', hint: 'Use Codex with your ChatGPT plan. Sign in with a one-time ChatGPT code; enable device code authorization in ChatGPT settings. For API keys, use OpenAI compatible instead.', reserved: true, oauth: true, deviceAuth: true },
+  { id: 'ollama',            label: 'Ollama',             defaultBaseUrl: 'http://127.0.0.1:11434',                   hint: 'Local Ollama server. No API key required.' },
+  { id: 'openrouter',        label: 'OpenRouter',         defaultBaseUrl: 'https://openrouter.ai/api/v1',             hint: 'OpenRouter: one API key, many models (OpenAI, Anthropic, Google, etc.) via a single OpenAI-shaped endpoint. Paste an API key, or sign in with OpenRouter (PKCE) and the app receives a user-controlled API key.', oauth: true },
+  { id: 'github-copilot',    label: 'GitHub Copilot',     defaultBaseUrl: 'https://api.githubcopilot.com',            hint: 'Sign in with a GitHub one-time code. An active Copilot plan on that GitHub account is required to chat.', reserved: true, oauth: true, deviceAuth: true },
+  { id: 'azure',             label: 'Azure OpenAI',       defaultBaseUrl: 'https://<resource>.openai.azure.com/openai/deployments/<deployment>', hint: 'Azure OpenAI. Set the resource + deployment in the base URL (or set apiVersion in the project model). API key authentication.' },
+  { id: 'mistral',           label: 'Mistral',            defaultBaseUrl: 'https://api.mistral.ai/v1',                hint: 'Mistral AI (La Plateforme). API key authentication.' },
+  { id: 'groq',              label: 'Groq',               defaultBaseUrl: 'https://api.groq.com/openai/v1',           hint: 'Groq — fast inference for open models. API key authentication.' },
+  { id: 'deepseek',          label: 'DeepSeek',           defaultBaseUrl: 'https://api.deepseek.com',                 hint: 'DeepSeek API (OpenAI-compatible). API key authentication.' }
 ];
 
 export function providerDef(id) {
   return SETTINGS_PROVIDERS.find(p => p.id === id) || null;
 }
 
-// connectionType(connection) — which SETTINGS_PROVIDERS entry a connection is.
-// A connection saved before a type could have several has no `type`, because
-// its id is its type.
-export function connectionType(connection) {
-  return (connection && (connection.type || connection.id)) || '';
-}
-
-// providerLabel(id) — how a provider connection reads in a picker: the name the
-// user gave it, else its id. Keys, filters and saved selections keep the id.
 export function providerLabel(id) {
-  const connection = appProviders().find(p => p && p.id === id);
-  return (connection && connection.name) || id;
+  const found = providerDef(id);
+  return found ? found.label : String(id || '');
 }
 
 // authNsForProvider(id) — the *auth* (keyring) namespace a provider connection
@@ -290,4 +275,118 @@ export function setActiveProject(dir, name) {
 
 export function clearActiveProject() {
   activeProject.value = { dir: '', name: '' };
+}
+
+// ---- Shared projects (docs/features/share-project.md) -----------------
+//
+// A project added from another mouaif ("Shared with me") lives on the
+// machine that has its folder. Its project-scoped calls go to
+// `/s/<share>/api/…` on this mouaif, which forwards them there. Everything
+// else — models, providers, dictation, app settings — stays on this mouaif,
+// because the mouaif being used supplies the models.
+//
+// One helper decides, for every call: `shareUrl(url, body)` prefixes a
+// project-scoped URL whose project is a shared one. `fetch` is wrapped once
+// below so the many `fetch('/api/…')` call sites need no change; the places
+// that cannot go through fetch (EventSource) call shareUrl themselves.
+
+export const shareState = signal({ enabled: false, machine: '', incoming: [], outgoing: [], addresses: [], loaded: false });
+const sharedByDir = new Map();
+
+// Project-scoped routes, the client-side mirror of the server allowlist in
+// src/share-gate.js. Anything not listed is never forwarded.
+const SHARE_ROUTE_PREFIXES = [
+  '/api/chats', '/api/settings/project', '/api/settings/resolved', '/api/settings/hide-file-content',
+  '/api/file', '/api/prompts', '/api/agents', '/api/features', '/api/tools/', '/api/git',
+  '/api/mcp/servers', '/api/mcp/call', '/api/actions', '/api/hooks/project', '/events'
+];
+
+const rawFetch = typeof window !== 'undefined' && window.fetch ? window.fetch.bind(window) : null;
+
+function isShareRoute(pathname) {
+  return SHARE_ROUTE_PREFIXES.some((p) => pathname === p || pathname.startsWith(p.endsWith('/') ? p : p + '/')
+    || (p === '/api/file' && (pathname === '/api/files' || pathname === '/api/file-media')));
+}
+
+function bodyProjectDir(body) {
+  if (typeof body !== 'string' || body.length > 2_000_000 || body.charAt(0) !== '{') return '';
+  try { const parsed = JSON.parse(body); return parsed && typeof parsed.projectDir === 'string' ? parsed.projectDir : ''; }
+  catch { return ''; }
+}
+
+// shareIdFor(dir) — the share id of an added shared project, or ''.
+export function shareIdFor(dir) {
+  return (dir && sharedByDir.get(dir)) || '';
+}
+
+// shareUrl(url, body?, dir?) — `url` itself, or `/s/<share>` + url when it is
+// a project-scoped call of a shared project. The project comes from `dir`
+// (for the few calls that name a terminal session instead of a project, such
+// as the terminal's event stream), the `projectDir` query parameter, or the
+// JSON body. A call that names no project stays on this mouaif.
+export function shareUrl(url, body, dir) {
+  if (typeof url !== 'string' || !url.startsWith('/') || url.startsWith('/s/') || !sharedByDir.size) return url;
+  const q = url.indexOf('?');
+  const pathname = q >= 0 ? url.slice(0, q) : url;
+  if (!isShareRoute(pathname)) return url;
+  let project = dir || '';
+  if (!project && q >= 0) project = new URLSearchParams(url.slice(q + 1)).get('projectDir') || '';
+  if (!project) project = bodyProjectDir(body);
+  const id = shareIdFor(project);
+  return id ? '/s/' + id + url : url;
+}
+
+let sharesReady = null;
+// True when the last load could not read the list (signed out, offline):
+// the next project-scoped call tries again, so signing in is enough.
+let sharesStale = true;
+let sharesLoading = false;
+export async function loadShareState() {
+  let next = null;
+  let status = 0;
+  try {
+    const r = await (rawFetch || fetch)('/api/share/state');
+    status = r.status;
+    if (r.status === 200) next = await r.json();
+  } catch { /* offline: no shares for now */ }
+  // Signed out (401) or offline (0): try again on the next project call. Any
+  // other answer (an older server's 404) means no sharing here.
+  sharesStale = !next && (status === 0 || status === 401);
+  sharedByDir.clear();
+  const s = next || { enabled: false, machine: '', incoming: [], outgoing: [], addresses: [] };
+  for (const share of s.incoming || []) {
+    if (share.status === 'active') sharedByDir.set(share.projectDir, share.id);
+  }
+  shareState.value = Object.assign({}, s, { loaded: true });
+  return shareState.value;
+}
+
+// Wrap fetch once. A project-scoped call waits for the first share list (one
+// request at start-up) so a deep link into a shared chat is routed correctly.
+if (rawFetch) {
+  sharesLoading = true;
+  sharesReady = loadShareState().catch(() => null).finally(() => { sharesLoading = false; });
+  window.fetch = function shareAwareFetch(input, init) {
+    if (typeof input === 'string' && input.startsWith('/api/') && isShareRoute(input.split('?')[0])) {
+      if (sharesStale && !sharesLoading) {
+        sharesLoading = true;
+        sharesReady = loadShareState().catch(() => null).finally(() => { sharesLoading = false; });
+      }
+      return sharesReady.then(() => rawFetch(shareUrl(input, init && init.body), init));
+    }
+    return rawFetch(input, init);
+  };
+}
+
+export async function shareApi(method, url, body) {
+  const r = await fetchJson(url, body === undefined ? { method } : {
+    method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  });
+  if (r.status < 200 || r.status >= 300) {
+    const e = new Error((r.body && r.body.error) || 'HTTP ' + r.status);
+    e.code = r.body && r.body.code;
+    e.status = r.status;
+    throw e;
+  }
+  return r.body;
 }

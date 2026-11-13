@@ -752,6 +752,59 @@ border-left: 1px solid var(--border);
   .project-card:only-child .project-card__chats { flex: 0 1 auto; max-height: none; min-height: 0; }
 }
 
+/* ---- Shared projects (docs/features/share-project.md) ----------------
+   Mobile-first share sheet, shared card state, and the add-project link. */
+.share-sheet__overlay { position: fixed; inset: 0; z-index: 70; background: rgba(0,0,0,.55); display: flex; align-items: flex-end; justify-content: center; padding-top: var(--safe-top,0px); }
+.share-sheet { width: 100%; max-width: 34rem; max-height: 90dvh; overflow-y: auto; background: var(--surface); border-radius: var(--r-md) var(--r-md) 0 0; box-shadow: var(--shadow-md); padding: 0 1rem calc(1rem + var(--safe-bottom,0px)); box-sizing: border-box; }
+.share-sheet__handle { width: 2.5rem; height: .25rem; margin: .5rem auto .25rem; border-radius: var(--r-pill); background: var(--border-strong); }
+.share-sheet__head { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; padding: .25rem 0 .75rem; }
+.share-sheet__title { margin: 0; font-size: 1.05rem; }
+.share-sheet__sub { margin: .15rem 0 0; color: var(--muted); font-size: .8rem; overflow-wrap: anywhere; }
+.share-sheet__close { min-width: var(--tap); min-height: var(--tap); border: 0; border-radius: var(--r-sm); background: var(--surface-2); color: var(--fg); font-size: 1.3rem; cursor: pointer; }
+.share-sheet__warn { margin: 0 0 .75rem; padding: .6rem .75rem; border-radius: var(--r-sm); background: var(--warning-soft); color: var(--fg); font-size: .85rem; }
+.share-sheet__list { list-style: none; margin: 0 0 1rem; padding: 0; display: flex; flex-direction: column; gap: .75rem; }
+.share-sheet__row { border: 1px solid var(--border); border-radius: var(--r-sm); padding: .75rem; display: flex; flex-direction: column; gap: .6rem; }
+.share-sheet__row-head { display: flex; align-items: center; gap: .5rem; min-width: 0; font-size: .85rem; }
+.share-sheet__where { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share-sheet__state { color: var(--muted); font-size: .78rem; flex: none; }
+.share-sheet__note { margin: 0; color: var(--muted); font-size: .8rem; }
+.share-sheet__dot { flex: none; display: inline-block; width: .55rem; height: .55rem; border-radius: 50%; background: var(--muted-2,var(--muted)); }
+.share-sheet__dot[data-online="1"] { background: var(--success); }
+.share-sheet__code { border-radius: var(--r-sm); background: var(--accent-soft); padding: .75rem; text-align: center; }
+.share-sheet__code-lead,.share-sheet__code-meta { margin: 0; color: var(--muted); font-size: .78rem; }
+.share-sheet__code-value { margin: .35rem 0; font: 700 1.35rem/1.2 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing: .12em; }
+.share-sheet__form,.share-sheet__access { display: flex; flex-direction: column; gap: .55rem; }
+.share-sheet__label { font-size: .82rem; font-weight: 600; }
+.share-sheet__input { width: 100%; box-sizing: border-box; }
+.share-sheet__access { gap: .4rem; }
+.share-sheet__access-opt { display: flex; gap: .6rem; align-items: flex-start; padding: .6rem; border: 1px solid var(--border); border-radius: var(--r-sm); min-height: var(--tap); box-sizing: border-box; }
+.share-sheet__access-opt.is-on { border-color: var(--accent); background: var(--accent-soft); }
+.share-sheet__access-opt input { margin-top: .2rem; }
+.share-sheet__access-text { display: flex; flex-direction: column; gap: .15rem; }
+.share-sheet__access-label { font-weight: 600; font-size: .85rem; }
+.share-sheet__access-hint { color: var(--muted); font-size: .75rem; }
+.share-sheet__btn { min-height: var(--tap); width: 100%; }
+.share-sheet__stop { margin-top: .2rem; }
+.share-sheet__status { margin: .25rem 0 0; color: var(--muted); min-height: 1.2em; font-size: .8rem; }
+.share-sheet__recent { display: flex; gap: .4rem; flex-wrap: wrap; }
+.share-sheet__chip { min-height: 2.75rem; padding: 0 .65rem; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface-2); color: var(--fg); }
+.project-card--shared { border-color: color-mix(in srgb,var(--accent) 35%,var(--border)); }
+.project-card__shared-from { display: flex; align-items: center; gap: .35rem; color: var(--muted); font-size: .75rem; margin-top: .15rem; }
+.project-card__share-badge { margin-left: .4rem; padding: .12rem .35rem; border-radius: var(--r-pill); background: var(--accent-soft); color: var(--accent); font-size: .65rem; vertical-align: middle; }
+.project-card__offline-note { color: var(--muted); font-size: .82rem; padding: .75rem; }
+.picker__shared-link { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: var(--tap); margin: 0 0 .75rem; padding: 0 .75rem; border: 1px solid var(--accent); border-radius: var(--r-sm); background: var(--accent-soft); color: var(--fg); font-weight: 600; text-align: left; }
+.picker__shared-count { min-width: 1.5rem; padding: .15rem .4rem; border-radius: var(--r-pill); background: var(--accent); color: var(--on-accent); text-align: center; font-size: .75rem; }
+.shared-in__hint { color: var(--muted); font-size: .82rem; }
+.shared-in__list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .75rem; }
+.shared-in__card { padding: .8rem; border: 1px solid var(--border); border-radius: var(--r-sm); display: flex; flex-direction: column; gap: .6rem; }
+.shared-in__head { display: flex; align-items: center; gap: .5rem; }
+.shared-in__machine { flex: 1; font-weight: 600; }
+.shared-in__project { color: var(--muted); font-size: .8rem; overflow-wrap: anywhere; }
+.shared-in__code { width: 100%; box-sizing: border-box; }
+.shared-in__actions { display: flex; gap: .5rem; }
+.shared-in__actions .btn { flex: 1; min-height: var(--tap); }
+
+
 /* Extension views on a project card (ProjectCardExtensions.jsx, slot
    project.card): a wrapping row of 44 px chips; each opens a sheet. */
 .project-card__extensions {

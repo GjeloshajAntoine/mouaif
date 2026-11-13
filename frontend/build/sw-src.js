@@ -98,6 +98,8 @@ function isShellAssetPath(pathname) {
   // callbacks), and the favicon. Without this the root-scoped SW
   // would cache API responses as static assets and serve stale data.
   if (pathname === '/api' || pathname.startsWith('/api/')) return false;
+  // A shared project's forwarded API calls (docs/features/share-project.md).
+  if (pathname.startsWith('/s/')) return false;
   if (pathname === '/events' || pathname.startsWith('/events')) return false;
   if (pathname === '/data' || pathname.startsWith('/data')) return false;
   if (pathname === '/oauth' || pathname.startsWith('/oauth/')) return false;
@@ -116,31 +118,19 @@ async function networkFirstNavigation(request) {
   // fallback uses a fresh Request keyed at the root because the
   // original request may have included a query string we don't
   // care about for the offline shell.
-  //
-  // A tab the browser discarded in the background reloads when the user
-  // comes back, often on a half-dead connection where fetch() neither
-  // answers nor fails for a minute or more. Waiting on it left a blank
-  // page. When a cached shell exists, give the network a short head start
-  // and then serve the shell; the network response still refreshes the
-  // cache when it lands.
   const cache = await caches.open(SHELL_CACHE);
-  const cached = await cache.match('/');
-  const network = fetch(request).then((fresh) => {
-    if (fresh && fresh.ok) cache.put('/', fresh.clone()).catch(() => {});
-    return fresh;
-  });
-  if (!cached) return network;
-  network.catch(() => {});
-  const timeout = new Promise((resolve) => setTimeout(() => resolve(null), NAVIGATION_TIMEOUT_MS));
   try {
-    const winner = await Promise.race([network, timeout]);
-    return winner || cached;
-  } catch {
-    return cached;
+    const fresh = await fetch(request);
+    if (fresh && fresh.ok) {
+      cache.put('/', fresh.clone()).catch(() => {});
+    }
+    return fresh;
+  } catch (err) {
+    const cached = await cache.match('/');
+    if (cached) return cached;
+    throw err;
   }
 }
-
-const NAVIGATION_TIMEOUT_MS = 3000;
 
 async function cacheFirstAsset(request) {
   const cache = await caches.open(CACHE_NAME);
@@ -243,13 +233,6 @@ self.addEventListener('message', (event) => {
   // accepts an "Update available — reload" prompt.
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
-  }
-  // The page asks which build this worker is so it can tell, when a worker
-  // it did not ask for takes control, whether its own bundle is now stale.
-  if (event.data && event.data.type === 'GET_VERSION') {
-    const reply = { type: 'VERSION', version: CACHE_VERSION };
-    if (event.ports && event.ports[0]) event.ports[0].postMessage(reply);
-    else if (event.source) event.source.postMessage(reply);
   }
   // iOS WebKit may drop the MessagePort transferred with a visibility
   // query. The page mirrors its answer as a regular service-worker message;

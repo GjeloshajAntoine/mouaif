@@ -1,7 +1,9 @@
 // mouaif web — ProjectsView
 import { h, Fragment } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { fetchJson, projectsReload } from '../api.js';
+import { fetchJson, projectsReload, shareState, loadShareState, shareApi } from '../api.js';
+import { ShareSheet } from './ShareSheet.jsx';
+import { projectCards, projectCountText } from '../sharedProjects.js';
 import { nav } from '../router.js';
 import { formatCost } from '../usage.js';
 import { useClickOutside } from '../hooks/useClickOutside.js';
@@ -34,10 +36,22 @@ function fmtChatDate(chat) {
   return { kind: chat.lastOpenedAt ? 'opened' : 'created', text };
 }
 
-function ProjectMenu({ project, onRename, onUnregister, onMove, canMoveUp, canMoveDown }) {
+function ProjectMenu({ project, onRename, onUnregister, onMove, canMoveUp, canMoveDown, onShare }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef(null);
   useClickOutside(menuRef, () => setOpen(false), open);
+  // A project added from another mouaif: its settings live there (and open
+  // through the share); here it can only be removed.
+  if (project.shared) {
+    return h('div', { ref: menuRef, class: 'project-card__menu' },
+      h('button', {
+        class: 'project-card__menu-btn', type: 'button', 'aria-haspopup': 'true', 'aria-expanded': String(open),
+        'aria-label': 'Shared project options', onClick: (e) => { e.stopPropagation(); setOpen(!open); }
+      }, '⋯'),
+      h('div', { class: 'menu-pop project-card__menu-pop', hidden: !open, role: 'menu', onClick: (e) => e.stopPropagation() },
+        project.shared.online ? h('button', { type: 'button', onClick: () => { setOpen(false); nav('settings/project?projectDir=' + encodeURIComponent(project.path) + '&from=projects'); } }, 'Settings…') : null,
+        h('button', { type: 'button', 'data-danger': '1', onClick: () => { setOpen(false); onUnregister(project); } }, 'Remove shared project')));
+  }
 
   return h('div', { ref: menuRef, class: 'project-card__menu' },
     h('button', {
@@ -56,6 +70,7 @@ function ProjectMenu({ project, onRename, onUnregister, onMove, canMoveUp, canMo
     },
       h('button', { type: 'button', onClick: () => { setOpen(false); nav('settings/project?projectDir=' + encodeURIComponent(project.path) + '&from=projects'); } }, 'Settings…'),
       h('button', { type: 'button', onClick: () => { setOpen(false); onRename(project); } }, 'Rename…'),
+      onShare ? h('button', { type: 'button', onClick: () => { setOpen(false); onShare(project); } }, 'Share project…') : null,
       // The keyboard / one-tap route to the same reorder a long press does.
       onMove && (canMoveUp || canMoveDown) ? h('button', { type: 'button', disabled: !canMoveUp, onClick: () => { setOpen(false); onMove(project, -1); } }, 'Move up') : null,
       onMove && (canMoveUp || canMoveDown) ? h('button', { type: 'button', disabled: !canMoveDown, onClick: () => { setOpen(false); onMove(project, 1); } }, 'Move down') : null,
@@ -159,6 +174,14 @@ function ProjectSearchIcon({ size = 18 }) {
     h('circle', { cx: '11', cy: '11', r: '7' }),
     h('path', { d: 'M20 20l-3.9-3.9' })
   );
+}
+
+// A shared project whose machine is off: its chats live there, so there is
+// nothing to list until it is back.
+function OfflineChats({ project }) {
+  return h('ul', { class: 'project-card__chats', 'aria-label': 'Chats in ' + (project.name || project.path) },
+    h('li', { class: 'project-card__chats-empty project-card__offline-note' },
+      project.shared.machine + ' is offline. Its chats come back when it reconnects.'));
 }
 
 function ChatList({ project, filter }) {
@@ -580,8 +603,15 @@ title: searchOpen ? 'Close search' : 'Search chats'
 );
 }
 
+// The status line shows the card count by default. It is computed at render
+// from the cards on screen — this mouaif's projects plus the ones added from
+// another mouaif — so the number always agrees with the list.
+const COUNT_STATUS = '\u0000count';
+
 export function ProjectsView() {
   const [projects, setProjects] = useState([]);
+  // The project whose Share sheet is open (docs/features/share-project.md).
+  const [sharing, setSharing] = useState(null);
   // Per-card chat filter ('all' | 'draft' | 'recurring' | 'webhook' | 'hooks'), by project id.
   const [filters, setFilters] = useState({});
   const [statusText, setStatusText] = useState('loading…');
@@ -597,8 +627,8 @@ export function ProjectsView() {
     setStatusText(text);
     setStatusState(state || 'success');
     statusTimer.current = setTimeout(() => {
-      setStatusText(projectsRef.current.length + (projectsRef.current.length === 1 ? ' project' : ' projects'));
-      setStatusState(projectsRef.current.length ? 'success' : null);
+      setStatusText(COUNT_STATUS);
+      setStatusState(null);
     }, 2500);
   }
   useEffect(() => () => clearTimeout(statusTimer.current), []);
@@ -619,8 +649,8 @@ export function ProjectsView() {
       const list = r.body.projects || [];
       setProjects(list);
       projectsRef.current = list;
-      setStatusText(list.length + (list.length === 1 ? ' project' : ' projects'));
-      setStatusState(list.length ? 'success' : null);
+      setStatusText(COUNT_STATUS);
+      setStatusState(null);
     } catch (err) {
       setStatusText('network error');
       setStatusState('error');
@@ -633,7 +663,15 @@ export function ProjectsView() {
       setStatusState('error');
       console.warn('loadProjects rejected:', err);
     });
+    loadShareState();
   }, [projectsReload.value]);
+
+  // Shared projects come and go with the other machine: refresh their
+  // online state while the list is on screen.
+  useEffect(() => {
+    const timer = setInterval(() => { if (!document.hidden) loadShareState(); }, 15000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Save a new card order. The list is reordered at once (the card is already
   // where the user put it) and the server confirms; if it does not, the list is
@@ -677,47 +715,77 @@ export function ProjectsView() {
   }
 
   async function unregisterProject(project) {
+    if (project.shared) {
+      if (!confirm('Remove shared project "' + (project.name || project.path) + '" from this mouaif? It stays on ' + project.shared.machine + '.')) return;
+      try { await shareApi('DELETE', '/api/share/shares/' + project.shared.id); }
+      catch (err) { alert('remove failed: ' + err.message); return; }
+      loadShareState();
+      return;
+    }
     if (!confirm('Unregister project "' + (project.name || project.path) + '"? The folder on disk is not touched.')) return;
     const r = await fetchJson('/api/projects/registered/' + encodeURIComponent(project.id), { method: 'DELETE' });
     if (r.status !== 200) { alert('unregister failed: HTTP ' + r.status); return; }
     loadProjects();
   }
 
+  // Projects added from another mouaif, after this mouaif's own.
+  const share = shareState.value;
+  const outgoingCount = (dir) => (share.outgoing || []).filter((s) => s.projectDir === dir).length;
+  const cards = projectCards(projects, share);
+
   return h('section', null,
+    sharing ? h(ShareSheet, { project: sharing, onClose: () => { setSharing(null); loadShareState(); } }) : null,
     h('div', { class: 'page-bar' },
       h('div', { class: 'page-bar__title' }, 'Chats'),
-      h('span', { class: 'status page-bar__status', 'data-state': statusState || undefined, 'aria-live': 'polite' }, statusText),
+      h('span', {
+        class: 'status page-bar__status',
+        'data-state': (statusText === COUNT_STATUS ? (cards.length ? 'success' : null) : statusState) || undefined,
+        'aria-live': 'polite'
+      }, statusText === COUNT_STATUS ? projectCountText(cards) : statusText),
       h('button', { class: 'page-bar__add', type: 'button', onClick: () => nav('projects/new'), 'aria-label': 'Add project' }, '+')
     ),
     h('ul', { class: 'projects__list', ref: listRef, 'aria-label': 'Registered projects' },
-      projects.length === 0 && statusState !== 'busy' ?
+      cards.length === 0 && statusState !== 'busy' ?
       h('li', { class: 'projects__empty' },
         h('span', { class: 'projects__empty-icon', dangerouslySetInnerHTML: { __html: '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.379a1.5 1.5 0 0 1 1.06.44L11.88 8.38a.5.5 0 0 0 .354.146H19.5A1.5 1.5 0 0 1 21 10.027v7.473A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5v-10Z"/></svg>' } }),
         h('p', { class: 'projects__empty-title' }, 'No projects yet'),
         h('p', { class: 'projects__empty-text' }, 'Tap "Add project" to register a folder on disk. Each project keeps its own chats, prompt profile, and trace setting.')
       )
-      : projects.map((p, index) => {
-          const costBits = p.totalCost || { total: 0, known: false, currency: 'USD' };
+      : cards.map((p, index) => {
+          const shared = p.shared || null;
+          const costBits = shared
+            ? { total: shared.usage ? shared.usage.cost : 0, known: !!(shared.usage && shared.usage.known) }
+            : (p.totalCost || { total: 0, known: false, currency: 'USD' });
           const costStr = costBits.known ? formatCost(costBits.total) : '--';
+          const sharedOut = shared ? 0 : outgoingCount(p.path);
           return h('li', {
-            key: p.id, class: 'project-card', 'data-project-id': p.id,
+            key: p.id, class: 'project-card' + (shared ? ' project-card--shared' : ''), 'data-project-id': p.id,
+            'data-offline': shared && !shared.online ? '1' : undefined,
             // Once the entrance animation has played the card keeps its place
             // for good: moving it in the DOM (a reorder) would replay it.
             onAnimationEnd: (e) => { if (e.target === e.currentTarget) e.currentTarget.setAttribute('data-entered', '1'); }
           },
             // Press and hold the header to lift the card and drag it.
-            h('div', { class: 'project-card__head', onPointerDown: (e) => reorder.start(e, p.id), onContextMenu: reorder.suppress },
+            h('div', shared
+              ? { class: 'project-card__head' }
+              : { class: 'project-card__head', onPointerDown: (e) => reorder.start(e, p.id), onContextMenu: reorder.suppress },
               h('div', { class: 'project-card__identity' },
-                h('div', { class: 'project-card__name' }, p.name || p.path),
-                h('div', { class: 'project-card__path' }, p.path)
+                h('div', { class: 'project-card__name' }, p.name || p.path,
+                  sharedOut ? h('span', { class: 'project-card__share-badge', title: 'Shared with ' + sharedOut + (sharedOut === 1 ? ' mouaif' : ' mouaifs') }, 'Shared') : null),
+                shared
+                  ? h('div', { class: 'project-card__shared-from' },
+                    h('span', { class: 'share-sheet__dot', 'data-online': shared.online ? '1' : '0', 'aria-hidden': 'true' }),
+                    'Shared from ' + shared.machine + (shared.online ? '' : ' · offline'))
+                  : h('div', { class: 'project-card__path' }, p.path)
               ),
-              h('span', { class: 'project-card__cost' }, costStr),
-              h(ProjectFilter, { project: p, value: filters[p.id] || 'all', onChange: (f) => setFilters((prev) => Object.assign({}, prev, { [p.id]: f })) }),
-              h(ProjectMenu, { project: p, onRename: renameProject, onUnregister: unregisterProject, onMove: moveProject, canMoveUp: index > 0, canMoveDown: index < projects.length - 1 })
+              h('span', { class: 'project-card__cost', title: shared ? 'Provider cost on this mouaif' : undefined }, costStr),
+              shared && !shared.online ? null : h(ProjectFilter, { project: p, value: filters[p.id] || 'all', onChange: (f) => setFilters((prev) => Object.assign({}, prev, { [p.id]: f })) }),
+              h(ProjectMenu, { project: p, onRename: renameProject, onUnregister: unregisterProject, onMove: shared ? null : moveProject, canMoveUp: index > 0, canMoveDown: index < projects.length - 1, onShare: shared ? null : setSharing })
             ),
-            h(ChatList, { project: p, filter: filters[p.id] || 'all' }),
-            // Extension views for this project (slot project.card).
-            h(ProjectCardExtensions, { projectDir: p.path })
+            shared && !shared.online
+              ? h(OfflineChats, { project: p })
+              : h(ChatList, { key: shared ? 'online' : 'local', project: p, filter: filters[p.id] || 'all' }),
+            shared ? null : h(ProjectCardExtensions, { projectDir: p.path })
           );
       })
     )

@@ -14,7 +14,6 @@ const { projectModelRecord } = require('./util.js');
 const toolFeedback = require('./toolFeedback.js');
 const usageMetrics = require('./usage.js');
 const toolOverridesMod = require('./toolOverrides.js');
-const skipNotification = require('./tools/skipNotification.js');
 const hooksMod = require('./hooks.js');
 const { withHookContext } = require('./messages.js');
 
@@ -22,11 +21,7 @@ const { withHookContext } = require('./messages.js');
 
 // Walks an SSE byte stream and yields {eventName, data} pairs.
 // `stream` is a ReadableStream<Uint8Array> from fetch().
-// `onChunk` runs for every raw chunk read, before any frame is parsed:
-// the idle watchdog uses it, so SSE comment lines (gateway keep-alives
-// such as OpenRouter's ": OPENROUTER PROCESSING") count as signs of life
-// even though they never become events.
-async function* readSSE(stream, onChunk) {
+async function* readSSE(stream) {
   const decoder = new TextDecoder('utf-8');
   let buf = '';
   // SSE frames are separated by a blank line. The spec allows LF, CRLF,
@@ -41,7 +36,6 @@ async function* readSSE(stream, onChunk) {
   // `\n`-based field splitting sees a clean frame.
   const FRAME_SEP = /(?:\r\n|\r|\n){2}/;
   for await (const chunk of stream) {
-    if (onChunk) onChunk();
     buf += decoder.decode(chunk, { stream: true });
     let idx;
     while ((idx = buf.search(FRAME_SEP)) !== -1) {
@@ -81,11 +75,10 @@ function parseSSEFrame(frame) {
 }
 
 // Walks an NDJSON byte stream and yields one parsed object per line.
-async function* readNDJSON(stream, onChunk) {
+async function* readNDJSON(stream) {
   const decoder = new TextDecoder('utf-8');
   let buf = '';
   for await (const chunk of stream) {
-    if (onChunk) onChunk();
     buf += decoder.decode(chunk, { stream: true });
     let idx;
     while ((idx = buf.indexOf('\n')) !== -1) {
@@ -123,27 +116,19 @@ async function* readNDJSON(stream, onChunk) {
 // scripts/test-tool-groups.mjs pins the set exactly: nothing else may be
 // dispatched here. Both are read-only, and both still honor `off`.
 const NO_PROMPT_TOOLS = new Set(['report_progress', 'list_features']);
-// Tools that fire no hooks (src/hooks.js): the no-card tools above, skill
-// activation and the quiet-finish marker have nothing to approve or police.
-const HOOKLESS_TOOLS = new Set([...NO_PROMPT_TOOLS, 'activate_skill', skipNotification.NAME]);
+// Tools that fire no hooks (src/hooks.js): the no-card tools above and skill
+// activation have nothing to approve or police.
+const HOOKLESS_TOOLS = new Set([...NO_PROMPT_TOOLS, 'activate_skill']);
 
 // The context a hook process runs in: the chat's working folder as cwd.
-// Resolved on first use: most tool calls run no hook, and this reads the chat.
 function hookContextFor(opts) {
-  let cwd;
-  let resolved = false;
+  let cwd = opts && opts.projectDir;
+  try { cwd = require('./chatWorkingFolder.js').resolveForCall(opts.projectDir, opts.chatId, opts.workspaceChatId); }
+  catch { /* project folder */ }
   return {
     projectDir: opts && opts.projectDir,
     chatId: opts && opts.chatId,
-    get cwd() {
-      if (!resolved) {
-        resolved = true;
-        cwd = opts && opts.projectDir;
-        try { cwd = require('./chatWorkingFolder.js').resolveForCall(opts.projectDir, opts.chatId, opts.workspaceChatId); }
-        catch { /* project folder */ }
-      }
-      return cwd;
-    },
+    cwd,
     nested: !!(opts && opts.nestedSubagent),
     signal: opts && opts.signal
   };
@@ -198,16 +183,6 @@ async function runSingleToolCall(c, cx) {
       if (convo) convo.push({ role: 'tool', tool_call_id: c.id || undefined, name: c.name, content: JSON.stringify(result) });
       return { exec: { ok: false, result, content: JSON.stringify(result) }, imageParts: [] };
     }
-  }
-  // A recurring task's run asking to finish without a notification
-  // (src/tools/skipNotification.js). It belongs to the turn, so it skips the
-  // chat's tool filter, and it has no approval card: a card would notify.
-  if (c.name === skipNotification.NAME && opts?.scheduledRun && !opts?.nestedSubagent) {
-    const exec = skipNotification.run(args);
-    onEvent('tool_call', { id: c.id || null, name: c.name, args });
-    onEvent('tool_result', { id: c.id || null, name: c.name, ok: true, result: exec.result });
-    if (convo) convo.push({ role: 'tool', tool_call_id: c.id || undefined, name: c.name, content: exec.content });
-    return { exec, imageParts: [] };
   }
   // Enforce the advertised tool surface against forged calls before approval
   // or side effects. A tool unchecked in the chat's tool filter (or outside a
@@ -274,6 +249,19 @@ async function runSingleToolCall(c, cx) {
     }
     if (before.decision === 'ask') hookAsk = { reason: before.reason, hook: before.by || null };
   }
+  // Shared project (src/share-gate.js): a request forwarded from another
+  // mouaif may not run what its share does not allow, whatever the project's
+  // own tool settings say.
+  {
+    const denied = require('./share-gate.js').toolDenied(c.name, args);
+    if (denied) {
+      const result = { ok: false, code: 'ETOOL_DISABLED', reason: denied };
+      onEvent('tool_call', { id: c.id || null, name: c.name, args });
+      onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result });
+      if (convo) convo.push({ role: 'tool', tool_call_id: c.id || undefined, name: c.name, content: JSON.stringify(result) });
+      return { exec: { ok: false, result, content: JSON.stringify(result) }, imageParts: [] };
+    }
+  }
   // Captured when the authorization gate resolves a prompt for an
   // `ask_user` call. The runner reads it to fold the user's
   // structured answer into the `tool` message it returns.
@@ -322,7 +310,7 @@ async function runSingleToolCall(c, cx) {
     callEmitted = true;
     onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result: exec.result });
     pushToolMessage(c.name, modelContentForTool(c.name, exec));
-    return { exec, imageParts: [] };
+    return exec;
   }
   try {
     // The tools the server answers WITHOUT an approval card: a UI progress
@@ -476,13 +464,9 @@ async function runSingleToolCall(c, cx) {
       // Creating or updating an interactive app in the chat card always prompts
       // the user even when the family or tool is Allow. The request-only draft
       // and agent-to-app message delivery have no file or server side effects.
-      // A relink changes only which of this chat's artifacts the app reads, so
-      // it follows the tool's ordinary permission.
-      forcePrompt = args.request === undefined && args.message === undefined && args.relink === undefined;
+      forcePrompt = args.request === undefined && args.message === undefined;
       summary = args.request !== undefined
       ? 'Prepare development draft: ' + (args.name || 'On-the-fly app')
-      : args.relink !== undefined
-      ? 'Change the data an MCP App reads: ' + (args.path || '') + ' ' + JSON.stringify(args.relink).slice(0, 200)
       : args.message !== undefined
       ? 'Send message to MCP App (' + (args.name || 'On-the-fly app') + '): ' + String(args.message).slice(0, 200)
       : (args.path !== undefined && args.source !== undefined
@@ -490,12 +474,6 @@ async function runSingleToolCall(c, cx) {
       : 'Create and open local MCP App in this chat: ') + (args.name || 'On-the-fly app')
       + '\nSource: ' + (args.path || args.filename || '(missing filename)')
       + '\nNo installs, Node execution of app source, MCP server registration or permission changes.';
-      }
-      // A copy of an artifact is a new file in the project: this tool's family
-      // Allow must not stand in for the file tools' own permission.
-      if (c.name === 'export_artifact') {
-        forcePrompt = true;
-        summary = 'Write a copy of artifact ' + (args && args.name) + ' to ' + (args && args.path);
       }
       // hook_create always reaches the user, even for Allow and session
       // grants: a hook persists and runs code on later turns. A malformed
@@ -510,7 +488,7 @@ async function runSingleToolCall(c, cx) {
           callEmitted = true;
           onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result: exec.result });
           pushToolMessage(c.name, modelContentForTool(c.name, exec));
-          return { exec, imageParts: [] };
+          return exec;
         }
       }
       // A delegation that shares chat images names them on the approval
@@ -525,7 +503,7 @@ async function runSingleToolCall(c, cx) {
   try {
   const selection = require('./agents.js').subagentModelForCall(
   opts && opts.projectDir, opts && opts.chatId, args && args.agent, opts && opts.model);
-  subagentModel = { providerId: require('./providerConnections.js').connectionIdOf(selection.model), modelId: selection.model.id, source: selection.source };
+  subagentModel = { providerId: selection.model.provider, modelId: selection.model.id, source: selection.source };
   } catch (e) { subagentModel = { error: e.message }; }
   }
   if (opts && opts.signal && opts.signal.aborted) throw Object.assign(new Error('aborted'), { code: 'EABORTED' });
@@ -581,7 +559,7 @@ async function runSingleToolCall(c, cx) {
           callEmitted = true;
           onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result: exec.result });
           pushToolMessage(c.name, modelContentForTool(c.name, exec));
-          return { exec, imageParts: [] };
+          return exec;
         }
       }
 
@@ -702,12 +680,6 @@ async function runSingleToolCall(c, cx) {
     }
   }
 
-  // A waited-for subagent's `subagent.end` hooks already ran; show them on its
-  // card and give the model what they added.
-  if (exec && exec.subagentEnd) {
-    hookNotes.push(...exec.subagentEnd.notes);
-    if (exec.subagentEnd.context) hookContext = hookContext ? hookContext + '\n' + exec.subagentEnd.context : exec.subagentEnd.context;
-  }
   // `tool.after`: may add context for the model, never change the result. A
   // background run's result lands later, outside this call, so it has none.
   if (hooksApply && !exec.backgroundPending && !(opts && opts.signal && opts.signal.aborted)) {
@@ -767,6 +739,28 @@ function promptCacheKeyFor(opts) {
   return key.length > 64 ? key.slice(0, 64) : key;
 }
 
+// buildUpstreamRequest(model, messages, specs, requestOpts) — the provider
+// request for one turn: the provider's buildRequest, plus the OpenAI tool
+// list for the providers that take it in the body. Shared by the local path
+// and by the adding mouaif serving a borrowed call (src/share.js), so both
+// build exactly the same request.
+function buildUpstreamRequest(model, messages, specs, requestOpts, build) {
+  const builder = build || BUILDERS[model.provider];
+  if (!builder) throw Object.assign(new Error('No builder for ' + model.provider), { code: 'EUNKNOWN_PROVIDER' });
+  const req = builder(model, messages, true, specs, requestOpts);
+  // Which connections carry the OpenAI `/chat/completions` tool contract. The
+  // answer lives in src/providerShapes.js so this gate and the
+  // history-reconstruction mirror in src/server-handlers-chats.js cannot
+  // drift. Codex (Responses) and Anthropic (Messages) are excluded because
+  // their own builders convert the specs; Codex receives them as an argument
+  // to buildRequest, Anthropic's accumulator is set up in runUpstreamTurn.
+  if (supportsOpenAIToolLoop(model.provider) && specs && specs.length && !req.expectsImage) {
+    const builderBody = req.body;
+    if (builderBody && typeof builderBody === 'object') builderBody.tools = specs;
+  }
+  return req;
+}
+
 async function streamChat(opts) {
   opts = opts || {};
   const ownsScope = !opts.orchestrationScope;
@@ -780,13 +774,7 @@ async function streamChat(opts) {
 }
 
 async function streamChatInScope(opts) {
-  const { messages, signal, onEvent, onRoundUsage, onRoundCommit, thinkingLevel, maxOutputTokens } = opts || {};
-  // The request builders read per-run fields (thinkingLevel,
-  // maxOutputTokens) off the model record, so each run works on its own
-  // shallow copy: the caller's object is shared with the chat, with
-  // subagents that inherit it and with the shell reviewer, and writing onto
-  // it leaked one run's thinking level into the next.
-  const model = opts && opts.model && typeof opts.model === 'object' ? Object.assign({}, opts.model) : (opts && opts.model);
+  const { model, messages, signal, onEvent, onRoundUsage, onRoundCommit, thinkingLevel, maxOutputTokens } = opts || {};
   const orchestration = require('./tools/subagent-orchestration.js');
   const scope = opts.orchestrationScope;
   if (!model || !model.provider) {
@@ -807,13 +795,17 @@ async function streamChatInScope(opts) {
   if (typeof maxOutputTokens === 'string' && maxOutputTokens) {
     model.maxOutputTokens = maxOutputTokens;
   }
+  if (opts.noTools) model.noTools = true;
 
   let def, build, parse;
   try {
     def = endpointFor(model);
     // requireApiKey is async on the OAuth path (proactive refresh);
     // sync-fast on the API-key path. We always `await` it here.
-    await requireApiKey(model, def);
+    // A borrowed model (a shared project used through the mouaif it was
+    // added on) has no credential here: the adding mouaif resolves its own
+    // when it builds the request (src/share.js → serveBorrow).
+    if (!model.borrowed) await requireApiKey(model, def);
     build = BUILDERS[model.provider];
     parse = PARSERS[model.provider];
   } catch (e) {
@@ -965,6 +957,18 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       }
     }
   } catch { /* authorization state unreadable; keep every tool advertised */ }
+  // A shared project used from another mouaif: tools the share does not
+  // allow (shell on a files-only share, app-wide tools on any share) are not
+  // advertised. runSingleToolCall refuses forged calls the same way.
+  try {
+    const shareGate = require('./share-gate.js');
+    if (shareGate.currentCaller()) {
+      for (let i = toolSpecs.length - 1; i >= 0; i--) {
+        const name = toolSpecs[i] && toolSpecs[i].function && toolSpecs[i].function.name;
+        if (name && shareGate.toolDenied(name, {})) toolSpecs.splice(i, 1);
+      }
+    }
+  } catch { /* share gate unavailable; execution still checks */ }
 
   // Per-chat tool filter. opts.enabledTools === null / undefined:
   //   legacy behavior — every collected spec is advertised. An array
@@ -1004,12 +1008,6 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     const allow = new Set(opts.enabledTools.map((n) => String(n)));
     visibleToolSpecs = toolSpecs.filter((s) => s && s.function
     && (allow.has(s.function.name) || (!opts.nestedSubagent && s.function.name === 'activate_skill')));
-  }
-  // A recurring task's run may finish without a notification. The tool is
-  // the turn's own, so it is added after the chat's filter and never inherited
-  // by a subagent.
-  if (opts && opts.scheduledRun && !opts.nestedSubagent && !opts.noTools && !opts.singleToolCall) {
-    visibleToolSpecs = [...visibleToolSpecs, skipNotification.SPEC];
   }
 
   // Shrink the tool declaration according to the active prompt-size
@@ -1165,11 +1163,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
         id: c.id || undefined,
         type: 'function',
         function: { name: c.name, arguments: c.arguments || '{}' }
-      })),
-      // Anthropic only: the round's thinking blocks with their
-      // signatures, which the next request must send back unchanged
-      // (src/ai-endpoints.js openAIMessageToAnthropic).
-      ...(result.anthropicBlocks ? { anthropicBlocks: result.anthropicBlocks } : {})
+      }))
     });
 
     // Close the streamed assistant segment before tool cards are emitted.
@@ -1250,21 +1244,14 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   // or { ok: false, error }. `done` is NOT emitted here — the caller
   // decides when the whole exchange is finished.
   async function runUpstreamTurn(convoMessages, specs) {
-  let req;
-  try { req = build(model, convoMessages, true, specs, { promptCacheKey: promptCacheKeyFor(opts) }); }
-  catch (e) { return { ok: false, error: { code: e.code || 'EBADINPUT', message: e.message } }; }
-  // Which connections carry the OpenAI `/chat/completions` tool contract. The
-  // answer lives in src/providerShapes.js so this gate and the
-  // history-reconstruction mirror in src/server-handlers-chats.js cannot
-  // drift. Codex (Responses) and Anthropic (Messages) are excluded because
-  // their own builders convert the specs; Codex receives them as an argument
-  // to buildRequest, Anthropic's accumulator is set up below.
-  const supportsOpenAITools = supportsOpenAIToolLoop(model.provider);
-  if (supportsOpenAITools && specs && specs.length && !req.expectsImage) {
-    const builderBody = req.body;
-    if (builderBody && typeof builderBody === 'object') {
-      builderBody.tools = specs;
-    }
+  // A borrowed model's request is built on the adding mouaif, with its own
+  // credentials, from the same provider-neutral inputs (src/share.js).
+  // `req` is then filled from the response head: the parsing below only
+  // needs its responseFormat / expectsImage.
+  let req = null;
+  if (!model.borrowed) {
+    try { req = buildUpstreamRequest(model, convoMessages, specs, { promptCacheKey: promptCacheKeyFor(opts) }, build); }
+    catch (e) { return { ok: false, error: { code: e.code || 'EBADINPUT', message: e.message } }; }
   }
   // Anthropic streams a tool_use block's arguments as input_json_delta
   // frames across multiple SSE events. The parser generator is re-created
@@ -1280,8 +1267,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   // model): without a deadline the server waits forever, the chat shows
   // "streaming…" permanently, and the running marker wedges the chat
   // (every retry gets 409 EALREADY_RUNNING). The timer resets on every
-  // chunk read from the socket (keep-alive comments included), so a
-  // slow-but-chatty model never trips it — only a
+  // streamed byte, so a slow-but-chatty model never trips it — only a
   // genuinely silent one does. UPSTREAM_IDLE_MS covers the quiet gap
   // before the first token too (models can "think" for a long time
   // before emitting anything).
@@ -1303,19 +1289,36 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     if (signal.aborted) outerAbort();
     else signal.addEventListener('abort', outerAbort, { once: true });
   }
-  const upstream = await fetch(req.url, {
-    method: 'POST',
-    headers: req.headers,
-    body: JSON.stringify(req.body),
-    signal: upstreamCtl.signal
-  }).catch((e) => {
+  const upstream = await (model.borrowed
+    ? require('./share.js').borrowFetch({
+      model, messages: convoMessages, specs, signal: upstreamCtl.signal,
+      requestOpts: { promptCacheKey: promptCacheKeyFor(opts) }
+    })
+    : fetch(req.url, {
+      method: 'POST',
+      headers: req.headers,
+      body: JSON.stringify(req.body),
+      signal: upstreamCtl.signal
+    })).catch((e) => {
     return { __networkError: e };
   });
+  if (model.borrowed && upstream && !upstream.__networkError) {
+    const meta = upstream.meta || {};
+    req = { responseFormat: meta.responseFormat || undefined, expectsImage: !!meta.expectsImage, streamFormat: meta.streamFormat || null };
+    // The adding mouaif's price for this model, so the chat's cost line on
+    // this machine matches what was billed there.
+    if (meta.pricing && typeof meta.pricing === 'object' && !model.pricing) model.pricing = meta.pricing;
+  }
 
   if (upstream && upstream.__networkError) {
     stopIdle();
     if (signal && outerAbort) signal.removeEventListener('abort', outerAbort);
     const e = upstream.__networkError;
+    // The adding mouaif refused or lost a borrowed call: say so plainly.
+    if (e && e.borrowed && e.name !== 'AbortError') {
+      return { ok: false, error: { code: e.code || 'EBORROW', message: e.message } };
+    }
+    if (e && (e.code === 'ESHARE_OFFLINE')) return { ok: false, error: { code: e.code, message: e.message } };
     if (e && e.name === 'AbortError') {
       const idle = upstreamCtl.signal.reason && upstreamCtl.signal.reason.message === 'provider idle timeout';
       const clientGone = signal && signal.aborted;
@@ -1351,14 +1354,6 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   // we assemble by `index`. The accumulator lives only for the
   // duration of one turn.
   const toolAcc = new Map(); // index -> { id, name, arguments }
-  // Deltas without a numeric `index` (some gateways omit it) are keyed by
-  // call id instead, so parallel calls stay separate.
-  let unindexedSlot = null;
-  let unindexedCount = 0;
-  // The round's finish reason (normalized by the parsers), and Anthropic's
-  // content blocks in streamed order for replay in the next tool round.
-  let finishReason = '';
-  const assistantBlocks = [];
   // Per-round usage trackers. OpenAI-shaped providers report usage once
   // on the final chunk (with stream_options.include_usage), but some
   // compatible gateways stamp a running total on every chunk. Summing
@@ -1381,35 +1376,22 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   let roundProviderCostOutput = null;
   let roundUsageCommitted = false;
   const stream = upstream.body;
-  const isNDJSON = def.streamFormat === 'ndjson';
+  const isNDJSON = (model.borrowed ? req.streamFormat : def.streamFormat) === 'ndjson';
   try {
     if (req.responseFormat === 'json') {
     // Dedicated image APIs are one-shot JSON, not SSE. Keep the same
     // cancellation, error normalization, and round billing as chat calls.
-    // The body is read chunk by chunk so a large image that is still
-    // arriving keeps the idle watchdog quiet.
-    const decoder = new TextDecoder('utf-8');
-    let text = '';
-    if (stream && typeof stream[Symbol.asyncIterator] === 'function') {
-      for await (const chunk of stream) { resetIdle(); text += decoder.decode(chunk, { stream: true }); }
-      text += decoder.decode();
-    } else {
-      text = await upstream.text();
-    }
-    let parsed;
-    try { parsed = JSON.parse(text); }
-    catch { throw new Error('Provider returned invalid JSON'); }
-    for (const ev of parseTurn('', JSON.stringify(parsed))) apply(ev);
+    for (const ev of parseTurn('', JSON.stringify(await upstream.json()))) apply(ev);
     } else if (isNDJSON) {
-    // resetIdle runs per chunk read: any upstream byte proves the
-    // provider is alive.
-    for await (const obj of readNDJSON(stream, resetIdle)) {
+    for await (const obj of readNDJSON(stream)) {
+        resetIdle(); // any upstream byte proves the provider is alive
         for (const ev of parseTurn('', JSON.stringify(obj))) {
           apply(ev);
         }
       }
     } else {
-      for await (const ev of readSSE(stream, resetIdle)) {
+      for await (const ev of readSSE(stream)) {
+        resetIdle(); // any upstream byte proves the provider is alive
         for (const out of parseTurn(ev.eventName, ev.data)) {
           apply(out);
         }
@@ -1441,15 +1423,6 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   commitRoundUsage();
 
   if (sawError) return { ok: false, error: sawError };
-  // A reply cut at the output limit while writing a tool call carries
-  // half-written arguments. Dispatching it would run the tool with
-  // `{ __raw: … }` (or `{}` once replayed to Anthropic), so the round
-  // fails with a clear error instead.
-  if (/^(length|max_tokens|max_output_tokens|MAX_TOKENS)$/.test(finishReason) && [...toolAcc.values()].some((tc) => tc && tc.name)) {
-    const error = { code: 'ETRUNCATED', message: 'The reply hit the output-token limit while writing a tool call, so the call was not run. Raise the chat\'s max output tokens and retry.' };
-    onEvent('error', error);
-    return { ok: false, error };
-  }
   if (req.expectsImage && !images.length) {
     return { ok: false, error: { code: 'ENO_IMAGE', message: 'The image provider returned no image (possibly filtered). No artwork was generated.' } };
   }
@@ -1476,8 +1449,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     // delta the client already rendered.
     if (assistantText) onEvent('message', { delta: assistantText });
   }
-  return { ok: true, assistantText, toolCalls, images,
-    ...(assistantBlocks.some((b) => b.type === 'thinking' || b.type === 'redacted_thinking') ? { anthropicBlocks: assistantBlocks } : {}) };
+  return { ok: true, assistantText, toolCalls, images };
 
   function apply(ev) {
     if (ev.name === 'image') {
@@ -1593,32 +1565,19 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
         } catch { /* listener errors must not abort the stream */ }
       }
     } else if (ev.name === 'finish') {
-      if (ev.data && typeof ev.data.reason === 'string') finishReason = ev.data.reason;
       // The tool-call finish reason is handled by the outer loop
       // (it emits tool_call / tool_result). Pass through only the
       // non-tool finish reasons so the UI can show them.
       if (!(ev.data && ev.data.reason === 'tool_calls')) {
         onEvent('finish', ev.data);
       }
-    } else if (ev.name === 'assistant_block') {
-      if (ev.data && typeof ev.data === 'object') assistantBlocks.push(ev.data);
     } else if (ev.name === 'tool_call_delta') {
       // OpenAI streams tool calls as a list of deltas. Accumulate
       // by `index`. The first delta carries the `id`; subsequent
       // deltas fill in `function.name` (sometimes) and
       // `function.arguments` (a JSON string we concatenate).
       const d = ev.data;
-      let idx;
-      if (typeof d.index === 'number') idx = d.index;
-      else {
-        // No index: a delta naming a new call id opens a new call; one
-        // without an id continues the call in progress.
-        const current = unindexedSlot === null ? null : toolAcc.get(unindexedSlot);
-        if (unindexedSlot === null || (d.id && current && current.id && current.id !== d.id)) {
-          unindexedSlot = 'u' + (unindexedCount++);
-        }
-        idx = unindexedSlot;
-      }
+      const idx = (typeof d.index === 'number') ? d.index : 0;
       let cur = toolAcc.get(idx);
       if (!cur) { cur = { id: null, name: '', arguments: '' }; toolAcc.set(idx, cur); }
       if (d.id) cur.id = d.id;
@@ -2139,16 +2098,8 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     let row;
     try {
     row = scope.start(id, args.agent, (run) => runDelegation(run), (exec) => {
-      if (args.background) onEvent('tool_result', { id, name: 'subagent', ok: exec.ok, result: exec.result, hooks: exec.subagentEnd ? hooksMeta(exec.subagentEnd.notes, exec.subagentEnd.context || '') : undefined });
-    }, { groupId: args.groupId, memberId: args.memberId, workspace: workingDir, onEnd: (ended, exec, state) => {
-      const hookCtx = hookContextFor(callOpts);
-      // subagent.end fires at every depth: its payload carries `depth`.
-      hookCtx.nested = false;
-      hookCtx.disabled = !!callOpts.hooksDisabled;
-      // A cancelled run's hook runs on its own, past the turn that is ending.
-      if (state === 'cancelled') hookCtx.signal = null;
-      return require('./hookTurns.js').fireSubagentEnd(hookCtx, { row: ended, exec, state, task: args.task, background: args.background === true, origin: callOpts.hookOrigin });
-    } });
+      if (args.background) onEvent('tool_result', { id, name: 'subagent', ok: exec.ok, result: exec.result });
+    }, { groupId: args.groupId, memberId: args.memberId, workspace: workingDir });
     } catch (e) {
     const result = { error: { code: e.code || 'EBADINPUT', message: e.message } };
     return { ok: false, result, content: JSON.stringify(result) };
@@ -2193,10 +2144,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       // a hard, typed error so the model can retry with a valid one
       // instead of silently delegating to a generic subagent.
       let agentTools = null;
-      // Default: inherit the chat's model. A copy, because the thinking
-      // level below is written onto it and must not reach the parent run
-      // or a sibling subagent.
-      let nestedModel = Object.assign({}, model);
+      let nestedModel = model; // default: inherit the chat's model
       // Default: inherit the chat's thinking level (null → inherit). An
       // explicit per-run override (authorization card) wins; otherwise an
       // agent's thinkingLevel applies. Empty string = "No thinking".
@@ -2244,11 +2192,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
           const r = { error: { code: 'EUNKNOWN_AGENT', message: 'Unknown agent "' + agentName + '"', available } };
           return { ok: false, content: JSON.stringify(r), result: r };
         }
-        // Plain string content: OpenAI-shaped providers take it verbatim
-        // (a block array with `cache_control` is rejected by strict ones),
-        // and the Anthropic and OpenRouter-Claude builders add the system
-        // cache breakpoint themselves.
-        nestedMessages.push({ role: 'system', content: agent.isDefault ? agent.effectiveContent : agent.content });
+        nestedMessages.push({ role: 'system', content: [{ type: 'text', text: agent.isDefault ? agent.effectiveContent : agent.content, cache_control: { type: 'ephemeral' } }] });
         agentTools = Array.isArray(agent.tools) && agent.tools.length ? agent.tools : null;
         // Per-agent thinking level (optional). Applies only when no
         // explicit per-run override was chosen on the approval card.
@@ -2256,23 +2200,38 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
           nestedThinkingLevel = agent.thinkingLevel;
         }
       } else {
-        nestedMessages.push({ role: 'system', content: require('./agents.js').DEFAULT_CONTENT });
+        nestedMessages.push({
+          role: 'system',
+          content: [{ type: 'text', text: require('./agents.js').DEFAULT_CONTENT, cache_control: { type: 'ephemeral' } }]
+        });
       }
       // Hydrate only the winning identity. Project records contribute safe
       // selection metadata, never the URL/credential of the app connection.
       try {
+      const settingsMod = require('./settings.js');
       const selection = require('./agents.js').subagentModelForCall(
       callOpts && callOpts.projectDir, callOpts && callOpts.chatId, agentName, model, chosenModel);
-      if (selection.source !== 'chat model') {
+      if (selection.source !== 'chat model' && model && model.borrowed) {
+      // A shared project used from the mouaif it was added on: an agent's
+      // pinned model is borrowed too. The adding mouaif checks that it
+      // offers it and resolves its image API from its own catalog.
       const rec = selection.model;
-      const { findConnection, hydrateModel } = require('./providerConnections.js');
-      const connection = findConnection(rec.provider);
+      nestedModel = Object.assign({}, projectModelRecord(rec), {
+        provider: rec.provider, auth: 'borrowed', borrowed: model.borrowed
+      });
+      } else if (selection.source !== 'chat model') {
+      const rec = selection.model;
+      const app = settingsMod.getApp();
+      const providers = Array.isArray(app.providers) ? app.providers : [];
+      const connection = providers.find((p) => p && p.id === rec.provider);
       if (!connection) {
         const r = { error: { code: 'EPROVIDER_NOT_FOUND', message: 'No provider connection for "' + rec.provider + '"' } };
         return { ok: false, content: JSON.stringify(r), result: r };
       }
-      nestedModel = hydrateModel(connection, rec);
-      nestedModel.auth = connection.auth || 'apikey';
+      nestedModel = Object.assign({}, connection, projectModelRecord(rec), {
+        provider: rec.provider,
+        auth: connection.auth || 'apikey'
+      });
       }
       } catch (e) {
       const r = { error: { code: e.code || 'EUNKNOWN_MODEL', message: e.message || String(e) } };
@@ -2282,13 +2241,12 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       // modalities from the same cached catalog the picker used. Do not let
       // catalog metadata replace the app connection's credential or URL.
       if ((agentName || defaultAgent || chosenModel) && nestedModel.provider === 'openrouter'
-      && !nestedModel.imageEndpoint) {
+      && !nestedModel.imageEndpoint && !nestedModel.borrowed) {
       try {
-      const connectionId = require('./providerConnections.js').connectionIdOf(nestedModel);
-      const catalog = await require('./modelList.js').liveModelsFor(connectionId, { purpose: 'image' });
+      const catalog = await require('./modelList.js').liveModelsFor('openrouter', { purpose: 'image' });
       let entry = catalog.models.find((m) => m.id === nestedModel.id);
       if (!entry && !Array.isArray(nestedModel.outputModalities)) {
-        const chatCatalog = await require('./modelList.js').liveModelsFor(connectionId);
+        const chatCatalog = await require('./modelList.js').liveModelsFor('openrouter');
         entry = chatCatalog.models.find((m) => m.id === nestedModel.id);
       }
       if (entry) nestedModel = { ...nestedModel, ...projectModelRecord(entry), provider: nestedModel.provider };
@@ -2416,8 +2374,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
         }
       }
 
-      const { connectionIdOf } = require('./providerConnections.js');
-      if (opts.nestedSubagent && !chosenModel && (nestedModel.id !== model.id || connectionIdOf(nestedModel) !== connectionIdOf(model))) {
+      if (opts.nestedSubagent && !chosenModel && (nestedModel.id !== model.id || nestedModel.provider !== model.provider)) {
         const r = { error: { code: 'EDENIED', message: 'recursive agent model pin cannot widen the inherited model; explicit user override required' } };
         return { ok: false, result: r, content: JSON.stringify(r) };
       }
@@ -2807,7 +2764,6 @@ promptSize: callOpts && callOpts.promptSize,
       return await ft.runFileTool(name, {
       projectDir: workingDir,
       settingsProjectDir: callOpts && callOpts.projectDir,
-      chatId: callOpts && callOpts.chatId,
       args,
       signal: callOpts && callOpts.signal,
       settings: callOpts && callOpts.appSettings,
@@ -2913,6 +2869,9 @@ module.exports = {
   readSSE,
   readNDJSON,
   // OpenAI prompt-cache routing key derivation, exported for tests
-  promptCacheKeyFor
+  promptCacheKeyFor,
+  // one turn's provider request; also used by the adding mouaif of a shared
+  // project to serve a borrowed call (src/share.js)
+  buildUpstreamRequest
 };
 

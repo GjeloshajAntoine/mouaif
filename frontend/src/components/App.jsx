@@ -10,6 +10,7 @@ import { SettingsHomeView } from './SettingsHome.jsx';
 import { AccessSettingsView } from './AccessAuth.jsx';
 import { ProjectsView } from './Projects.jsx';
 import { ProjectPickerView } from './ProjectPicker.jsx';
+import { SharedWithMeView } from './SharedWithMe.jsx';
 import { ChatView } from './chat/Chat.jsx';
 import { ThemeMockupView } from './ThemeMockup.jsx';
 import { ChatReviewMockupView } from './ChatReviewMockup.jsx';
@@ -26,7 +27,6 @@ import { ChatReviewMockupView } from './ChatReviewMockup.jsx';
 const lazyNamed = (loader, name) => lazy(() => loader().then((m) => ({ default: m[name] })));
 const InspectorView = lazy(() => import('./Inspector.jsx').then((module) => ({ default: module.InspectorView })));
 const SettingsProvidersView = lazyNamed(() => import('./SettingsProviders.jsx'), 'SettingsProvidersView');
-const SettingsProviderNewView = lazyNamed(() => import('./SettingsProviders.jsx'), 'SettingsProviderNewView');
 const SettingsProviderEditView = lazyNamed(() => import('./SettingsProviders.jsx'), 'SettingsProviderEditView');
 const SettingsProjectView = lazyNamed(() => import('./SettingsProject.jsx'), 'SettingsProjectView');
 const SettingsHiddenContentView = lazyNamed(() => import('./SettingsHiddenContent.jsx'), 'SettingsHiddenContentView');
@@ -50,7 +50,6 @@ const DictationView = lazyNamed(() => import('./DictationPage.jsx'), 'DictationV
 const SettingsThemesView = lazyNamed(() => import('./SettingsThemes.jsx'), 'SettingsThemesView');
 const SettingsHooksView = lazyNamed(() => import('./SettingsHooks.jsx'), 'SettingsHooksView');
 const SettingsExtensionsView = lazyNamed(() => import('./SettingsExtensions.jsx'), 'SettingsExtensionsView');
-const SettingsExtensionPageView = lazyNamed(() => import('./SettingsExtensions.jsx'), 'SettingsExtensionPageView');
 const SettingsThemeEditView = lazyNamed(() => import('./SettingsThemeEdit.jsx'), 'SettingsThemeEditView');
 const ROUTES = {
 chats: [ProjectsView],
@@ -63,10 +62,11 @@ chatReviewMockup: [ChatReviewMockupView],
 settingsDictation: [DictationView],
 inspector: [InspectorView],
 picker: [ProjectPickerView, ({ dir }) => ({ dir })],
+sharedWithMe: [SharedWithMeView],
 chat: [ChatView, ({ chatId, projectDir }) => ({ chatId, projectDir })],
 settings: [SettingsHomeView],
 settingsProviders: [SettingsProvidersView],
-settingsProviderNew: [SettingsProviderNewView, ({ type }) => ({ type })],
+settingsProviderNew: [SettingsProviderEditView, () => ({ id: '' })],
 settingsProviderEdit: [SettingsProviderEditView, ({ id }) => ({ id })],
 settingsProject: [SettingsProjectView, ({ projectDir, chatId, from }) => ({ projectDir, chatId, from })],
 settingsProjectTechnical: [SettingsProjectView, ({ projectDir, chatId, from }) => ({ projectDir, chatId, from, page: 'technical' })],
@@ -94,11 +94,10 @@ settingsAbout: [SettingsAboutView],
 settingsThemes: [SettingsThemesView],
 settingsHooks: [SettingsHooksView],
 settingsExtensions: [SettingsExtensionsView],
-settingsExtensionPage: [SettingsExtensionPageView, ({ extensionId, surfaceId }) => ({ extensionId, surfaceId })],
 settingsThemeEdit: [SettingsThemeEditView, ({ id, from }) => ({ id, from })]
 };
 const FULL_PAGE_ROUTES = new Set([
-'chat', 'picker', 'themeMockup', 'chatReviewMockup', ...Object.keys(ROUTES).filter((name) => name.startsWith('settings') && name !== 'settings')
+'chat', 'picker', 'sharedWithMe', 'themeMockup', 'chatReviewMockup', ...Object.keys(ROUTES).filter((name) => name.startsWith('settings') && name !== 'settings')
 ]);
 // Set of route names whose view component is a Preact lazy() component.
 // Only these need a <Suspense> boundary; the eager views resolve
@@ -112,7 +111,7 @@ const LAZY_ROUTE_NAMES = new Set([
 'settingsActions', 'settingsActionEdit',
 'settingsMcp', 'settingsMcpEdit', 'settingsMcpRegistry',
 'settingsTags', 'settingsPricing', 'settingsProjects',
-'settingsThemes', 'settingsThemeEdit', 'settingsHooks', 'settingsExtensions', 'settingsExtensionPage'
+'settingsThemes', 'settingsThemeEdit', 'settingsHooks', 'settingsExtensions'
 ]);
 function renderRoute(view) {
 const [View = ProjectsView, getProps] = ROUTES[view.name] || [];
@@ -217,11 +216,7 @@ export function App() {
         // Navigate only if the user isn't already on a deeper route
         // (e.g. they navigated away after the sign-in completed).
         if (view.name === 'chats' || view.name === 'settings' || view.name === 'settingsProviders') {
-          // Back to the connection being edited, or to the add form it came
-          // from when the sign-in was for a connection that does not exist yet.
-          nav(pending.connection
-            ? 'settings/providers/' + encodeURIComponent(pending.connection)
-            : 'settings/providers/new/' + encodeURIComponent(pending.choice || pending.provider));
+          nav('settings/providers/' + encodeURIComponent(pending.provider));
         }
       }
     } catch (_) { /* sessionStorage unavailable */ }

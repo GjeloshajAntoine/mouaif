@@ -69,7 +69,6 @@ const { handleSettings } = require('./server-handlers-settings.js');
 const { handleThemes } = require('./server-handlers-themes.js');
 const { handleHooks, handleChatHooks, isChatHooksPath } = require('./server-handlers-hooks.js');
 const { handleExtensions } = require('./server-handlers-extensions.js');
-const { handleArtifacts, isArtifactsPath } = require('./server-handlers-artifacts.js');
 const { handleChats } = require('./server-handlers-chats.js');
 const { handleProjects, handleFileEditor } = require('./server-handlers-projects.js');
 const { handleAI } = require('./server-handlers-ai.js');
@@ -84,6 +83,8 @@ const { handlePrompts, handleFeatures, handleAgents } = require('./server-handle
 const { handleMcp, handleRestart, handleInspector, handleToolAuthorization } = require('./server-handlers-misc.js');
 const { handleMcpOAuth, handleMcpOAuthCallback } = require('./server-handlers-mcp-oauth.js');
 const previewProxy = require('./previewProxy.js');
+const share = require('./share.js');
+const shareGate = require('./share-gate.js');
 const { serveWebFile, serveWebRequest } = require('./server-web-static.js');
 
 // ---- Route table --------------------------------------------------------
@@ -100,7 +101,14 @@ const { serveWebFile, serveWebRequest } = require('./server-web-static.js');
 // catch it.
 function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', lifecycle = {}, serverConfig = {}) {
   try {
-    const pending = dispatchRequest(req, res, activePort, sessionToken, lifecycle, serverConfig);
+    // A request forwarded through a shared project arrives on an in-memory
+    // connection marked by src/share.js. It runs as a "share caller": its own
+    // route gate, and an async context the tool gate and the borrowed-provider
+    // model resolution read (src/share-gate.js).
+    const shareCaller = req.socket && req.socket.mouaifShare;
+    const pending = shareCaller
+      ? shareGate.runAsCaller(shareCaller, () => dispatchShareRequest(req, res, activePort, sessionToken, lifecycle, serverConfig, shareCaller))
+      : dispatchRequest(req, res, activePort, sessionToken, lifecycle, serverConfig);
     if (pending && typeof pending.then === 'function') pending.catch((e) => failRequest(res, e, req));
   } catch (e) {
     failRequest(res, e, req);
@@ -117,6 +125,31 @@ function failRequest(res, e, req) {
     return;
   }
   try { sendJSON(res, 500, { error: 'Internal server error', code: 'EINTERNAL' }); } catch { /* already gone */ }
+}
+
+// dispatchShareRequest — the route table for a forwarded request. src/share.js
+// already ran the full gate (allowlist, access level, project filter) with the
+// request body in hand; the allowlist is checked again here so the in-memory
+// connection can never reach a route the gate does not list.
+function dispatchShareRequest(req, res, activePort, sessionToken, lifecycle, serverConfig, caller) {
+  const parsed = parseRequestTarget(req.url);
+  const route = shareGate.routeFor(req.method, parsed.pathname);
+  if (!route || (route.access === 'full' && caller.access !== 'full')) {
+    return sendJSON(res, 403, { error: 'This is not available through a shared project', code: 'ESHARE_ROUTE' });
+  }
+  // The terminal's live output: only `cli_output` frames of the shared
+  // project's own terminal session reach a share caller.
+  if (parsed.pathname === '/events') {
+    return handleSSE(req, res, (event, data) => event === 'cli_output' && !!data
+      && shareGate.sameDir(cliSessionDir(data.id), caller.projectDir));
+  }
+  return dispatchRequest(req, res, activePort, sessionToken, lifecycle, Object.assign({}, serverConfig, { shareCaller: caller }));
+}
+
+function cliSessionDir(id) {
+  if (!id) return '';
+  const s = require('./server-handlers-tools.js').findCliSessionById(String(id));
+  return s ? s.projectDir : '';
 }
 
 function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', lifecycle = {}, serverConfig = {}) {
@@ -148,9 +181,13 @@ function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '',
   // exchanges a one-time code bound to a pending `state` + PKCE verifier that
   // the user started in the app, then writes the result into the keyring.
   // The session/CSRF gates below still protect every `/api/*` route.
+  // A share caller has no browser session here: it was authenticated by the
+  // share connection's key and gated in dispatchShareRequest.
+  const shareCaller = serverConfig.shareCaller || null;
   const browserProtected = urlPath === '/events'
-    || urlPath.startsWith('/api/');
-  if (browserProtected && requestHasBrowserOrigin(req) && !authorizeBrowserRequest(req, res, sessionToken, serverConfig.publicOrigin)) {
+    || urlPath.startsWith('/api/')
+    || urlPath.startsWith('/s/');
+  if (!shareCaller && browserProtected && requestHasBrowserOrigin(req) && !authorizeBrowserRequest(req, res, sessionToken, serverConfig.publicOrigin)) {
     return;
   }
 
@@ -174,6 +211,7 @@ function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '',
   const accessProtected = urlPath === '/events'
     || urlPath === '/oauth/callback'
     || urlPath.startsWith('/api/')
+    || urlPath.startsWith('/s/')
     || urlPath === '/data';
   // The OAuth loopback callback is the one exception to the access gate: a
   // browser redirected back from the IdP has no reason to hold an access
@@ -181,7 +219,18 @@ function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '',
   // denied entirely). It must be reachable to complete the code exchange;
   // `finishOAuth` still validates the state against a pending record the
   // user created inside the authenticated app.
-  if (accessProtected && urlPath !== '/oauth/callback' && !authorizeAccessRequest(req, res, serverConfig.authEnabled)) return;
+  if (!shareCaller && accessProtected && urlPath !== '/oauth/callback' && !authorizeAccessRequest(req, res, serverConfig.authEnabled)) return;
+
+  // Shared projects (docs/features/share-project.md). `/api/share/*` is this
+  // mouaif's own share state for its UI; `/s/<share>/…` forwards a request of
+  // a project added from another mouaif to the machine that has the folder.
+  // Neither is reachable by a share caller (not in the allowlist).
+  if (urlPath === '/api/share' || urlPath.startsWith('/api/share/')) {
+    return share.handleShareApi(req, res, parsed);
+  }
+  if (urlPath.startsWith('/s/')) {
+    return share.handleForward(req, res, parsed);
+  }
 
   // SSE endpoint
   if (urlPath === '/events' && method === 'GET') {
@@ -229,10 +278,6 @@ function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '',
   // A chat's own hooks; matched before the generic /api/chats/* router.
   if (isChatHooksPath(urlPath)) {
     return handleChatHooks(req, res, parsed);
-  }
-  // A chat's artifacts (docs/features/chat-artifacts.md).
-  if (isArtifactsPath(urlPath)) {
-    return handleArtifacts(req, res, parsed);
   }
 
   // Settings API
@@ -512,12 +557,15 @@ function createServer(port = DEFAULT_PORT, options = {}) {
   }
   const sessionToken = crypto.randomBytes(32).toString('base64url');
   const lifecycle = (options && typeof options === 'object') ? (options.lifecycle || {}) : {};
-  const mcpAppsHost = require('./server-handlers-mcp-apps.js').createMcpAppsHost(lifecycle);
+  const mcpAppsHost = require('./server-handlers-mcp-apps.js').createMcpAppsHost(options.mcpAppsSandbox || {}, lifecycle);
   const serverConfig = { publicOrigin, authEnabled: options.authEnabled === true, mcpAppsHost };
   const server = http.createServer((req, res) => {
     // Bind port to the request handler
     handleRequest(req, res, port, sessionToken, lifecycle, serverConfig);
   });
+  // Shared projects: dispatch forwarded requests into this server and reopen
+  // the connections of projects shared earlier (src/share.js).
+  try { share.attach(server, serverConfig); } catch (e) { console.warn('[mouaif] sharing unavailable:', e.message); }
   server.once('close', () => { mcpAppsHost.close().catch(() => {}); });
   // Scheduled wake-ups (docs/features/scheduled-wakes.md): one unref'd ticker
   // that starts a turn in the chat when a schedule is due.
@@ -534,7 +582,7 @@ function createServer(port = DEFAULT_PORT, options = {}) {
   // SSE / keep-alive sockets that would otherwise hang server.close().
   server.on('connection', trackSocket);
   server.on('secureConnection', trackSocket);
-  // WebSocket upgrade routing. Only /api/inspector/proxy is upgraded;
+  // WebSocket upgrade routing. Only /api/inspector/proxy and /api/share are upgraded;
   // any other upgrade is rejected so the rest of the server stays
   // untouched. The noServer WebSocketServer gives us manual
   // handleUpgrade() so we can decide per-request.
@@ -542,6 +590,14 @@ function createServer(port = DEFAULT_PORT, options = {}) {
   let wss = null;
   server.on('upgrade', (req, socket, head) => {
     const u = req.url || '';
+    // A sharing mouaif dials in here (src/share.js). It is authenticated by
+    // the share handshake, not by a browser session. Note that `/s/<share>/…`
+    // is never upgraded: the inspector WebSocket is not forwarded through a
+    // share, so it falls through to the 404 below.
+    if (u === '/api/share' || u.startsWith('/api/share?')) {
+      share.handleUpgrade(req, socket, head);
+      return;
+    }
     if (u.startsWith('/api/inspector/proxy')) {
       const origin = requestOrigin(req);
       const expected = expectedOrigin(req, publicOrigin);

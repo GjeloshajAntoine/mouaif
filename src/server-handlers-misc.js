@@ -93,6 +93,9 @@ async function handleMcp(req, res, parsed, sessionToken = '') {
   if (urlPath === '/api/mcp/servers' && method === 'GET') {
     const dir = readMcpProjectDir(q);
     try {
+      // A files-only share runs no MCP server: list none, so the chat's
+      // Tools card shows no MCP rows (src/share-gate.js).
+      if (require('./share-gate.js').mcpHidden()) return sendJSON(res, 200, { servers: [] });
       return sendJSON(res, 200, { servers: mcp.listServers(dir || null) });
     } catch (e) {
       return sendJSON(res, mcpErrorStatus(e), mcpErrorBody(e));
@@ -646,7 +649,9 @@ async function handleToolAuthorization(req, res, parsed) {
       if (chatId && !chats.getChat(dir, chatId)) {
         return sendJSON(res, 404, { error: 'Chat not found', chatId });
       }
-      return sendJSON(res, 200, authGate.getAuthorization(dir, chatId || undefined));
+      // Through a share, a tool the share refuses reads as off, whatever the
+      // project says (src/share-gate.js).
+      return sendJSON(res, 200, require('./share-gate.js').maskAuthorization(authGate.getAuthorization(dir, chatId || undefined)));
     } catch (e) {
       return sendJSON(res, 500, { error: e.message });
     }
@@ -680,7 +685,8 @@ async function handleToolAuthorization(req, res, parsed) {
         // `null` keys inside `chat` clear that override (back to the
         // project value); `chat: null` clears every override at once.
         const next = authGate.setChatAuthorization(projectDir, chatId, chat);
-        return sendJSON(res, 200, next);
+        // Same view as the GET: a tool the share refuses stays off.
+        return sendJSON(res, 200, require('./share-gate.js').maskAuthorization(next));
       } catch (e) {
         return sendJSON(res, 400, { error: e.message });
       }
@@ -698,7 +704,7 @@ async function handleToolAuthorization(req, res, parsed) {
     }
     try {
       const next = authGate.setAuthorization(projectDir, { tools, mcp: mcpAuthorization });
-      return sendJSON(res, 200, next);
+      return sendJSON(res, 200, require('./share-gate.js').maskAuthorization(next));
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });
     }

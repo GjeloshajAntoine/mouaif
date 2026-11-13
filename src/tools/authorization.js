@@ -909,6 +909,11 @@ async function authorize(input) {
   if (!projectDir || !chatId || !tool || !callId) {
     throw typedError('EBADINPUT', 'projectDir, chatId, tool, and callId are required');
   }
+  // A shared project used from another mouaif (src/share-gate.js): the
+  // share's own limits come before the project's tool settings. The gate is
+  // per caller — the same project used directly on this machine is unchanged.
+  const shareDenied = require('../share-gate.js').toolDenied(tool, input.args);
+  if (shareDenied) throw typedError('ETOOL_DISABLED', shareDenied);
   const config = effectiveConfig(projectDir, tool, chatId);
   if (!config.enabled || config.mode === 'off') throw typedError('ETOOL_DISABLED', tool + ' is disabled');
 

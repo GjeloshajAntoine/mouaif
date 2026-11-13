@@ -470,7 +470,13 @@ async function handleTools(req, res, parsed, sessionToken = '') {
         });
       }
     } catch { /* mcp module not loaded; no MCP tools */ }
-    return sendJSON(res, 200, { tools });
+    // A shared project used from another mouaif: the catalog lists only what
+    // the share allows, from the same gate the tool loop enforces, so the
+    // chat's Tools card matches what the model is offered
+    // (docs/features/share-project.md).
+    const shareGate = require('./share-gate.js');
+    const visible = shareGate.currentCaller() ? shareGate.filterToolList(tools) : tools;
+    return sendJSON(res, 200, { tools: visible });
   }
 
   // POST /api/tools/shell/review  body: { projectDir, cmd, cwd?, chatId? }
@@ -926,6 +932,8 @@ async function handleTools(req, res, parsed, sessionToken = '') {
 
 module.exports = {
   handleTools, ensureCliSession, closeCliSession, writeCliCommand, cliShellMeta, attachCliStream, cliSessionKey,
+  // shared projects: which project a terminal session belongs to
+  findCliSessionById,
   // background terminal (docs/features/background-terminal.md)
   bufferCliChunk, readCliBuffer, CLI_BUFFER_BYTES,
   // native tool catalog (shared with the agent feature summary)

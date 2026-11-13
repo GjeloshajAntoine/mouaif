@@ -1,7 +1,7 @@
 // mouaif web — ProjectPickerView
 import { h, Fragment } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
-import { fetchJson, projectsReload } from '../api.js';
+import { fetchJson, projectsReload, shareState, loadShareState } from '../api.js';
 import { nav, back } from '../router.js';
 
 // The per-project settings file. Kept next to the labels so the strings a
@@ -117,6 +117,9 @@ export function ProjectPickerView(props) {
   }
 
   useEffect(() => { load(props.dir || ''); }, [props.dir]);
+  // Projects other mouaifs offered to this one (docs/features/share-project.md).
+  useEffect(() => { loadShareState(); }, []);
+  const pendingShares = (shareState.value.incoming || []).filter((x) => x.status === 'pending').length;
 
   // What the chosen option does to the folder in view. Concrete about "this
   // folder" so the user knows which case they are in before they commit. An
@@ -151,8 +154,16 @@ export function ProjectPickerView(props) {
       h('a', { href: '#/projects', class: 'view-back', 'aria-label': 'Back to projects' }, '‹'),
       h('h2', { class: 'view-title' }, 'Add project')
     ),
+    pendingShares ? h('button', {
+    type: 'button', class: 'picker__shared-link',
+    onClick: () => nav('projects/shared'),
+    'aria-label': 'Shared with me, ' + pendingShares + ' waiting'
+    },
+    h('span', null, 'Shared with me'),
+    h('span', { class: 'picker__shared-count' }, String(pendingShares))
+    ) : null,
     h('div', { class: 'picker__bar' },
-      h('button', {
+    h('button', {
         class: 'btn picker__up',
         type: 'button',
         onClick: goUp,

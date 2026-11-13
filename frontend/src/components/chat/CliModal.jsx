@@ -39,7 +39,7 @@
 
 import { h } from 'preact';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'preact/hooks';
-import { fetchJson } from '../../api.js';
+import { fetchJson, shareUrl } from '../../api.js';
 import { useModal } from '../../hooks/useModal.js';
 import { CLI_KEYS, applyModifiers, cursorKeyMode, keepEditorFocus, keyForEvent, keyPayload, lineEditorState, splitTypedTab } from './cliKeys.js';
 import { rememberCommand, suggestionsFor, completeLocally, cycleStep, completionReport, listDirFor, listingFor, stepHistory } from './cliSuggest.js';
@@ -274,7 +274,9 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
         }
         appendOut(data.data, data.stream);
         };
-        evtSource = new EventSource('/events');
+        // A shared project's terminal runs on the sharing machine: its output
+        // comes through the share (docs/features/share-project.md).
+        evtSource = new EventSource(shareUrl('/events', undefined, projectDir));
         evtSourceRef.current = evtSource;
         evtSource.addEventListener('cli_output', (e) => {
         let data;
@@ -285,7 +287,7 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
         });
         // Replay the retained backlog (empty for a fresh session).
         try {
-        const rr = await fetchJson('/api/tools/cli/output?id=' + encodeURIComponent(r.body.id) + '&since=0');
+        const rr = await fetchJson(shareUrl('/api/tools/cli/output?id=' + encodeURIComponent(r.body.id) + '&since=0', undefined, projectDir));
         if (cancelled) return;
         if (rr.status === 200 && rr.body && Array.isArray(rr.body.chunks)) {
         if (rr.body.dropped) writeOut('\u2026 earlier output dropped \u2026\r\n');

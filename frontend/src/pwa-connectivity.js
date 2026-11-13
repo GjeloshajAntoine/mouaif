@@ -16,6 +16,8 @@ function isAppShellUrl(value) {
     if (url.origin !== window.location.origin) return false;
     const path = url.pathname;
     if (path === '/api' || path.startsWith('/api/')) return false;
+    // A shared project's forwarded API calls (docs/features/share-project.md).
+    if (path.startsWith('/s/')) return false;
     if (path === '/events' || path.startsWith('/events/')) return false;
     if (path === '/data' || path.startsWith('/data/')) return false;
     if (path === '/oauth' || path.startsWith('/oauth/')) return false;

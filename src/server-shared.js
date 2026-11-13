@@ -21,9 +21,8 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { spawn } = require('node:child_process');
-const { qs, safeDecode, firstStringValue, errCodeToHttpStatus } = require('./util.js');
+const { qs, safeDecode, projectModelRecord, firstStringValue, errCodeToHttpStatus } = require('./util.js');
 const settings = require('./settings.js');
-const { connectionType, findConnection, providerTypeOf, hydrateModel } = require('./providerConnections.js');
 const projects = require('./projects.js');
 const ai = require('./ai.js');
 const auth = require('./auth.js');
@@ -242,7 +241,11 @@ return safe;
 
 // ---- SSE ----------------------------------------------------------------
 
-function handleSSE(req, res) {
+// `filter(event, data)` (optional) limits what one client receives. A shared
+// project's terminal uses it: a share caller only gets its own session's
+// `cli_output` frames (src/http-server.js → dispatchShareRequest).
+function handleSSE(req, res, filter) {
+  if (typeof filter === 'function') res.__eventFilter = filter;
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -269,6 +272,11 @@ function handleSSE(req, res) {
 function broadcast(event, data) {
   const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
   for (const client of sseClients) {
+    if (client.__eventFilter) {
+      let pass = false;
+      try { pass = client.__eventFilter(event, data); } catch { pass = false; }
+      if (!pass) continue;
+    }
     client.write(payload);
   }
 }
@@ -418,6 +426,14 @@ function resolveModel(modelId, projectDir, providerId) {
     e.code = 'EBADINPUT';
     throw e;
   }
+  // A chat of a shared project, used through the mouaif it was added on,
+  // runs with that mouaif's providers (docs/features/share-project.md →
+  // "Borrowed providers"). The record carries no credential: the provider
+  // call is built and signed on the adding side (src/share.js → borrowFetch).
+  const shareCaller = require('./share-gate.js').currentCaller();
+  if (shareCaller && shareCaller.borrow) {
+    return require('./share.js').borrowedModel(modelId, providerId, projectDir, shareCaller);
+  }
   const resolved = settings.getResolved(projectDir || null);
   const list = Array.isArray(resolved.models) ? resolved.models : [];
   const wantedProvider = typeof providerId === 'string' ? providerId.trim() : '';
@@ -427,7 +443,7 @@ function resolveModel(modelId, projectDir, providerId) {
     // Live catalog entries are intentionally not persisted into the
     // project's optional models array. The browser submits providerId so
     // the server can build the same minimal model record on demand.
-    if (wantedProvider && ai.ENDPOINTS[providerTypeOf(wantedProvider)]) {
+    if (wantedProvider && ai.ENDPOINTS[wantedProvider]) {
       m = { id: modelId, provider: wantedProvider };
       liveCatalogModel = true;
     } else {
@@ -438,7 +454,9 @@ function resolveModel(modelId, projectDir, providerId) {
   }
   // Project models contain identity/selection metadata only. The app-level
   // provider connection exclusively owns transport and credentials.
-  const connection = findConnection(m.provider);
+  const app = settings.getApp();
+  const providers = Array.isArray(app.providers) ? app.providers : [];
+  const connection = providers.find(p => p && p.id === m.provider);
   if (!connection && liveCatalogModel) {
     const e = new Error('Provider connection not found: ' + m.provider);
     e.code = 'EPROVIDER_NOT_FOUND';
@@ -463,7 +481,9 @@ function resolveModel(modelId, projectDir, providerId) {
 
   // Never let committed project JSON redirect a global credential to an
   // attacker-controlled endpoint or replace auth/account/header policy.
-  const hydrated = hydrateModel(connection, m);
+  const safeModel = projectModelRecord(m);
+
+  const hydrated = Object.assign({}, connection || {}, safeModel, { provider: m.provider });
   if (!hydrated.auth) hydrated.auth = 'apikey';
   return hydrated;
 }
@@ -485,18 +505,20 @@ function credHashFor(provider) {
 // default. A credential alone cannot distinguish two local servers, so the
 // list cache keys include this value (see modelList.js).
 function baseUrlForProvider(provider) {
-  const conn = findConnection(provider);
+  const app = settings.getApp();
+  const conn = (Array.isArray(app.providers) ? app.providers : []).find((p) => p && p.id === provider);
   if (!conn || typeof conn.baseUrl !== 'string') return null;
   const trimmed = conn.baseUrl.trim();
   return trimmed.length ? trimmed : null;
 }
 
 function credentialForProvider(provider) {
-  const conn = findConnection(provider);
+  const app = settings.getApp();
+  const conn = (Array.isArray(app.providers) ? app.providers : []).find((p) => p && p.id === provider);
   if (!conn) return null;
   if (conn.apiKey) return conn.apiKey;
   if (conn.auth === 'oauth') {
-    const token = auth.tokenForModel({ provider: connectionType(conn), auth: 'oauth', oauthAccount: conn.oauthAccount });
+    const token = auth.tokenForModel({ provider, auth: 'oauth', oauthAccount: conn.oauthAccount });
     const parsedToken = token ? JSON.parse(token) : null;
     return parsedToken && parsedToken.accessToken ? parsedToken.accessToken : null;
   }

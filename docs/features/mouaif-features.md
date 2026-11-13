@@ -68,6 +68,7 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Themes](themes.md) — built-in and custom themes: colours, CSS, and JavaScript effects, with safe mode and theme files.
 - [Extensions](extensions.md) — one file that adds hooks, a sandboxed UI and an MCP server, behind a permission screen.
 - [Hooks](hooks.md) — commands that run on each prompt and around each tool call: block, ask, rewrite arguments or add context for the model.
+- [Share a project](share-project.md) — share a project with another mouaif and use it from there with that mouaif's providers; files only or files and shell.
 - [Settings back navigation](settings-back-navigation.md) — where the Back arrow of every settings page goes, and why.
 - [Custom prompts](custom-prompts.md) — reusable system prompts at app and project scope.
 - [Prompt-size profiles](prompt-profiles.md) — `very-small`, `average`, `extensive`, and `chat` system prompts.

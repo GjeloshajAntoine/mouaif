@@ -36,6 +36,7 @@ One page per feature: what it does and how to use it.
 - [Scheduled wake-ups and recurring tasks](features/scheduled-wakes.md) — `schedule_wake` runs a prompt in the same chat later or at a regular time, across restarts.
 - [Webhook turns](features/webhook-turns.md) — `webhook_create` gives a chat a secret `/hook/<uuid>` link (GET or POST) that starts a turn with the received data.
 - [Extensions](features/extensions.md) — one `.mouaif-extension.json` file with hooks, a sandboxed UI and an MCP server; imported off behind a permission screen, project ones behind a review.
+- [Share a project](features/share-project.md) — share a project with another mouaif and use it from there, with that mouaif's providers; first-time code, files-only or files-and-shell, stop sharing from either side.
 - [Hooks](features/hooks.md) — commands that run on each prompt, around each tool call, at the start, end or failure of a turn and before a notification: block, ask, rewrite arguments, add context, start a follow-up turn or silence a push; never approve.
 
 ### Providers and models
@@ -143,7 +144,6 @@ One page per feature: what it does and how to use it.
 
 - [MCP servers](features/mcp.md) — connect Model Context Protocol servers as extra tools.
 - [MCP Apps](features/mcp-apps.md) — opt-in interactive tool views, official AppBridge, isolated sandbox, server-scoped approvals and text fallback.
-- [Chat artifacts](features/chat-artifacts.md) — files kept with a chat: manage them in a sheet, tag them with `@`, let the agent create and use them, and link them from an MCP App as its data.
 - [On-the-fly MCP Apps](features/on-the-fly-mcp-apps.md) — create an app development chat from a request, or import a single HTML/browser-JS file without a server project.
 - [MCP OAuth sign-in](features/mcp-oauth.md) — browser sign-in or client credentials for remote MCP servers, with remote revocation.
 - [MCP store](features/mcp-registry-browser.md) — search, filter, and install servers from the public MCP Registry in a few taps.
