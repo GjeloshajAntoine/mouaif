@@ -266,10 +266,22 @@ function getConfig() {
   return { enabled: raw.enabled !== false, list: out };
 }
 
-function setConfig(raw) {
-  const next = normalizeConfig(raw);
-  settings.setApp({ [STORE_KEY]: next });
-  return next;
+// writeConfig(raw, opts) -> { config, changes } — validates and stores the
+// app hooks through the content write path (src/content/service.js): one
+// write of the list and the on/off switch, with a change list. `opts.via` is
+// `route` for the Settings page (the default) or `hook_create` for the tool.
+function writeConfig(raw, opts = {}) {
+  const config = normalizeConfig(raw);
+  const r = require('./content/service.js').writeMany({
+    scope: 'app',
+    entries: [{ type: 'appHooks', value: config.list }, { type: 'hooks.enabled', value: config.enabled }],
+    via: opts.via || 'route'
+  });
+  return { config, changes: r.changes };
+}
+
+function setConfig(raw, opts) {
+  return writeConfig(raw, opts).config;
 }
 
 function disabledByEnv() {
@@ -1076,6 +1088,7 @@ module.exports = {
   normalizeConfig,
   getConfig,
   setConfig,
+  writeConfig,
   runHooks,
   hasHooks,
   redactForModel,

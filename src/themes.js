@@ -45,8 +45,13 @@ function readStore() {
   };
 }
 
+// One write of the theme list and the active id through the content write
+// path (src/content/service.js), so it gets a change list and content_changed.
 function writeStore(store) {
-  settings.setApp({ [STORE_KEY]: { active: store.active || '', custom: store.custom } });
+  return require('./content/service.js').writeMany({
+    scope: 'app',
+    entries: [{ type: 'themes', value: store.custom }, { type: 'themes.active', value: store.active || '' }]
+  });
 }
 
 // version(theme) — a short content hash. The client appends it to the script

@@ -108,5 +108,56 @@ check('writes publish content_changed with the type', () => {
   assert.deepStrictEqual(seen[0].types, ['customActions']);
 });
 
+// ---- Hooks and themes through the write path ------------------------------
+
+const projectHooks = require(path.join(ROOT, 'src/projectHooks.js'));
+const hooks = require(path.join(ROOT, 'src/hooks.js'));
+const hookProj = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-collection-hooks-'));
+const hook = (id) => ({ id, event: 'prompt.submit', handler: { kind: 'command', command: 'true' } });
+
+check('a project hook added to an empty list is trusted; changes are returned', () => {
+  const r = projectHooks.append(hookProj, hook('one'));
+  assert.equal(r.trusted, true);
+  assert.deepStrictEqual(r.changes.map((c) => [c.type, c.op, c.id]), [['hooks', 'added', 'one']]);
+  assert.equal(projectHooks.status(hookProj).trusted, true);
+});
+
+check('a hand-added hook stays inert, and a later append cannot trust it', () => {
+  const file = path.join(hookProj, '.mouaif.json');
+  const p = JSON.parse(fs.readFileSync(file, 'utf8'));
+  p.hooks.push(hook('sneaky'));
+  fs.writeFileSync(file, JSON.stringify(p));
+  assert.equal(projectHooks.status(hookProj).trusted, false);
+  assert.deepStrictEqual(projectHooks.active(hookProj), []);
+  const r = projectHooks.append(hookProj, hook('two'));
+  assert.equal(r.trusted, false);
+  assert.equal(projectHooks.status(hookProj).trusted, false);
+  assert.deepStrictEqual(projectHooks.active(hookProj), []);
+});
+
+check('update_settings and the settings routes still cannot write hooks', () => {
+  assert.throws(() => service.applyPatch({ scope: 'project', projectDir: hookProj, patch: { hooks: [] }, actor: 'tool' }), /hook_create/);
+  assert.throws(() => service.applyPatch({ scope: 'project', projectDir: hookProj, patch: { hooks: [] }, actor: 'ui' }), /Hooks/);
+});
+
+check('app hooks: list and switch in one write, with changes', () => {
+  const r = hooks.writeConfig({ enabled: false, list: [hook('app-one')] });
+  assert.deepStrictEqual(r.changes.map((c) => [c.type, c.op, c.id || c.key]), [['appHooks', 'added', 'app-one'], ['hooks.enabled', 'set', 'hooks.enabled']]);
+  assert.deepStrictEqual(Object.keys(settings.getApp().hooks).sort(), ['enabled', 'list']);
+  assert.equal(hooks.getConfig().enabled, false);
+});
+
+check('themes: one write, script and CSS shown as sizes', () => {
+  const r = service.writeMany({ scope: 'app', entries: [
+    { type: 'themes', value: [{ id: 'mine', name: 'Mine', base: 'dark', vars: {}, css: 'a{}', js: 'console.log(1)' }] },
+    { type: 'themes.active', value: 'mine' }
+  ] });
+  const added = r.changes.find((c) => c.type === 'themes');
+  assert.equal(added.op, 'added');
+  assert.deepStrictEqual(added.fields.find((f) => f.key === 'js'), { key: 'js', label: 'Script', large: true, beforeSize: 0, afterSize: 14 });
+  assert.equal(r.changes.find((c) => c.type === 'themes.active').after, 'mine');
+  assert.deepStrictEqual(settings.getApp().themes, { custom: [{ id: 'mine', name: 'Mine', base: 'dark', vars: {}, css: 'a{}', js: 'console.log(1)' }], active: 'mine' });
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

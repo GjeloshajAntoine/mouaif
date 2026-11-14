@@ -93,6 +93,10 @@ A theme file is JSON:
 }
 ```
 
+## Storage
+
+The theme list and the active theme id live in the app settings under `themes` (`{ active, custom }`) and are written in one write through the content write path (`src/content/service.js`). A write returns a change list in which a theme's CSS and script appear as sizes, never as text. Themes are app-only and are not written by `update_settings`.
+
 ## Related
 
 - [Settings](settings-ui.md) — the Settings tab and what each section controls.

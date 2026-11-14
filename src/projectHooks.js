@@ -251,22 +251,38 @@ function trust(projectDir, hash) {
 // list before it was trusted (or empty): an unreviewed project hook must not
 // ride along with one the user just approved.
 function append(projectDir, hook) {
-  const settings = require('./settings.js');
-  cache.delete(projectDir);
-  const before = status(projectDir);
-  const wasTrusted = !before.hash || before.trusted;
-  const current = Array.isArray(settings.getProject(projectDir).hooks) ? settings.getProject(projectDir).hooks : [];
+  const collection = require('./content/collection.js');
+  const wasTrusted = trustedBefore(projectDir);
+  const current = collection.read('hooks', 'project', projectDir);
   const ids = new Set(current.map((h) => h && h.id));
   const entry = hooksMod().normalizeHook(hook);
   let id = entry.id;
   for (let i = 2; ids.has(id); i++) id = entry.id.slice(0, 34) + '-' + i;
   entry.id = id;
-  settings.setProject(projectDir, { hooks: current.concat(entry) });
-  cache.delete(projectDir);
-  const after = status(projectDir);
-  if (wasTrusted && after.hash && !after.errors.length) setTrust(projectDir, after.hash);
-  return { hook: entry, trusted: wasTrusted };
+  // The trust carry-over runs as the write's afterWrite step (below).
+  const r = collection.replace('hooks', 'project', projectDir, current.concat(entry), { via: 'hook_create' });
+  return { hook: entry, trusted: wasTrusted, changes: r.changes };
 }
+
+// Was the project's hook list trusted (or empty) right now?
+function trustedBefore(projectDir) {
+  cache.delete(projectDir);
+  const before = status(projectDir);
+  return !before.hash || before.trusted;
+}
+
+// Any write of the project hook list through the content write path keeps
+// the trust rule: the new list is trusted only when the list before it was
+// trusted (or empty). An unreviewed hook must never ride along with one the
+// user approved, and a write can never trust a list that was not.
+require('./content/service.js').onWrite('hooks', {
+  beforeWrite: (ctx) => ({ wasTrusted: trustedBefore(ctx.projectDir) }),
+  afterWrite: (ctx, state) => {
+    cache.delete(ctx.projectDir);
+    const after = status(ctx.projectDir);
+    if (state && state.wasTrusted && after.hash && !after.errors.length) setTrust(ctx.projectDir, after.hash);
+  }
+});
 
 module.exports = { HOOKS_KEY, canonical, referencedFiles, hookFiles, read, status, active, trust, revoke, append, trustedHash, setTrust,
   _clearCache: () => cache.clear() };

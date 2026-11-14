@@ -208,6 +208,26 @@ function readType(type, scope, projectDir) {
   return getAt(store.read(), type.path.split('.'));
 }
 
+// ---- Write hooks -----------------------------------------------------------
+//
+// A type that must react to its own writes registers here (the registry
+// stays plain data). beforeWrite(ctx) runs before the document is written and
+// its return value is handed to afterWrite(ctx, state):
+//   project hooks  capture whether the list was trusted, then trust the new
+//                  list only if it was (src/projectHooks.js)
+// ctx = { type, scope, projectDir, before, after, actor, via }
+
+const writeHooks = new Map();
+
+// A write made while serving a shared project's remote caller (the share gate
+// runs the request inside the caller's context).
+function isRemoteCall() {
+  try { return !!require('../share-gate.js').currentCaller(); } catch { return false; }
+}
+function onWrite(typeId, hooks) {
+  writeHooks.set(typeId, hooks);
+}
+
 // writeType({ type, scope, projectDir, value, unset, actor, remote, via, dryRun })
 //   -> { changes, value, approval }
 // Writes one declared type's whole value (a collection's items) in one
@@ -215,38 +235,66 @@ function readType(type, scope, projectDir) {
 // policy, computes the change list and publishes content_changed. `unset`
 // names extra top-level keys to drop in the same write (a legacy key the new
 // value replaces).
-// A write made while serving a shared project's remote caller (the share gate
-// runs the request inside the caller's context).
-function isRemoteCall() {
-  try { return !!require('../share-gate.js').currentCaller(); } catch { return false; }
+function writeType(opts) {
+  const r = writeMany({ ...opts, entries: [{ type: opts.type, value: opts.value }] });
+  return { changes: r.changes, value: opts.value, approval: r.approval };
 }
 
-function writeType({ type, scope, projectDir, value, unset = [], actor = 'ui', remote, via = null, dryRun = false }) {
+// writeMany({ scope, projectDir, entries: [{ type, value }], unset, actor,
+//   remote, via, dryRun }) -> { changes, approval }
+// Several declared types of one document in one write (a theme list and the
+// active theme; the app hook list and its on/off switch).
+function writeMany({ scope, projectDir, entries, unset = [], actor = 'ui', remote, via = null, dryRun = false }) {
   if (remote === undefined) remote = isRemoteCall();
-  if (typeof type === 'string') type = registry.getType(type);
-  if (!type) throw policy.refusal('unknown content type');
   if (scope === 'project' && (!projectDir || typeof projectDir !== 'string')) throw policy.refusal('projectDir is required');
-  const { approval } = policy.checkType({ type, scope, actor, remote, via });
-  const parts = type.path.split('.');
-  const store = stores.storeFor(type.doc === 'settings' ? 'settings' : type.doc, scope, projectDir);
+  const resolved = entries.map((e) => {
+    const type = typeof e.type === 'string' ? registry.getType(e.type) : e.type;
+    if (!type) throw policy.refusal('unknown content type: ' + e.type);
+    return { type, value: e.value };
+  });
+  const docs = new Set(resolved.map((e) => e.type.doc));
+  if (docs.size !== 1) throw policy.refusal('writeMany writes one document');
+  let approval = false;
+  for (const { type } of resolved) {
+    if (policy.checkType({ type, scope, actor, remote, via }).approval) approval = true;
+  }
+  const store = stores.storeFor([...docs][0], scope, projectDir);
   const current = store.read();
-  const before = getAt(current, parts);
-  let next = setAt(current, parts, value === undefined ? undefined : clone(value));
+  let next = current;
+  const changes = [];
+  const touched = [];
+  for (const { type, value } of resolved) {
+    const parts = type.path.split('.');
+    const before = getAt(current, parts);
+    next = setAt(next, parts, value === undefined ? undefined : clone(value));
+    if (type.shape === 'collection') changes.push(...collectionChanges(type, scope, before, value));
+    else if (!same(before, value)) changes.push(valueChange(type, scope, type.path, before, value));
+    if (!same(before, value)) touched.push({ type, before, after: value });
+  }
   const dropped = unset.filter((k) => Object.prototype.hasOwnProperty.call(next, k));
-  for (const key of dropped) { next = { ...next }; delete next[key]; }
-  const changes = type.shape === 'collection'
-    ? collectionChanges(type, scope, before, value)
-    : (same(before, value) ? [] : [valueChange(type, scope, type.path, before, value)]);
-  if (dryRun || (same(before, value) && !dropped.length)) return { changes, value, approval };
+  if (dropped.length) {
+    next = { ...next };
+    for (const key of dropped) delete next[key];
+  }
+  if (dryRun || (!touched.length && !dropped.length)) return { changes, approval };
+
+  const states = touched.map((t) => {
+    const hooks = writeHooks.get(t.type.id);
+    const ctx = { type: t.type, scope, projectDir, before: t.before, after: t.after, actor, via };
+    return { hooks, ctx, state: hooks && hooks.beforeWrite ? hooks.beforeWrite(ctx) : undefined };
+  });
   store.write(next);
+  for (const { hooks, ctx, state } of states) {
+    if (hooks && hooks.afterWrite) hooks.afterWrite(ctx, state);
+  }
   events.emit('content_changed', {
     scope,
     projectDir: scope === 'project' ? projectDir : null,
-    keys: [parts[0], ...dropped],
-    types: [type.id],
+    keys: [...new Set([...resolved.map((e) => e.type.path.split('.')[0]), ...dropped])],
+    types: resolved.map((e) => e.type.id),
     actor: remote ? 'share' : actor
   });
-  return { changes, value, approval };
+  return { changes, approval };
 }
 
-module.exports = { applyPatch, writeType, readType, warningsFor, validateKey, events, carrySecrets };
+module.exports = { applyPatch, writeType, writeMany, onWrite, readType, warningsFor, validateKey, events, carrySecrets };

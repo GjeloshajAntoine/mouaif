@@ -58,6 +58,20 @@ const GATE_MODES = ['off', 'ask', 'allow'];
 
 function bool(def) { return { type: 'boolean', default: def }; }
 
+// A hook entry (src/hooks.js normalizeHook): app and project hooks share it.
+const HOOK_FIELDS = Object.freeze({
+  name: { type: 'string', label: 'Name' },
+  event: { type: 'string', label: 'Event' },
+  match: { type: 'object', label: 'When' },
+  handler: { type: 'object', label: 'Runs', large: true },
+  timeoutMs: { type: 'number', label: 'Timeout (ms)' },
+  failClosed: { type: 'boolean', label: 'Block on failure' },
+  subagents: { type: 'boolean', label: 'Also in subagents' },
+  enabled: { type: 'boolean', label: 'Enabled' },
+  note: { type: 'string', label: 'Note' },
+  createdBy: { type: 'string', label: 'Added by', hidden: true }
+});
+
 // ---- Declarations --------------------------------------------------------
 //
 // Order matters for two generated lists: CLIENT_SETTINGS_KEYS follows the
@@ -401,18 +415,31 @@ const TYPES = [
     writers: { ui: true, tool: false, share: false }
   },
   {
-    id: 'hooks', shape: 'collection', scopes: ['app', 'project'], doc: 'settings', path: 'hooks',
+    id: 'hooks.enabled', shape: 'value', scopes: ['app'], doc: 'settings', path: 'hooks.enabled',
+    field: { type: 'boolean' },
+    label: 'Hooks on', description: 'Pause or resume every app hook.',
+    keywords: ['hook', 'pause'],
+    group: 'Automation', page: 'settings/hooks',
+    approval: true, writers: { ui: true, tool: 'hook_create', share: false }
+  },
+  {
+    id: 'appHooks', shape: 'collection', scopes: ['app'], doc: 'settings', path: 'hooks.list',
     container: 'array', itemId: 'id', itemLabel: 'name', merge: 'concat',
-    fields: {
-      name: { type: 'string', label: 'Name' },
-      event: { type: 'string', label: 'Event' },
-      action: { type: 'object', label: 'Action', large: true },
-      enabled: { type: 'boolean', label: 'Enabled' }
-    },
-    label: 'Hooks', itemNoun: 'Hook', description: 'Commands that check prompts and tool calls.',
+    fields: HOOK_FIELDS,
+    label: 'Hooks', itemNoun: 'Hook', description: 'Commands that check prompts and tool calls, in every project.',
     keywords: ['hook', 'command', 'script', 'before', 'after', 'block'],
     group: 'Automation', page: 'settings/hooks',
-    searchFields: ['id', 'name', 'event', 'action.command'],
+    searchFields: ['id', 'name', 'event', 'handler.command', 'handler.script'],
+    approval: true, writers: { ui: true, tool: 'hook_create', share: false }
+  },
+  {
+    id: 'hooks', shape: 'collection', scopes: ['project'], doc: 'settings', path: 'hooks',
+    container: 'array', itemId: 'id', itemLabel: 'name', merge: 'concat',
+    fields: HOOK_FIELDS,
+    label: 'Hooks', itemNoun: 'Hook', description: 'Commands that check prompts and tool calls in this project. They run once you trust them.',
+    keywords: ['hook', 'command', 'script', 'before', 'after', 'block', 'trust'],
+    group: 'Automation', page: 'settings/hooks',
+    searchFields: ['id', 'name', 'event', 'handler.command', 'handler.script'],
     approval: true, writers: { ui: true, tool: 'hook_create', share: false }
   },
   {

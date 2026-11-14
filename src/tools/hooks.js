@@ -172,7 +172,7 @@ const runners = {
     const scope = SCOPES[Math.min(SCOPES.indexOf(requested), SCOPES.indexOf(picked))];
     if (scope === 'project') {
       const added = require('../projectHooks.js').append(projectDir, hook);
-      return { ok: true, hookId: added.hook.id, scope: 'project', status: added.trusted ? 'active' : 'needs review',
+      return { ok: true, hookId: added.hook.id, scope: 'project', status: added.trusted ? 'active' : 'needs review', changes: added.changes,
         ...(requested !== 'project' ? { requestedScope: requested } : {}),
         ...(added.trusted ? {} : { note: 'This project has hooks the user has not reviewed yet; all of them, this one included, stay off until the user reviews them from the banner in the chat.' }) };
     }
@@ -183,8 +183,8 @@ const runners = {
       let id = hook.id;
       for (let i = 2; ids.has(id); i++) id = hook.id.slice(0, 34) + '-' + i;
       hook.id = id;
-      hooks.setConfig({ enabled: config.enabled, list: config.list.concat(hook) });
-      return { ok: true, hookId: id, scope: 'app', status: 'active', requestedScope: requested,
+      const written = hooks.writeConfig({ enabled: config.enabled, list: config.list.concat(hook) }, { via: 'hook_create' });
+      return { ok: true, hookId: id, scope: 'app', status: 'active', requestedScope: requested, changes: written.changes,
         note: config.enabled ? undefined : 'Hooks are paused app-wide (Settings → Hooks); this hook runs once they are turned back on.' };
     }
     const row = chatHooks.add(projectDir, chatId, hook, 'model');

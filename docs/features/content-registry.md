@@ -108,6 +108,12 @@ remove(type, scope, projectDir, id, opts)     replace(type, scope, projectDir, i
 
 Converted to it: `prompts.js`, `agents.js`, `custom-actions.js`, `tags.js`, `hideFileContent.js` (`setRules`), and the app provider and model routes. The modules keep their normalising, limits and runtime behaviour.
 
+### Several types in one write, and write hooks
+
+`writeMany({ scope, projectDir, entries: [{ type, value }] })` writes several types of one document at once: the theme list with the active theme, the app hook list with its on/off switch.
+
+A type that must react to its own writes registers `service.onWrite(typeId, { beforeWrite, afterWrite })`. Project hooks use it for trust: `beforeWrite` records whether the current list is trusted, and `afterWrite` trusts the new list only if the old one was (or was empty). So no write path can trust a hook list the user has not reviewed.
+
 ### Change lists
 
 Every write returns the same structure, whatever the content:
