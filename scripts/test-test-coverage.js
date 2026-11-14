@@ -36,6 +36,7 @@ const HELPERS = new Set([
   'test-mcp-cancel-server.js',
   'test-mcp-names-server.js',
   'test-mcp-crash-server.js',
+  'test-extension-server.js',  // MCP server for scripts/test-extensions.js
 ]);
 
 // Tests that need the debug Chrome on :9222 — manual / integration only.
