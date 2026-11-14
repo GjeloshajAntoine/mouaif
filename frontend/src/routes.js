@@ -126,6 +126,13 @@ const ROUTES = [
 
   // ---- Extensions (docs/features/extensions.md) -----------------------
   exact('settings/extensions', () => ({ name: 'settingsExtensions' })),
+  // An extension's settings page: settings/extensions/<id>/<surface>.
+  prefix('settings/extensions/', (m) => {
+    const [ext, surface] = String(m.id || '').split('/');
+    if (!ext || !surface) return null;
+    try { return { name: 'settingsExtensionPage', extensionId: decodeURIComponent(ext), surfaceId: decodeURIComponent(surface) }; }
+    catch { return null; }
+  }),
 
   // ---- Themes --------------------------------------------------------
   // The picker, then the editor: `new` (optionally `?from=<theme id>` to
@@ -140,6 +147,10 @@ const ROUTES = [
   // through, so `#/settings/providers/` cannot open a provider named "".
   exact('settings/providers', () => ({ name: 'settingsProviders' })),
   exact('settings/providers/new', () => ({ name: 'settingsProviderNew' })),
+  // The add form with its type chosen: where a redirect sign-in comes back to.
+  prefix('settings/providers/new/', (m) => (
+    m.id ? { name: 'settingsProviderNew', type: decodeId(m.id) } : null
+  )),
   prefix('settings/providers/', (m) => (
     m.id && m.id !== 'new' ? { name: 'settingsProviderEdit', id: decodeId(m.id) } : null
   )),

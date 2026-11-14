@@ -1,5 +1,6 @@
 // mouaif web — shared API client and settings helpers
 import { signal } from '@preact/signals';
+import { connectionHealth, healthWithoutAsking } from './providerChoices.js';
 
 // ---- API client --------------------------------------------------------
 
@@ -66,6 +67,22 @@ export async function loadAccounts({ force = false } = {}) {
   return _accountsCache;
 }
 
+// checkConnection(connection, { force }) — does this saved connection work?
+// Listing its models is the one call providers answer without spending anything.
+// Without `force` the server may answer from its model-list cache, so the provider
+// list can check every row on each visit.
+export async function checkConnection(connection, { force = false } = {}) {
+  const known = healthWithoutAsking(connection);
+  if (known) return known;
+  const query = 'provider=' + encodeURIComponent(connection.id) + (force ? '&_bust=1' : '');
+  try {
+    const r = await fetchJson('/api/ai/models/live?' + query);
+    return connectionHealth(r.status, r.body, connection);
+  } catch {
+    return { state: 'unknown', text: 'Couldn\'t check', detail: '' };
+  }
+}
+
 // ---- Models list cache ------------------------------------------------
 
 export async function loadModels(projectDir, { force = false } = {}) {
@@ -76,22 +93,6 @@ export async function loadModels(projectDir, { force = false } = {}) {
 
 export function invalidateModelsCache() {
   // No-op (relying entirely on server-side model cache)
-}
-
-export function connectionType(connection) {
-  return connection && (connection.type || connection.id || connection.provider) || '';
-}
-
-export async function checkConnection(connection, { force = false } = {}) {
-  const known = healthWithoutAsking(connection || {});
-  if (known) return known;
-  const provider = connectionType(connection);
-  try {
-    const r = await fetchJson('/api/ai/models/live?provider=' + encodeURIComponent(provider) + (force ? '&_bust=1' : ''));
-    return connectionHealth(r.status, r.body, connection || {});
-  } catch {
-    return { state: 'unknown', text: 'Couldn\'t check', detail: '' };
-  }
 }
 
 // ---- Live models cache ------------------------------------------------
@@ -120,26 +121,40 @@ export const SETTINGS_PROVIDERS = [
   // the OAuth auth option; the others are API-key only, and offering OAuth for
   // them just leads to a 404 from POST /api/auth/sign-in/<id>. `reserved`
   // implies OAuth-only (no API-key alternative).
-  { id: 'openai-compatible', label: 'OpenAI compatible',  defaultBaseUrl: 'https://api.openai.com/v1',                hint: 'OpenAI, Together, Groq, LM Studio, llama.cpp (llama-server), any OpenAI-shaped API. Paste an API key, or leave it blank for a local server that needs none.', keyOptional: true },
-  { id: 'anthropic',         label: 'Anthropic',          defaultBaseUrl: 'https://api.anthropic.com',                hint: 'Claude Messages API. Use the OAuth flow below for Claude Pro/Max; otherwise paste an API key.', oauth: true },
-  { id: 'gemini',            label: 'Google Gemini',      defaultBaseUrl: 'https://generativelanguage.googleapis.com', hint: 'Google AI Studio / Gemini API. API key authentication.' },
-  { id: 'codex',             label: 'OpenAI Codex',       defaultBaseUrl: 'https://chatgpt.com/backend-api/codex', hint: 'Use Codex with your ChatGPT plan. Sign in with a one-time ChatGPT code; enable device code authorization in ChatGPT settings. For API keys, use OpenAI compatible instead.', reserved: true, oauth: true, deviceAuth: true },
-  { id: 'ollama',            label: 'Ollama',             defaultBaseUrl: 'http://127.0.0.1:11434',                   hint: 'Local Ollama server. No API key required.' },
-  { id: 'openrouter',        label: 'OpenRouter',         defaultBaseUrl: 'https://openrouter.ai/api/v1',             hint: 'OpenRouter: one API key, many models (OpenAI, Anthropic, Google, etc.) via a single OpenAI-shaped endpoint. Paste an API key, or sign in with OpenRouter (PKCE) and the app receives a user-controlled API key.', oauth: true },
-  { id: 'github-copilot',    label: 'GitHub Copilot',     defaultBaseUrl: 'https://api.githubcopilot.com',            hint: 'Sign in with a GitHub one-time code. An active Copilot plan on that GitHub account is required to chat.', reserved: true, oauth: true, deviceAuth: true },
-  { id: 'azure',             label: 'Azure OpenAI',       defaultBaseUrl: 'https://<resource>.openai.azure.com/openai/deployments/<deployment>', hint: 'Azure OpenAI. Set the resource + deployment in the base URL (or set apiVersion in the project model). API key authentication.' },
-  { id: 'mistral',           label: 'Mistral',            defaultBaseUrl: 'https://api.mistral.ai/v1',                hint: 'Mistral AI (La Plateforme). API key authentication.' },
-  { id: 'groq',              label: 'Groq',               defaultBaseUrl: 'https://api.groq.com/openai/v1',           hint: 'Groq — fast inference for open models. API key authentication.' },
-  { id: 'deepseek',          label: 'DeepSeek',           defaultBaseUrl: 'https://api.deepseek.com',                 hint: 'DeepSeek API (OpenAI-compatible). API key authentication.' }
+  //
+  // `signInWith` names the service on a browser sign-in button. Azure has no
+  // default URL because its address always contains your own names, so
+  // `urlPlaceholder` shows the shape instead of pre-filling text that can't work.
+  // The ways to add these providers are in ./providerChoices.js.
+  { id: 'openai-compatible', label: 'OpenAI compatible',  defaultBaseUrl: 'https://api.openai.com/v1',                hint: 'Any OpenAI-shaped API, hosted or on your own server. A local server may not need a key.' },
+  { id: 'anthropic',         label: 'Anthropic',          defaultBaseUrl: 'https://api.anthropic.com',                hint: 'Paste an API key, or sign in with Claude Pro or Max.', oauth: true, signInWith: 'Claude' },
+  { id: 'gemini',            label: 'Google Gemini',      defaultBaseUrl: 'https://generativelanguage.googleapis.com', hint: 'Paste an API key from Google AI Studio.' },
+  { id: 'codex',             label: 'OpenAI Codex',       defaultBaseUrl: 'https://chatgpt.com/backend-api/codex', hint: 'Sign in with a one-time ChatGPT code. Turn on device code authorization in ChatGPT under Settings → Security first. To use an API key, add OpenAI instead.', reserved: true, oauth: true, deviceAuth: true },
+  { id: 'ollama',            label: 'Ollama',             defaultBaseUrl: 'http://127.0.0.1:11434',                   hint: 'An Ollama server you run. No API key needed.' },
+  { id: 'openrouter',        label: 'OpenRouter',         defaultBaseUrl: 'https://openrouter.ai/api/v1',             hint: 'One account, many models. Paste an API key, or sign in and OpenRouter creates a key for mouaif.', oauth: true, signInWith: 'OpenRouter' },
+  { id: 'github-copilot',    label: 'GitHub Copilot',     defaultBaseUrl: 'https://api.githubcopilot.com',            hint: 'Sign in with a GitHub one-time code, from this device or any other. The account needs an active Copilot plan.', reserved: true, oauth: true, deviceAuth: true },
+  { id: 'azure',             label: 'Azure OpenAI',       urlPlaceholder: 'https://<resource>.openai.azure.com/openai/deployments/<deployment>', hint: 'Enter your deployment URL with your own resource and deployment names, then paste its key.' },
+  { id: 'mistral',           label: 'Mistral',            defaultBaseUrl: 'https://api.mistral.ai/v1',                hint: 'Paste an API key from console.mistral.ai.' },
+  { id: 'groq',              label: 'Groq',               defaultBaseUrl: 'https://api.groq.com/openai/v1',           hint: 'Paste an API key from console.groq.com.' },
+  { id: 'deepseek',          label: 'DeepSeek',           defaultBaseUrl: 'https://api.deepseek.com',                 hint: 'Paste an API key from platform.deepseek.com.' }
 ];
 
 export function providerDef(id) {
   return SETTINGS_PROVIDERS.find(p => p.id === id) || null;
 }
 
+// connectionType(connection) — which SETTINGS_PROVIDERS entry a connection is.
+// A connection saved before a type could have several has no `type`, because
+// its id is its type.
+export function connectionType(connection) {
+  return (connection && (connection.type || connection.id)) || '';
+}
+
+// providerLabel(id) — how a provider connection reads in a picker: the name the
+// user gave it, else its id. Keys, filters and saved selections keep the id.
 export function providerLabel(id) {
-  const found = providerDef(id);
-  return found ? found.label : String(id || '');
+  const connection = appProviders().find(p => p && p.id === id);
+  return (connection && connection.name) || id;
 }
 
 // authNsForProvider(id) — the *auth* (keyring) namespace a provider connection

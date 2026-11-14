@@ -21,8 +21,9 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { spawn } = require('node:child_process');
-const { qs, safeDecode, projectModelRecord, firstStringValue, errCodeToHttpStatus } = require('./util.js');
+const { qs, safeDecode, firstStringValue, errCodeToHttpStatus } = require('./util.js');
 const settings = require('./settings.js');
+const { connectionType, findConnection, providerTypeOf, hydrateModel } = require('./providerConnections.js');
 const projects = require('./projects.js');
 const ai = require('./ai.js');
 const auth = require('./auth.js');
@@ -387,7 +388,7 @@ function resolveModel(modelId, projectDir, providerId) {
     // Live catalog entries are intentionally not persisted into the
     // project's optional models array. The browser submits providerId so
     // the server can build the same minimal model record on demand.
-    if (wantedProvider && ai.ENDPOINTS[wantedProvider]) {
+    if (wantedProvider && ai.ENDPOINTS[providerTypeOf(wantedProvider)]) {
       m = { id: modelId, provider: wantedProvider };
       liveCatalogModel = true;
     } else {
@@ -398,9 +399,7 @@ function resolveModel(modelId, projectDir, providerId) {
   }
   // Project models contain identity/selection metadata only. The app-level
   // provider connection exclusively owns transport and credentials.
-  const app = settings.getApp();
-  const providers = Array.isArray(app.providers) ? app.providers : [];
-  const connection = providers.find(p => p && p.id === m.provider);
+  const connection = findConnection(m.provider);
   if (!connection && liveCatalogModel) {
     const e = new Error('Provider connection not found: ' + m.provider);
     e.code = 'EPROVIDER_NOT_FOUND';
@@ -425,9 +424,7 @@ function resolveModel(modelId, projectDir, providerId) {
 
   // Never let committed project JSON redirect a global credential to an
   // attacker-controlled endpoint or replace auth/account/header policy.
-  const safeModel = projectModelRecord(m);
-
-  const hydrated = Object.assign({}, connection || {}, safeModel, { provider: m.provider });
+  const hydrated = hydrateModel(connection, m);
   if (!hydrated.auth) hydrated.auth = 'apikey';
   return hydrated;
 }
@@ -449,20 +446,18 @@ function credHashFor(provider) {
 // default. A credential alone cannot distinguish two local servers, so the
 // list cache keys include this value (see modelList.js).
 function baseUrlForProvider(provider) {
-  const app = settings.getApp();
-  const conn = (Array.isArray(app.providers) ? app.providers : []).find((p) => p && p.id === provider);
+  const conn = findConnection(provider);
   if (!conn || typeof conn.baseUrl !== 'string') return null;
   const trimmed = conn.baseUrl.trim();
   return trimmed.length ? trimmed : null;
 }
 
 function credentialForProvider(provider) {
-  const app = settings.getApp();
-  const conn = (Array.isArray(app.providers) ? app.providers : []).find((p) => p && p.id === provider);
+  const conn = findConnection(provider);
   if (!conn) return null;
   if (conn.apiKey) return conn.apiKey;
   if (conn.auth === 'oauth') {
-    const token = auth.tokenForModel({ provider, auth: 'oauth', oauthAccount: conn.oauthAccount });
+    const token = auth.tokenForModel({ provider: connectionType(conn), auth: 'oauth', oauthAccount: conn.oauthAccount });
     const parsedToken = token ? JSON.parse(token) : null;
     return parsedToken && parsedToken.accessToken ? parsedToken.accessToken : null;
   }
