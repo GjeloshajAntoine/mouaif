@@ -188,5 +188,17 @@ check('a read hands out a copy', () => {
   assert.equal(store.read().servers.length, 1);
 });
 
+check('a .mcp.json that is not an object reads as an empty document', () => {
+  const proj = newProject('non-object');
+  for (const body of ['null', '[]', '"x"', '42']) {
+    fs.writeFileSync(path.join(proj, '.mcp.json'), body);
+    require('../src/content/stores/cache.js').clear();
+    assert.deepStrictEqual(stores.storeFor('mcp', 'project', proj).read(), {}, body);
+    assert.deepStrictEqual(mcp.listServers(proj).filter((s) => s.scope === 'project'), [], body);
+  }
+  mcp.addServer(proj, server('After'));
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(proj, '.mcp.json'), 'utf8')).servers.map((s) => s.name), ['After']);
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

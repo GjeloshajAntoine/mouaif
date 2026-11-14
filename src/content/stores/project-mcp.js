@@ -135,7 +135,12 @@ function createProjectMcpStore(projectDir, mode, settingsStore) {
     source,
     read: () => {
       const from = source();
-      if (from === 'file') return file.read();
+      // Valid JSON that is not an object (`null`, a list) reads as an empty
+      // document, as it did before the store existed.
+      if (from === 'file') {
+        const value = file.read();
+        return isPlainObject(value) ? value : {};
+      }
       if (from === 'db') return readRow(projectDir).value;
       return cache.clone(legacyBlock(settingsStore.read()));
     },
