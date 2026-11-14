@@ -39,13 +39,50 @@ const ROUND2_MS = 300;   // round 2 streams for ~300 ms
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// The window must also be honest in three cases that used to over-report:
+//   - OpenRouter, whose text is buffered and replayed at round end (the
+//     window was the few ms between the replay and `done`);
+//   - reasoning tokens counted but never streamed (all tokens were divided
+//     by the answer-only window);
+//   - a reply that arrives in one chunk (tokens over a few ms).
+const HIDDEN_THINK_MS = 600;
+
 function serve() {
   let count = 0;
+  let scenario = 'tool';
   const server = http.createServer((req, res) => {
     req.resume();
     req.on('end', async () => {
-      count++;
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      const content = (t) => res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: t }, index: 0 }] }) + '\n\n');
+      const stop = () => res.write('data: {"choices":[{"finish_reason":"stop","index":0}]}\n\n');
+      if (scenario === 'buffered') {
+        content('Hello ');
+        await sleep(ROUND1_MS);
+        content('world.');
+        stop();
+        res.write('data: {"usage":{"prompt_tokens":100,"completion_tokens":40}}\n\n');
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      }
+      if (scenario === 'hidden') {
+        await sleep(HIDDEN_THINK_MS);
+        content('Hello ');
+        await sleep(ROUND2_MS);
+        content('world.');
+        stop();
+        res.write('data: {"usage":{"prompt_tokens":100,"completion_tokens":1000,"completion_tokens_details":{"reasoning_tokens":990}}}\n\n');
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      }
+      if (scenario === 'single') {
+        content('One chunk.');
+        stop();
+        res.write('data: {"usage":{"prompt_tokens":100,"completion_tokens":40}}\n\n');
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      }
+      count++;
       if (count === 1) {
         res.write('data: {"choices":[{"delta":{"content":"Checking. "},"index":0}]}\n\n');
         await sleep(ROUND1_MS);
@@ -65,7 +102,7 @@ function serve() {
     });
   });
   return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port }));
+    server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port, use: (s) => { scenario = s; } }));
   });
 }
 
@@ -106,18 +143,37 @@ function sseFrames(body, name) {
   const projectDir = path.join(tmp, 'project');
   fs.mkdirSync(projectDir, { recursive: true });
 
-  const { server, port } = await serve();
+  const { server, port, use } = await serve();
   settings.setProject(projectDir, {
-    models: [{ id: 'mock', provider: 'openai-compatible', label: 'Mock' }],
+    models: [
+      { id: 'mock', provider: 'openai-compatible', label: 'Mock' },
+      { id: 'mock-or', provider: 'openrouter', label: 'Mock OpenRouter' }
+    ],
     tools: { shell: { enabled: true, mode: 'allow' } }
   });
   settings.setApp({
-    providers: [{ id: 'openai-compatible', type: 'openai-compatible', baseUrl: 'http://127.0.0.1:' + port, apiKey: 'k' }]
+    providers: [
+      { id: 'openai-compatible', type: 'openai-compatible', baseUrl: 'http://127.0.0.1:' + port, apiKey: 'k' },
+      { id: 'openrouter', type: 'openrouter', baseUrl: 'http://127.0.0.1:' + port, apiKey: 'k' }
+    ]
   });
+  // runOne(scenario, modelId) -> the single assistant row of a one-round turn.
+  async function runOne(scenario, modelId) {
+    use(scenario);
+    const id = chats.createChat(projectDir, { title: scenario }).id;
+    const r = mockRes();
+    await handleChatStream(mockReq({ projectDir, modelId, content: 'go' }), r, id, null);
+    const rows = messages.listMessages(projectDir, id).filter((m) => m && m.role === 'assistant');
+    return { row: rows[rows.length - 1], done: sseFrames(r.body, 'done').pop() };
+  }
   const chatId = chats.createChat(projectDir, { title: 'token speed test' }).id;
 
   const res = mockRes();
   await handleChatStream(mockReq({ projectDir, modelId: 'mock', content: 'go' }), res, chatId, null);
+
+  const buffered = await runOne('buffered', 'mock-or');
+  const hidden = await runOne('hidden', 'mock');
+  const single = await runOne('single', 'mock');
   server.close();
 
   check('stream completed with 200', res.statusCode === 200, 'status=' + res.statusCode);
@@ -152,6 +208,43 @@ function sseFrames(body, name) {
     done && fin && done.streamingMs === fin.streamingMs, JSON.stringify(done && done.streamingMs));
   check('done frame carries the final round completionTokens',
     done && done.roundCompletionTokens === 30, JSON.stringify(done && done.roundCompletionTokens));
+
+  // OpenRouter: the text reaches the handler in one burst at round end,
+  // but the window is the upstream's real ~400 ms.
+  check('buffered OpenRouter text keeps its real window',
+    buffered.row && buffered.row.streamingMs >= ROUND1_MS - 50 && buffered.row.streamingMs < ROUND1_MS + 400,
+    'got ' + (buffered.row && buffered.row.streamingMs));
+
+  // Hidden reasoning: 990 of 1000 tokens were never streamed, so the
+  // row marks them and the window stays the visible ~300 ms.
+  check('unstreamed reasoning tokens are saved as hiddenReasoningTokens',
+    hidden.row && hidden.row.usage && hidden.row.usage.hiddenReasoningTokens === 990
+      && hidden.row.usage.completionTokens === 1000,
+    JSON.stringify(hidden.row && hidden.row.usage));
+  check('hidden-reasoning window is the visible stream only',
+    hidden.row && hidden.row.streamingMs >= ROUND2_MS - 50 && hidden.row.streamingMs < HIDDEN_THINK_MS,
+    'got ' + (hidden.row && hidden.row.streamingMs));
+  check('done frame carries roundHiddenReasoningTokens',
+    hidden.done && hidden.done.roundHiddenReasoningTokens === 990,
+    JSON.stringify(hidden.done && hidden.done.roundHiddenReasoningTokens));
+
+  // One chunk: the window is saved as measured (a few ms); the UI's
+  // minimum window is what keeps it from being shown as a rate.
+  check('single-chunk reply saves a tiny window, below the display minimum',
+    single.row && typeof single.row.streamingMs === 'number' && single.row.streamingMs < 250,
+    'got ' + (single.row && single.row.streamingMs));
+
+  // The display rule itself (frontend/src/usage.js).
+  const fe = await import('../frontend/src/usage.js');
+  check('usageRate leaves hidden reasoning tokens out',
+    fe.usageRate({ completionTokens: 1000, hiddenReasoningTokens: 990 }, 500) === 20,
+    String(fe.usageRate({ completionTokens: 1000, hiddenReasoningTokens: 990 }, 500)));
+  check('usageRate gives no rate below the minimum window',
+    fe.usageRate({ completionTokens: 40 }, 5) === null && fe.usageRate({ completionTokens: 40 }, 0) === null);
+  check('usageRate is tokens over the window otherwise',
+    fe.usageRate({ completionTokens: 40 }, 400) === 100);
+  const counter = fe.createCounter();
+  check('live counter gives no rate before its window is long enough', counter.rate() === null);
 
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
   fs.rmSync(tmp, { recursive: true, force: true });

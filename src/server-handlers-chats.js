@@ -1228,13 +1228,32 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
   // completionTokens. Pairing a whole-turn window with one round's
   // tokens (or the reverse) under- or over-reports tok/s, and the
   // tool-execution gaps between rounds are never counted.
+  //
+  // The round reader (src/ai-stream.js) measures the window itself and
+  // reports it on the round's usage snapshot, because it sees deltas this
+  // handler does not: OpenRouter text is buffered until the round ends,
+  // and tool arguments or hidden thinking emit no event here. The window
+  // tracked below is only the fallback for a round without a snapshot.
   let streamStartedAt = 0;   // set on first message/reasoning delta of a round
-  // closeStreamWindow() -> ms of the round's streaming window, and disarms
-  // it so the next round's first delta starts a fresh one.
-  function closeStreamWindow() {
+  // closeStreamWindow(roundUsage) -> ms of the round's streaming window,
+  // and disarms the local one so the next round starts fresh.
+  function closeStreamWindow(roundUsage) {
     const ms = streamStartedAt ? Date.now() - streamStartedAt : 0;
     streamStartedAt = 0;
-    return ms;
+    return roundUsage && roundUsage.streamingMs > 0 ? roundUsage.streamingMs : ms;
+  }
+  // roundUsageBlock(roundUsage) -> the usage block saved on a row.
+  // `hiddenReasoningTokens` (reasoning counted in completionTokens but
+  // never streamed) is kept so tok/s can leave those tokens out.
+  function roundUsageBlock(roundUsage) {
+    const block = {
+      promptTokens: roundUsage.promptTokens,
+      completionTokens: roundUsage.completionTokens,
+      cacheReadTokens: roundUsage.cacheReadTokens || 0,
+      cacheCreationTokens: roundUsage.cacheCreationTokens || 0
+    };
+    if (roundUsage.hiddenReasoningTokens > 0) block.hiddenReasoningTokens = roundUsage.hiddenReasoningTokens;
+    return block;
   }
   // Per-round usage snapshots from ai.js. Each tool round's upstream
   // call reports its own prompt/completion tokens. When a round ends
@@ -1557,7 +1576,7 @@ promptSize: resolvedProfileId,
         // The window is saved on the segment row itself (paired with
         // that round's completionTokens) so the row keeps its tok/s
         // after a reload.
-        const segmentStreamingMs = closeStreamWindow();
+        const segmentStreamingMs = closeStreamWindow(pendingRoundUsage);
         // Persist text produced before a tool call at its real transcript
         // position, then start a fresh segment for the post-tool response.
         // Attach the round's usage/cost so this segment shows its own
@@ -1577,14 +1596,7 @@ promptSize: resolvedProfileId,
         if (segmentCost && segmentCost.known && typeof segmentCost.total === 'number') {
         persistedSegmentCost += segmentCost.total;
         }
-        segmentUsage = pendingRoundUsage
-        ? {
-          promptTokens: pendingRoundUsage.promptTokens,
-          completionTokens: pendingRoundUsage.completionTokens,
-          cacheReadTokens: pendingRoundUsage.cacheReadTokens || 0,
-          cacheCreationTokens: pendingRoundUsage.cacheCreationTokens || 0
-          }
-        : undefined;
+        segmentUsage = pendingRoundUsage ? roundUsageBlock(pendingRoundUsage) : undefined;
         assistantMsg = messages.appendMessage(projectDir, chatId, {
         role: 'assistant', content: assistantContent, reasoning: assistantReasoning, modelId: model.id,
         usage: segmentUsage,
@@ -1689,6 +1701,12 @@ promptSize: resolvedProfileId,
         // the enriched event so the UI can render `--` cleanly; the
         // `known: false` flag tells it not to show a dollar sign.
         let enriched = data;
+        // The final row's own streaming window (first delta of the
+        // last round → done). It pairs with the final round's
+        // completionTokens persisted on the row below; the earlier
+        // rounds' windows already live on their segment rows. Closed
+        // outside the pricing `try` so a pricing error cannot drop it.
+        const finalStreamingMs = closeStreamWindow(pendingRoundUsage);
         delegatedCost = data && typeof data.delegatedCost === 'number' && isFinite(data.delegatedCost) && data.delegatedCost >= 0
           ? data.delegatedCost
           : null;
@@ -1700,11 +1718,6 @@ promptSize: resolvedProfileId,
           const cost = providerCost == null
             ? usage.computeCost({ model, usage: data && data.usage, app })
             : { known: true, input: 0, output: 0, total: providerCost, currency: 'USD' };
-          // The final row's own streaming window (first delta of the
-          // last round → done). It pairs with the final round's
-          // completionTokens persisted on the row below; the earlier
-          // rounds' windows already live on their segment rows.
-          const finalStreamingMs = closeStreamWindow();
           enriched = Object.assign({}, data, {
             cost: {
               known: cost.known,
@@ -1751,7 +1764,10 @@ promptSize: resolvedProfileId,
         // `streamingMs` so the client's tok/s matches the persisted row
         // (`usage` on this frame is the turn aggregate).
         if (finalRoundUsage && finalRoundUsage.completionTokens > 0) {
-          enriched = Object.assign({}, enriched, { roundCompletionTokens: finalRoundUsage.completionTokens });
+          enriched = Object.assign({}, enriched, {
+            roundCompletionTokens: finalRoundUsage.completionTokens,
+            roundHiddenReasoningTokens: finalRoundUsage.hiddenReasoningTokens > 0 ? finalRoundUsage.hiddenReasoningTokens : undefined
+          });
         }
         lastEnrichment = enriched;
         // Persist the assistant message so a chat that is later
@@ -1759,21 +1775,17 @@ promptSize: resolvedProfileId,
         // block rides the message).
         if (assistantContent.trim() || assistantReasoning.trim()) {
           try {
-            const persistUsage = finalRoundUsage
-              ? {
-                  promptTokens: finalRoundUsage.promptTokens,
-                  completionTokens: finalRoundUsage.completionTokens,
-                  cacheReadTokens: finalRoundUsage.cacheReadTokens || 0,
-                  cacheCreationTokens: finalRoundUsage.cacheCreationTokens || 0
-                }
-              : (data && data.usage);
+            const persistUsage = finalRoundUsage ? roundUsageBlock(finalRoundUsage) : (data && data.usage);
             assistantMsg = messages.appendMessage(projectDir, chatId, {
               role: 'assistant',
               content: assistantContent,
               reasoning: assistantReasoning,
               usage: persistUsage,
               cost: remainderCost,
-              streamingMs: enriched.streamingMs,
+              // Without this round's own usage the row falls back to the
+              // turn aggregate, which must not be paired with one
+              // round's window: save no window, so no tok/s is shown.
+              streamingMs: finalRoundUsage ? finalStreamingMs : undefined,
               modelId: enriched.modelId,
               clientId: messages.newClientId('a')
             });
@@ -1884,15 +1896,9 @@ promptSize: resolvedProfileId,
                 role: 'assistant',
                 content: assistantContent,
                 reasoning: assistantReasoning,
-                usage: pendingRoundUsage
-                  ? {
-                      promptTokens: pendingRoundUsage.promptTokens,
-                      completionTokens: pendingRoundUsage.completionTokens,
-                      cacheReadTokens: pendingRoundUsage.cacheReadTokens || 0,
-                      cacheCreationTokens: pendingRoundUsage.cacheCreationTokens || 0
-                    }
-                  : undefined,
+                usage: pendingRoundUsage ? roundUsageBlock(pendingRoundUsage) : undefined,
                 cost: unpersistedBilledCost(result) || undefined,
+                streamingMs: (pendingRoundUsage && closeStreamWindow(pendingRoundUsage)) || undefined,
                 modelId: model.id,
                 clientId: messages.newClientId('a')
               });
@@ -1930,14 +1936,10 @@ promptSize: resolvedProfileId,
           content: assistantContent,
           reasoning: assistantReasoning,
           usage: pendingRoundUsage
-            ? {
-                promptTokens: pendingRoundUsage.promptTokens,
-                completionTokens: pendingRoundUsage.completionTokens,
-                cacheReadTokens: pendingRoundUsage.cacheReadTokens || 0,
-                cacheCreationTokens: pendingRoundUsage.cacheCreationTokens || 0
-              }
+            ? roundUsageBlock(pendingRoundUsage)
             : (result.usage && (result.usage.promptTokens || result.usage.completionTokens) ? result.usage : undefined),
           cost: partialCost || undefined,
+          streamingMs: (pendingRoundUsage && closeStreamWindow(pendingRoundUsage)) || undefined,
           modelId: model.id,
           clientId: messages.newClientId('a')
         });

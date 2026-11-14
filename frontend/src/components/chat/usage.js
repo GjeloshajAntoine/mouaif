@@ -8,7 +8,7 @@
 // module only formats what the server already computed.
 
 import { fetchJson } from '../../api.js';
-import { formatCost, formatTokPerSecond, formatTokens } from '../../usage.js';
+import { formatCost, formatTokPerSecond, formatTokens, usageRate } from '../../usage.js';
 import { summarizeChatUsage, resolveLiveInfo } from './costSummary.js';
 
 // setChatStatus(refs, text, state)
@@ -185,9 +185,7 @@ export function renderUsageMeta(el, info, state) {
   // continuously updated from the SSE message stream), fall back
   // to the final rate from the done event.
   let rate = info.liveRate;
-  if (rate == null && info.streamingMs && typeof usage.completionTokens === 'number') {
-    rate = info.streamingMs > 0 ? (usage.completionTokens / info.streamingMs) * 1000 : 0;
-  }
+  if (rate == null) rate = usageRate(usage, info.streamingMs);
   if (rate != null) tokens.push({ kind: 'rate', label: formatTokPerSecond(rate) });
   for (let i = 0; i < tokens.length; i++) {
     if (i > 0) {

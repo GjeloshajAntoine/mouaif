@@ -7,7 +7,7 @@
 // dropped connection" poller live here too.
 
 import { fetchJson, parseSSEFrame } from '../../api.js';
-import { createCounter } from '../../usage.js';
+import { createCounter, tokensPerSecond } from '../../usage.js';
 import {
 appendDeltaToLive,
 appendReasoningToLive,
@@ -1213,13 +1213,16 @@ state.messages = state.messages.filter((m) => m !== userMsg);
   // Set on `done` from the server's per-round numbers (the final
   // round's completionTokens over that round's streamingMs), so the
   // live row shows the same tok/s the persisted row shows on reload.
+  // null also when that window is too short to give a rate, so `rateFinal`
+  // (not a null check) says the live estimate is over.
   let finalRate = null;
+  let rateFinal = false;
   // currentRate() -> tok/s of the round in flight. The counter restarts
   // on every `assistant_turn_end`, and only this round's reported output
   // (never the turn aggregate) may replace the heuristic — pairing the
   // aggregate with one round's window over-reports tok/s.
   function currentRate() {
-    if (finalRate != null) return finalRate;
+    if (rateFinal) return finalRate;
     return counter.rate(roundCompletionTokens > 0 ? roundCompletionTokens : undefined);
   }
   // composeLiveInfo() -> { modelId, usage, cost, streamingMs, liveRate, liveCost }
@@ -1357,9 +1360,13 @@ state.messages = state.messages.filter((m) => m !== userMsg);
       const doneRoundTokens = Number(data.roundCompletionTokens) > 0
         ? Number(data.roundCompletionTokens)
         : (roundCompletionTokens > 0 ? roundCompletionTokens : null);
+      // Reasoning tokens the provider counted without streaming them were
+      // generated before the window opened, so they are left out.
+      const doneHiddenTokens = Number(data.roundHiddenReasoningTokens) > 0 ? Number(data.roundHiddenReasoningTokens) : 0;
       finalRate = (doneRoundTokens && streamingMs > 0)
-        ? (doneRoundTokens / streamingMs) * 1000
+        ? tokensPerSecond(Math.max(0, doneRoundTokens - doneHiddenTokens), streamingMs)
         : counter.rate(doneRoundTokens == null ? undefined : doneRoundTokens);
+      rateFinal = true;
       roundPromptTokens = 0;
       roundCompletionTokens = 0;
       // The final `done` event's `cost` already includes the
@@ -1409,6 +1416,9 @@ state.messages = state.messages.filter((m) => m !== userMsg);
         usage = usage || {};
         usage.completionTokens = (usage.completionTokens || 0) + (c2 - roundCompletionTokens);
         roundCompletionTokens = c2;
+        // The count covers everything generated up to now, tool-call
+        // arguments included, so the window must reach now as well.
+        counter.touch();
         repaintLiveRate();
       }
     } else if (ev.eventName === 'usage_update') {

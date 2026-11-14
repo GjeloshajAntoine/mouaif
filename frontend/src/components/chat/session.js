@@ -35,8 +35,10 @@ import { createPager } from './pagination.js';
   * @property {Array<Object>} [attachments]  `user` only: image attachments.
   * @property {string} [reasoning]  `assistant` only: thinking text.
   * @property {{promptTokens?: number, completionTokens?: number,
-  *   cacheReadTokens?: number, cacheCreationTokens?: number}} [usage]
-  *   `assistant` only.
+  *   cacheReadTokens?: number, cacheCreationTokens?: number,
+  *   hiddenReasoningTokens?: number}} [usage]
+  *   `assistant` only. `hiddenReasoningTokens` are reasoning tokens counted
+  *   in `completionTokens` but never streamed; tok/s leaves them out.
   * @property {{input?: number, output?: number, total?: number,
   *   currency?: string, known?: boolean}} [cost]  `assistant` only.
   * @property {number} [streamingMs]  `assistant` only: server-measured

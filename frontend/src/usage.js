@@ -66,6 +66,33 @@ export function formatTokens(n) {
   return (v / 1000000).toFixed(v < 10000000 ? 2 : 1) + 'M';
 }
 
+// A rate over a shorter window is noise, not a speed: a reply that
+// arrives in one or two chunks would divide its tokens by a few
+// milliseconds. Below this the tok/s item is left off the line.
+export const MIN_RATE_WINDOW_MS = 250;
+
+// tokensPerSecond(tokens, ms) -> number | null
+//
+// null when there is no meaningful rate (unknown tokens, or a window
+// shorter than MIN_RATE_WINDOW_MS).
+export function tokensPerSecond(tokens, ms) {
+  const t = Number(tokens);
+  const w = Number(ms);
+  if (!isFinite(t) || t < 0 || !isFinite(w) || w < MIN_RATE_WINDOW_MS) return null;
+  return (t / w) * 1000;
+}
+
+// usageRate(usage, streamingMs) -> number | null
+//
+// The tok/s of a saved row: its round's output tokens over its round's
+// window. `hiddenReasoningTokens` (reasoning the provider counted but
+// never streamed, so generated before the window opened) are left out.
+export function usageRate(usage, streamingMs) {
+  if (!usage || typeof usage.completionTokens !== 'number') return null;
+  const hidden = Number(usage.hiddenReasoningTokens) > 0 ? Number(usage.hiddenReasoningTokens) : 0;
+  return tokensPerSecond(Math.max(0, usage.completionTokens - hidden), streamingMs);
+}
+
 // createCounter() -> counter
 //
 // A per-turn streaming accumulator. The chat UI holds one of these
@@ -87,14 +114,18 @@ export function createCounter() {
       const len = typeof deltaText === 'string' ? deltaText.length : 0;
       if (len > 0) estimatedTokens += len / 4;
     },
+    // touch() extends the window to now without adding text: output the
+    // model produced since the last text delta (tool-call arguments) took
+    // time too, and the round's reported token count includes it.
+    touch() { if (startedAt) lastAt = Date.now(); },
+    // rate(finalizeTokens) -> tok/s, or null until the window is long
+    // enough to mean something (see MIN_RATE_WINDOW_MS).
     rate(finalizeTokens) {
-      if (!startedAt) return 0;
-      const ms = (lastAt || Date.now()) - startedAt;
-      if (ms <= 0) return 0;
+      if (!startedAt) return null;
       const tokens = (typeof finalizeTokens === 'number' && isFinite(finalizeTokens))
         ? finalizeTokens
         : estimatedTokens;
-      return (tokens / ms) * 1000;
+      return tokensPerSecond(tokens, (lastAt || Date.now()) - startedAt);
     },
     reset() { startedAt = 0; lastAt = 0; estimatedTokens = 0; }
   };

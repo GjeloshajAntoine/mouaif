@@ -1476,6 +1476,27 @@ async function streamChatInScope(opts) {
   let roundProviderCostInput = null;
   let roundProviderCostOutput = null;
   let roundUsageCommitted = false;
+  // The round's tok/s window, measured here because this reader sees every
+  // upstream delta: buffered OpenRouter text, tool-call arguments and
+  // hidden thinking never reach the chat handler as they arrive.
+  let roundStreamStartedAt = 0;
+  let roundSawReasoning = false;
+  let roundReasoningTokens = null;
+  // roundSpeed() -> { streamingMs, hiddenReasoningTokens } for the round so
+  // far. `streamingMs` runs from the first upstream delta to now.
+  // `hiddenReasoningTokens` are reasoning tokens the provider counted in
+  // completionTokens without streaming any reasoning text: they were
+  // generated before the window opened, so the rate must not count them.
+  function roundSpeed() {
+    const completion = roundCompletionTokens || 0;
+    const hidden = !roundSawReasoning && roundReasoningTokens > 0 && roundReasoningTokens < completion
+      ? roundReasoningTokens
+      : 0;
+    return {
+      streamingMs: roundStreamStartedAt ? Date.now() - roundStreamStartedAt : 0,
+      hiddenReasoningTokens: hidden
+    };
+  }
   const stream = upstream.body;
   const isNDJSON = (model.borrowed ? req.streamFormat : def.streamFormat) === 'ndjson';
   try {
@@ -1576,6 +1597,10 @@ async function streamChatInScope(opts) {
     ...(assistantBlocks.some((b) => b.type === 'thinking' || b.type === 'redacted_thinking') ? { anthropicBlocks: assistantBlocks } : {}) };
 
   function apply(ev) {
+    if (!roundStreamStartedAt && (ev.name === 'message' || ev.name === 'reasoning' || ev.name === 'tool_call_delta'
+      || ev.name === 'image' || ev.name === 'stream_start')) {
+      roundStreamStartedAt = Date.now();
+    }
     if (ev.name === 'image') {
       if (images.some((image) => image.data === ev.data.data && image.mimeType === ev.data.mimeType)) return;
       if (generatedImages.length >= 8) { sawError = { code: 'ETOOLARGE', message: 'Provider returned more than eight generated images.' }; return; }
@@ -1591,6 +1616,7 @@ async function streamChatInScope(opts) {
     }
     else if (ev.name === 'reasoning') {
       if (ev.data && typeof ev.data.delta === 'string') reasoningText += ev.data.delta;
+      if (ev.data && typeof ev.data.delta === 'string' && ev.data.delta) roundSawReasoning = true;
       // Reasoning deltas stream live for every provider, OpenRouter
       // included. Unlike `content`, reasoning text never carries a
       // MiniMax-style serialized tool call, so there is no compat
@@ -1624,6 +1650,8 @@ async function streamChatInScope(opts) {
       if (isFinite(c) && c > 0) roundCompletionTokens = c;
       if (isFinite(cr) && cr > 0) roundCacheReadTokens = cr;
       if (isFinite(cc) && cc > 0) roundCacheCreationTokens = cc;
+      const rt = Number(ev.data.usage.reasoningTokens);
+      if (isFinite(rt) && rt > 0) roundReasoningTokens = rt;
       // Surface the round's prompt footprint so the chat UI can
       // refresh its context-usage line mid-exchange (tool rounds).
       // Anthropic already streams usage_input/usage_output; this
@@ -1678,6 +1706,7 @@ async function streamChatInScope(opts) {
               completionTokens: roundCompletionTokens || 0,
               cacheReadTokens: roundCacheReadTokens || 0,
               cacheCreationTokens: roundCacheCreationTokens || 0,
+              ...roundSpeed(),
               providerCost: null,
               providerCostInput: null,
               providerCostOutput: null
@@ -1744,6 +1773,7 @@ async function streamChatInScope(opts) {
     const hasUsage = promptTokens > 0 || completionTokens > 0;
     const hasCost = typeof roundProviderCost === 'number' && isFinite(roundProviderCost) && roundProviderCost >= 0;
     if (!hasUsage && !hasCost) return;
+    const speed = roundSpeed();
     if (promptTokens > 0) {
     usage.promptTokens = promptTokens;
     billedPromptTokens += promptTokens;
@@ -1759,6 +1789,7 @@ async function streamChatInScope(opts) {
           completionTokens,
           cacheReadTokens: roundCacheReadTokens || 0,
           cacheCreationTokens: roundCacheCreationTokens || 0,
+          ...speed,
           providerCost: hasCost ? roundProviderCost : null,
           providerCostInput: roundProviderCostInput,
           providerCostOutput: roundProviderCostOutput

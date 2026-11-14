@@ -137,7 +137,8 @@ function* parseEvent(eventName, data) {
   } else if (type === 'response.completed') {
     const usage = obj.response?.usage || {};
     yield { name: 'done', data: { usage: { promptTokens: usage.input_tokens || 0,
-      completionTokens: usage.output_tokens || 0, cacheReadTokens: usage.input_tokens_details?.cached_tokens || 0 } } };
+      completionTokens: usage.output_tokens || 0, cacheReadTokens: usage.input_tokens_details?.cached_tokens || 0,
+      reasoningTokens: usage.output_tokens_details?.reasoning_tokens || 0 } } };
   } else if (type === 'error' || type === 'response.failed' || type === 'response.incomplete' || obj.error) {
     yield { name: 'error', data: { code: 'EUPSTREAM', message: obj.error?.message || obj.response?.error?.message
       || ('Codex response ' + (obj.response?.status || 'failed') + '.') } };

@@ -2058,10 +2058,19 @@ function* parseOpenAISSE(eventName, data) {
       cd.completions_cost,
       cd.output_cost
     );
+    // Reasoning tokens are a subset of completion_tokens. The tok/s line
+    // leaves them out when the round streamed no reasoning text, since
+    // their generation time is then outside the measured window.
+    const completionDetails = obj.usage.completion_tokens_details || obj.usage.completionTokensDetails
+      || obj.usage.output_tokens_details || obj.usage.outputTokensDetails || {};
+    const reasoningTokens = firstFiniteNumber(
+      completionDetails.reasoning_tokens,
+      completionDetails.reasoningTokens
+    );
     yield {
       name: 'done',
       data: {
-        usage: { promptTokens, completionTokens, cacheReadTokens },
+        usage: { promptTokens, completionTokens, cacheReadTokens, reasoningTokens },
         providerCost,
         providerCostInput,
         providerCostOutput
@@ -2154,6 +2163,10 @@ function* parseAnthropicSSE(eventName, data, toolAcc) {
       // thinking blocks (and their signatures) back unchanged, ahead of the
       // tool_use blocks they produced, or the follow-up request is refused.
       const block = obj.content_block || {};
+      // Generation has begun. Thinking that is redacted or omitted and
+      // tool arguments stream no user-facing delta, so the tok/s window
+      // opens here rather than on the first visible text.
+      yield { name: 'stream_start', data: {} };
       if (block.type === 'tool_use') {
         acc.set(obj.index, { kind: 'tool_use', id: block.id, name: block.name, partial: '' });
       } else if (block.type === 'thinking') {
@@ -2259,6 +2272,7 @@ function* parseGeminiSSE(eventName, data) {
         // the output rate alongside candidatesTokenCount.
         promptTokens: metadata.promptTokenCount || 0,
         completionTokens: (metadata.candidatesTokenCount || 0) + (metadata.thoughtsTokenCount || 0),
+        reasoningTokens: metadata.thoughtsTokenCount || 0,
         cacheReadTokens: metadata.cachedContentTokenCount || 0
       } }
     };
