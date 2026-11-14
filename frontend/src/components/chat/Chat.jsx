@@ -66,7 +66,7 @@ setFileEditorOpen,
     picker,
     send, onPickerPick, onPickerTogglePin, onPickerOpen, onRefreshAllProviders, onPickerOpenChange,
     onComposerKey, onComposerInput, onComposerPaste, onImagePickerChange,
-    onRemoveImage, jumpToSeq, onJumpToBottom, onJumpToPrevMessage, onJumpToNextMessage, onCancelRunning, onBack,
+    onRemoveImage, jumpToSeq, jumpToToolCard, onJumpToBottom, onJumpToPrevMessage, onJumpToNextMessage, onCancelRunning, onBack,
 onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat, runCustomAction, refreshCustomActions, updateChat
 } = s;
 
@@ -744,7 +744,7 @@ onDismiss: () => clearWebPreview()
 // Delegation graph: who started whom and what they say to each other,
 // animated as messages travel. A bar in the bottom stack that expands in
 // place or goes full screen; absent until the chat has a subagent.
-h(AgentNetworkDock, { transcriptRef: refs.transcript }),
+h(AgentNetworkDock, { transcriptRef: refs.transcript, onJumpToToolCard: jumpToToolCard }),
 // Pause / resume / stop for a long-running run; absent until the chat has one.
 h(RunDock, { projectDir, chatId, onJumpToSeq: jumpToSeq }),
 // The chat's webhook link and the calls it received; absent until it has one.

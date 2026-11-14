@@ -14,16 +14,18 @@
 //   fullscreen  the same content over the whole view (Escape leaves it)
 // Collapsed / expanded is remembered per browser; fullscreen is not.
 //
+// Only what happens while the dock is on screen animates: opening a chat,
+// expanding the card or rebuilding from the saved transcript does not.
+//
 // Data comes from agentNetworkState.js; this file only draws it.
 import { h } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { useModal } from '../../hooks/useModal.js';
 import { getAgentNetwork, subscribeAgentNetwork } from './agentNetworkState.js';
-import { ROOT, NODE_H, layoutNetwork, edgePath, agentCount, activeCount } from './agentNetwork.js';
+import { ROOT, NODE_H, layoutNetwork, edgePath, agentCount, activeCount, latestTurnFailed, topLevelAncestor } from './agentNetwork.js';
 
 const PULSE_MS = 950;
-const STREAM_PULSE_MS = 700;
 const FEED_SHOWN = 40;
 const EXPANDED_KEY = 'mouaif.agentNetwork.expanded';
 
@@ -54,12 +56,30 @@ function short(text, max) {
   return s.length > max ? s.slice(0, max - 1) + '…' : s;
 }
 
-function nodeLabel(net, id) {
-  if (!id) return 'all';
-  if (id === ROOT) return 'Main agent';
-  const node = net.nodes.get(id);
-  if (!node) return 'agent';
+function baseLabel(node) {
   return node.memberId && node.agent && node.memberId !== node.agent ? node.memberId : (node.label || 'Subagent');
+}
+
+// Display names by node id. Agents that share a name are numbered in the
+// order they started ("tester 1", "tester 2").
+function nodeLabels(net) {
+  const byName = new Map();
+  const sorted = [...net.nodes.values()].filter((n) => n.id !== ROOT).sort((a, b) => a.order - b.order);
+  for (const node of sorted) {
+    const name = baseLabel(node);
+    if (!byName.has(name)) byName.set(name, []);
+    byName.get(name).push(node.id);
+  }
+  const labels = new Map([[ROOT, 'Main agent']]);
+  for (const [name, ids] of byName) {
+    ids.forEach((id, i) => labels.set(id, ids.length > 1 ? name + ' ' + (i + 1) : name));
+  }
+  return labels;
+}
+
+function clockTime(at) {
+  if (!at) return '';
+  try { return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
 }
 
 // The card that shows this agent's run: its own top-level card, a nested
@@ -112,7 +132,7 @@ function PulseDot({ pulse, d, reverse, onDone }) {
     const path = pathRef.current;
     const dot = dotRef.current;
     if (!path || !dot) return undefined;
-    const ms = pulse.kind === 'stream' ? STREAM_PULSE_MS : PULSE_MS;
+    const ms = PULSE_MS;
     let total = 0;
     try { total = path.getTotalLength(); } catch { total = 0; }
     if (!total || reducedMotion()) {
@@ -136,28 +156,42 @@ function PulseDot({ pulse, d, reverse, onDone }) {
   return h('g', { class: 'agent-net__pulse agent-net__pulse--' + pulse.kind },
     h('path', { ref: pathRef, d, class: 'agent-net__pulse-track' }),
     h('g', { ref: dotRef, transform: 'translate(-99 -99)' },
-      h('circle', { class: 'agent-net__pulse-halo', r: pulse.kind === 'stream' ? 6 : 9 }),
-      h('circle', { class: 'agent-net__pulse-dot', r: pulse.kind === 'stream' ? 3 : 4.5 })
+      h('circle', { class: 'agent-net__pulse-halo', r: 9 }),
+      h('circle', { class: 'agent-net__pulse-dot', r: 4.5 })
     )
   );
 }
 
-export function AgentNetworkDock({ transcriptRef }) {
+export function AgentNetworkDock({ transcriptRef, onJumpToToolCard }) {
   const [, setVersion] = useState(0);
   const [pulses, setPulses] = useState([]);
   const [mode, setMode] = useState(() => (readExpanded() ? 'expanded' : 'collapsed'));
   const [selected, setSelected] = useState(null);
+  // Feed rows (by seq) opened to their full text.
+  const [open, setOpen] = useState(() => new Set());
+  // "Show in chat" while it pages older history in, or when it found nothing.
+  const [jump, setJump] = useState(null);
   const modeRef = useRef(mode);
   modeRef.current = mode;
   // The mode fullscreen returns to.
   const inlineModeRef = useRef(mode === 'fullscreen' ? 'collapsed' : mode);
   const netRef = useRef(getAgentNetwork());
   const pulseSeq = useRef(0);
+  // Feed entries up to this seq were already there when the dock (or its
+  // feed) appeared: they render in place instead of sliding in.
+  const arriveRef = useRef(netRef.current.feedSeq);
+  // Node ids drawn by the previous render; null until the graph is shown, so
+  // the first drawing does not fade every box in.
+  const knownRef = useRef(null);
+  const detailRef = useRef(null);
 
   useEffect(() => {
     // The transcript may have synced before this effect subscribed: catch up.
     const current = getAgentNetwork();
-    if (current !== netRef.current) netRef.current = current;
+    if (current !== netRef.current) {
+      netRef.current = current;
+      arriveRef.current = current.feedSeq;
+    }
     setVersion(current.version);
     return subscribeAgentNetwork(onNetwork);
   }, []);
@@ -166,7 +200,11 @@ export function AgentNetworkDock({ transcriptRef }) {
     if (net !== netRef.current) {
       // Another chat: keep the mode, forget the previous chat's selection.
       netRef.current = net;
+      arriveRef.current = net.feedSeq;
+      knownRef.current = null;
       setSelected(null);
+      setOpen(new Set());
+      setJump(null);
       setPulses([]);
       if (modeRef.current === 'fullscreen') setMode(inlineModeRef.current);
     }
@@ -175,25 +213,29 @@ export function AgentNetworkDock({ transcriptRef }) {
     // Collapsed, the head's latest-message line is the animation.
     if (modeRef.current === 'collapsed') return;
     setPulses((list) => {
-      // Keep at most one in-flight "writing" pulse per sender.
-      const next = list.filter((p) => !(p.kind === 'stream' && incoming.some((q) => q.kind === 'stream' && q.from === p.from)));
+      const next = list.slice();
       for (const p of incoming) next.push(Object.assign({ key: ++pulseSeq.current }, p));
       return next.slice(-24);
     });
   }
 
+  // A feed that appears shows what is there without sliding it in.
+  const showFeed = () => { arriveRef.current = netRef.current.feedSeq; };
   const setInline = (next) => {
     inlineModeRef.current = next;
     writeExpanded(next === 'expanded');
     if (next === 'collapsed') setPulses([]);
+    else showFeed();
     setMode(next);
   };
   const enterFullscreen = () => {
     if (mode !== 'fullscreen') inlineModeRef.current = mode;
+    showFeed();
     setMode('fullscreen');
   };
   const exitFullscreen = () => {
     if (inlineModeRef.current === 'collapsed') setPulses([]);
+    else showFeed();
     setMode(inlineModeRef.current);
   };
   const fullRef = useModal({ onClose: exitFullscreen, active: mode === 'fullscreen' });
@@ -210,7 +252,23 @@ export function AgentNetworkDock({ transcriptRef }) {
     const wide = layoutNetwork(net);
     const fits = wide.width * (mode === 'fullscreen' ? 0.8 : 1) <= graphWidth;
     return fits ? wide : layoutNetwork(net, { vertical: true, width: graphWidth });
-  }, [shown, mode, total, net.version, graphWidth]);
+    // `net` too: two chats can share a version and an agent count.
+  }, [net, shown, mode, total, net.version, graphWidth]);
+
+  // Remember which boxes this drawing showed, so only later ones fade in.
+  useEffect(() => {
+    knownRef.current = layout ? new Set(layout.nodes.map((n) => n.id)) : null;
+  }, [layout]);
+
+  // The selected agent's detail is above the feed and below the graph:
+  // bring it into view when a box or a name in the feed selects an agent.
+  useEffect(() => {
+    if (!selected || !detailRef.current) return;
+    try {
+      detailRef.current.scrollIntoView({ block: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' });
+    } catch { /* old browsers: no options */ }
+  }, [selected, mode]);
+
   if (!total) return null;
 
   const byId = layout ? new Map(layout.nodes.map((n) => [n.id, n])) : new Map();
@@ -224,21 +282,47 @@ export function AgentNetworkDock({ transcriptRef }) {
     receiving.add(p.to);
   }
   const dropPulse = (key) => setPulses((list) => list.filter((p) => p.key !== key));
+  const labels = nodeLabels(net);
+  const nodeLabel = (id) => (id ? labels.get(id) || 'agent' : 'all');
   const sel = selected && net.nodes.get(selected);
-  const toggleSelect = (id) => setSelected(selected === id ? null : id);
-  const showInChat = (id) => {
-    const card = findAgentCard(transcriptRef && transcriptRef.current, net, id);
-    if (!card) return;
-    if (mode === 'fullscreen') exitFullscreen();
-    card.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
+  const select = (id) => { setJump(null); setSelected(id); };
+  const toggleSelect = (id) => select(selected === id ? null : id);
+  const flashCard = (card) => {
     card.classList.remove('is-agent-flash');
     void card.offsetWidth;
     card.classList.add('is-agent-flash');
     setTimeout(() => card.classList.remove('is-agent-flash'), 1600);
   };
-  const feed = net.feed.slice(-FEED_SHOWN).reverse();
+  const showInChat = (id) => {
+    const card = findAgentCard(transcriptRef && transcriptRef.current, net, id);
+    if (mode === 'fullscreen') exitFullscreen();
+    if (card) {
+      setJump(null);
+      card.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
+      flashCard(card);
+      return;
+    }
+    // The card is on an older page: load pages until the run's top-level
+    // card appears, as the run list does.
+    const top = topLevelAncestor(net, net.nodes.get(id));
+    if (!top || !onJumpToToolCard) { setJump({ id, state: 'missing' }); return; }
+    setJump({ id, state: 'loading' });
+    Promise.resolve(onJumpToToolCard(top.id, flashCard)).then((found) => {
+      if (netRef.current !== net) return;
+      setJump(found ? null : { id, state: 'missing' });
+    }, () => setJump({ id, state: 'missing' }));
+  };
+  // Selected, the feed lists only that agent's messages.
+  const entries = sel ? net.feed.filter((f) => f.from === sel.id || f.to === sel.id) : net.feed;
+  const feed = entries.slice(-FEED_SHOWN).reverse();
   const latest = net.feed.length ? net.feed[net.feed.length - 1] : null;
   const counts = total + (total === 1 ? ' agent' : ' agents');
+  const arrives = (f) => f.live && f.seq > arriveRef.current;
+  const toggleOpen = (seq) => setOpen((prev) => {
+    const next = new Set(prev);
+    if (next.has(seq)) next.delete(seq); else next.add(seq);
+    return next;
+  });
 
   const nodeW = layout ? layout.nodeW : 0;
   const vertical = !!(layout && layout.vertical);
@@ -257,7 +341,8 @@ export function AgentNetworkDock({ transcriptRef }) {
       // the vertical outline, which keeps its natural size.
       style: full && !vertical ? { width: 'min(100%, ' + Math.round(layout.width * 1.6) + 'px)', minWidth: Math.round(layout.width * 0.8) + 'px', height: 'auto' } : null,
       viewBox: '0 0 ' + layout.width + ' ' + layout.height,
-      role: 'img',
+      // A group, not an image: the agent boxes inside are buttons.
+      role: 'group',
       'aria-label': 'Delegation graph: ' + counts + ', ' + active + ' active'
     },
       h('defs', null,
@@ -270,11 +355,10 @@ export function AgentNetworkDock({ transcriptRef }) {
         const b = byId.get(e.to);
         if (!a || !b) return null;
         const live = busyEdges.has(e.from + '>' + e.to);
-        const running = e.kind === 'tree' && (b.status === 'running' || b.status === 'waiting');
         return h('path', {
           key: e.id,
           d: edgePath(a, b, e.kind, layout),
-          class: 'agent-net__edge agent-net__edge--' + e.kind + (live ? ' is-live' : '') + (running ? ' is-running' : ''),
+          class: 'agent-net__edge agent-net__edge--' + e.kind + (live ? ' is-live' : ''),
           'marker-end': e.kind === 'dep' ? 'url(#agent-net-arrow-' + (full ? 'f' : 'i') + ')' : null
         });
       }),
@@ -285,21 +369,25 @@ export function AgentNetworkDock({ transcriptRef }) {
           + (n.ghost ? ' agent-net__node--ghost' : '')
           + (sending.has(n.id) ? ' is-sending' : '')
           + (receiving.has(n.id) ? ' is-receiving' : '')
-          + (selected === n.id ? ' is-selected' : ''),
-        transform: 'translate(' + n.x + ' ' + n.y + ')',
+          + (selected === n.id ? ' is-selected' : '')
+          + (knownRef.current && !knownRef.current.has(n.id) ? ' is-new' : ''),
+        // A CSS transform, so boxes glide to their new place when an agent
+        // joins and the layout shifts.
+        style: { transform: 'translate(' + n.x + 'px, ' + n.y + 'px)' },
         tabIndex: n.id === ROOT ? -1 : 0,
         role: n.id === ROOT ? null : 'button',
-        'aria-label': n.id === ROOT ? null : nodeLabel(net, n.id) + ', ' + (STATUS_TEXT[n.status] || n.status),
+        'aria-pressed': n.id === ROOT ? null : String(selected === n.id),
+        'aria-label': n.id === ROOT ? 'Main agent' : nodeLabel(n.id) + ', ' + (STATUS_TEXT[n.status] || n.status),
         onClick: () => n.id !== ROOT && toggleSelect(n.id),
         onKeyDown: (ev) => {
           if (n.id !== ROOT && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); toggleSelect(n.id); }
         }
       },
-        h('title', null, n.task ? short(n.task, 300) : nodeLabel(net, n.id)),
+        h('title', null, n.task ? short(n.task, 300) : nodeLabel(n.id)),
         h('rect', { class: 'agent-net__ring', x: -3, y: -3, width: nodeW + 6, height: NODE_H + 6, rx: 12 }),
         h('rect', { class: 'agent-net__box', width: nodeW, height: NODE_H, rx: 9 }),
         h('circle', { class: 'agent-net__status', cx: 13, cy: NODE_H / 2, r: 4 }),
-        h('text', { class: 'agent-net__label', x: 24, y: 18 }, short(nodeLabel(net, n.id), labelMax)),
+        h('text', { class: 'agent-net__label', x: 24, y: 18 }, short(nodeLabel(n.id), labelMax)),
         h('text', { class: 'agent-net__sub', x: 24, y: 33 },
           n.id === ROOT ? 'this chat' : short([STATUS_TEXT[n.status] || n.status, n.memberId && n.agent ? n.agent : (n.background ? 'background' : '')].filter(Boolean).join(' · '), subMax))
       )),
@@ -319,17 +407,32 @@ export function AgentNetworkDock({ transcriptRef }) {
     )
   );
 
-  const detail = () => (sel ? h('div', { class: 'agent-net__detail' },
+  const jumping = jump && jump.id === (sel && sel.id) ? jump.state : null;
+  const detail = () => (sel ? h('div', { class: 'agent-net__detail', ref: detailRef },
     h('div', { class: 'agent-net__detail-head' },
-      h('strong', null, nodeLabel(net, sel.id)),
+      h('strong', null, nodeLabel(sel.id)),
       h('span', { class: 'agent-net__chip agent-net__chip--' + sel.status }, STATUS_TEXT[sel.status] || sel.status),
-      sel.agent && sel.agent !== nodeLabel(net, sel.id) ? h('span', { class: 'agent-net__meta' }, sel.agent) : null,
+      sel.agent && sel.agent !== baseLabel(sel) ? h('span', { class: 'agent-net__meta' }, sel.agent) : null,
       sel.model ? h('span', { class: 'agent-net__meta' }, sel.model) : null,
       sel.groupId && net.groups.get(sel.groupId) && net.groups.get(sel.groupId).name
         ? h('span', { class: 'agent-net__meta' }, 'group ' + net.groups.get(sel.groupId).name) : null,
-      sel.ghost ? null : h('button', { class: 'agent-net__link', type: 'button', onClick: () => showInChat(sel.id) }, 'Show in chat')
+      sel.ghost ? null : h('button', {
+        class: 'agent-net__link',
+        type: 'button',
+        disabled: jumping === 'loading',
+        onClick: () => showInChat(sel.id)
+      }, jumping === 'loading' ? 'Finding…' : 'Show in chat'),
+      h('button', { class: 'agent-net__close', type: 'button', 'aria-label': 'Close agent details', title: 'Close', onClick: () => select(null) }, '×')
     ),
-    sel.task ? h('p', { class: 'agent-net__task' }, sel.task) : null,
+    jumping === 'missing' ? h('p', { class: 'agent-net__note', role: 'status' }, 'Its card is no longer in this chat.') : null,
+    sel.task ? h('div', { class: 'agent-net__section' },
+      h('div', { class: 'agent-net__section-title' }, 'Task'),
+      h('p', { class: 'agent-net__task' }, sel.task)
+    ) : null,
+    sel.answer ? h('div', { class: 'agent-net__section' },
+      h('div', { class: 'agent-net__section-title' }, sel.answerFailed ? 'Error' : 'Answer'),
+      h('p', { class: 'agent-net__task agent-net__answer' + (sel.answerFailed ? ' agent-net__answer--error' : '') }, sel.answer)
+    ) : null,
     (() => {
       const g = sel.groupId && net.groups.get(sel.groupId);
       const m = g && g.members.get(sel.memberId);
@@ -341,18 +444,46 @@ export function AgentNetworkDock({ transcriptRef }) {
     })()
   ) : null);
 
+  // A sub-agent's name selects it; the main agent and a broadcast are text.
+  const who = (id) => (id && id !== ROOT && net.nodes.has(id)
+    ? h('button', { class: 'agent-net__who', type: 'button', 'aria-pressed': String(selected === id), onClick: () => toggleSelect(id) }, nodeLabel(id))
+    : h('span', { class: 'agent-net__who agent-net__who--plain' }, nodeLabel(id)));
+  const msgText = (f) => {
+    if (!f.text) return null;
+    const more = !!f.full && f.full !== f.text;
+    if (!more) return h('span', { class: 'agent-net__msg-text' }, f.text);
+    const isOpen = open.has(f.seq);
+    // The whole row's text is the toggle: a tap reads the full message.
+    return h('button', {
+      class: 'agent-net__msg-text agent-net__msg-more' + (isOpen ? ' is-open' : ''),
+      type: 'button',
+      'aria-expanded': String(isOpen),
+      onClick: () => toggleOpen(f.seq)
+    }, isOpen ? f.full : f.text);
+  };
   const feedList = () => (feed.length ? h('div', { class: 'agent-net__feed' },
-    h('div', { class: 'agent-net__feed-title' }, 'Messages', h('span', { class: 'agent-net__count' }, net.feed.length)),
+    h('div', { class: 'agent-net__feed-title' },
+      sel ? 'Messages of ' + nodeLabel(sel.id) : 'Messages',
+      h('span', { class: 'agent-net__count' }, sel ? entries.length : net.feedSeq),
+      sel ? h('button', { class: 'agent-net__all', type: 'button', onClick: () => select(null) }, 'Show all') : null
+    ),
     h('ol', { class: 'agent-net__feed-list' },
-      feed.map((f, i) => h('li', { key: net.feed.length - i, class: 'agent-net__msg agent-net__msg--' + f.kind },
+      feed.map((f) => h('li', { key: f.seq, class: 'agent-net__msg agent-net__msg--' + f.kind + (arrives(f) ? ' is-arriving' : '') },
         h('span', { class: 'agent-net__msg-kind' }, KIND_TEXT[f.kind] || f.kind),
-        h('button', { class: 'agent-net__who', type: 'button', onClick: () => f.from && f.from !== ROOT && setSelected(f.from) }, nodeLabel(net, f.from)),
-        h('span', { class: 'agent-net__msg-arrow', 'aria-label': 'to' }, '→'),
-        h('button', { class: 'agent-net__who', type: 'button', onClick: () => f.to && f.to !== ROOT && setSelected(f.to) }, nodeLabel(net, f.to)),
-        f.text ? h('span', { class: 'agent-net__msg-text' }, f.text) : null
+        who(f.from),
+        f.to ? h('span', { class: 'agent-net__msg-arrow', 'aria-label': 'to' }, '→') : null,
+        f.to ? who(f.to) : null,
+        f.at ? h('time', { class: 'agent-net__msg-time', dateTime: new Date(f.at).toISOString() }, clockTime(f.at)) : null,
+        msgText(f)
       ))
     )
-  ) : null);
+  ) : (sel ? h('div', { class: 'agent-net__feed' },
+    h('div', { class: 'agent-net__feed-title' },
+      'Messages of ' + nodeLabel(sel.id),
+      h('button', { class: 'agent-net__all', type: 'button', onClick: () => select(null) }, 'Show all')
+    ),
+    h('p', { class: 'agent-net__note' }, 'No recent messages.')
+  ) : null));
 
   const fullscreenBtn = (isFull) => h('button', {
     type: 'button',
@@ -370,11 +501,12 @@ export function AgentNetworkDock({ transcriptRef }) {
       })
     )
   );
-  // Same status dot as a tool card: running while any agent is, red when one
-  // failed, green once every agent settled.
-  const failedAny = [...net.nodes.values()].some((n) => n.status === 'failed');
-  const pill = active ? ['tool-card__pill--busy', 'running'] : failedAny ? ['tool-card__pill--err', 'failed'] : ['tool-card__pill--ok', 'done'];
-  const summary = counts + (active ? ' · ' + active + ' active' : '');
+  // Same status dot as a tool card: running while any agent is, red when an
+  // agent of the latest turn that delegated failed, green otherwise. A
+  // failure in an older turn no longer colours it.
+  const pill = active ? ['tool-card__pill--busy', 'running'] : latestTurnFailed(net) ? ['tool-card__pill--err', 'failed'] : ['tool-card__pill--ok', 'done'];
+  // Short enough for one line on a phone.
+  const summary = active ? active + '/' + total + ' active' : counts;
   const expanded = mode === 'expanded';
   const toggle = () => setInline(expanded ? 'collapsed' : 'expanded');
 
@@ -402,9 +534,13 @@ export function AgentNetworkDock({ transcriptRef }) {
         )
       ),
       h('span', { class: 'tool-card__name' }, 'Agents'),
-      // The latest message between agents; re-keyed so each new one slides in.
-      h('span', { key: 'latest-' + net.feed.length, class: 'tool-card__args agent-net__latest' + (latest ? ' agent-net__latest--' + latest.kind : '') },
-        latest ? [nodeLabel(net, latest.from), ' → ', nodeLabel(net, latest.to), latest.text ? ': ' + latest.text : ''].join('') : ''
+      // The latest message between agents; re-keyed by its seq so each new
+      // one slides in (only those that arrive while the dock is shown).
+      h('span', {
+        key: 'latest-' + (latest ? latest.seq : 0),
+        class: 'tool-card__args agent-net__latest' + (latest ? ' agent-net__latest--' + latest.kind : '') + (latest && arrives(latest) ? ' is-arriving' : '')
+      },
+        latest ? [nodeLabel(latest.from), latest.to ? ' → ' + nodeLabel(latest.to) : '', latest.text ? ': ' + latest.text : ''].join('') : ''
       ),
       h('span', { class: 'tool-card__result-summary' }, summary),
       fullscreenBtn(false),

@@ -11,15 +11,19 @@
 //     animates: history is reviewed, not replayed.
 //   - ingestStreamEvent(net, ...)    live SSE frames (top-level tool_call /
 //     tool_result and nested `subagent_event`, unwrapped to any depth).
-//     Returns the pulses the dock animates along the edges.
+//     Returns the pulses the dock animates along the edges: only real
+//     messages, never a child that is merely writing (its ring says that).
 //
 // Node ids are tool call ids; ROOT is the chat's own (main) agent.
+//
+// Feed entries carry `seq`, a number that only grows (the feed itself is
+// capped), `text` (one line, for the head) and `full` (the whole message, up
+// to FULL_LIMIT, for an expanded row). `live` marks entries from SSE frames.
 
 export const ROOT = 'root';
 const FEED_LIMIT = 80;
 const TEXT_LIMIT = 140;
-// One "speaking" pulse per node per window while it streams text.
-const STREAM_PULSE_MS = 1400;
+const FULL_LIMIT = 8000;
 
 const TERMINAL = new Set(['done', 'failed', 'cancelled']);
 // Live frames that only an agent's own turn emits (src/ai-stream.js forwards
@@ -38,7 +42,16 @@ export function createAgentNetwork() {
     callArgs: new Map(),
     feed: [],
     feedKeys: new Set(),
-    lastStreamPulse: new Map(),
+    // Every entry ever added, also past FEED_LIMIT: the feed's `seq` source
+    // and the "Messages" count.
+    feedSeq: 0,
+    // Top-level delegations of the latest turn that delegated; the head's
+    // status dot only reflects these (see latestTurnFailed).
+    turnRoots: new Set(),
+    // True between a live top-level delegation and the end of its turn.
+    liveTurn: false,
+    // Timestamp of the persisted row being folded in.
+    ingestAt: 0,
     // Persisted rows already folded in (ingestMessages runs on every
     // transcript reconcile; a settled subagent result can be large).
     seenRows: new Set(),
@@ -50,6 +63,12 @@ export function createAgentNetwork() {
 function clip(text, max = TEXT_LIMIT) {
   const s = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
   return s.length > max ? s.slice(0, max - 1) + '…' : s;
+}
+
+// The whole message, line breaks kept, for a row expanded to its full text.
+function whole(text) {
+  const s = String(text == null ? '' : text).replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  return s.length > FULL_LIMIT ? s.slice(0, FULL_LIMIT - 1) + '…' : s;
 }
 
 function parseJson(value) {
@@ -118,13 +137,32 @@ function nodeByMember(net, groupId, memberId) {
   return null;
 }
 
-function addFeed(net, key, entry) {
+// addFeed(net, key, entry, live) — `entry.text` is the raw message; the
+// stored entry gets the one-line `text` and the whole `full`.
+function addFeed(net, key, entry, live) {
   if (key && net.feedKeys.has(key)) return false;
   if (key) net.feedKeys.add(key);
-  net.feed.push(Object.assign({ at: Date.now() }, entry));
+  const raw = entry.text;
+  const at = live ? Date.now() : (net.ingestAt || 0);
+  net.feed.push(Object.assign({}, entry, { seq: ++net.feedSeq, at, live: !!live, text: clip(raw), full: whole(raw) }));
   if (net.feed.length > FEED_LIMIT) net.feed.splice(0, net.feed.length - FEED_LIMIT);
   net.version++;
   return true;
+}
+
+// The agent's own answer (or error), kept on the node for the detail view.
+function setAnswer(net, node, text, failed) {
+  const full = whole(text);
+  if (!node || !full || (node.answer === full && node.answerFailed === !!failed)) return;
+  node.answer = full;
+  node.answerFailed = !!failed;
+  net.version++;
+}
+
+function errorText(err) {
+  if (!err) return '';
+  if (typeof err === 'string') return err;
+  return err.message || err.code || '';
 }
 
 function labelFor(args, result) {
@@ -145,45 +183,52 @@ export function noteToolCall(net, parentId, call, live) {
   if (id) net.callArgs.set(id, { name, args, from });
   const pulses = [];
   const pulse = (p) => { if (live) pulses.push(p); };
+  const feed = (key, entry) => addFeed(net, key, entry, live);
 
   if (name === 'subagent') {
     if (!id) return [];
+    const isNew = !net.nodes.has(id);
     upsertNode(net, id, from, {
       label: labelFor(args),
       agent: args.agent,
       memberId: args.memberId,
       groupId: args.groupId,
-      task: clip(args.task, 400),
+      task: whole(args.task),
       background: args.background ? true : undefined
     });
+    if (from === ROOT && live && isNew) {
+      // The first live delegation of a turn starts a new set of turn roots.
+      if (!net.liveTurn) { net.turnRoots = new Set(); net.liveTurn = true; }
+      net.turnRoots.add(id);
+    }
     if (args.groupId && args.memberId) {
       const node = net.nodes.get(id);
       if (node && node.status === 'running' && hasPendingDeps(net, args.groupId, args.memberId)) node.status = 'waiting';
     }
-    addFeed(net, 'delegate:' + id, { kind: 'delegate', from, to: id, text: clip(args.task) });
+    feed('delegate:' + id, { kind: 'delegate', from, to: id, text: args.task });
     pulse({ kind: 'delegate', from, to: id, text: clip(args.task, 60) });
   } else if (name === 'subagent_send') {
     const to = args.callId ? String(args.callId) : '';
     if (to && !net.nodes.has(to)) upsertNode(net, to, from, { label: 'Subagent' });
-    addFeed(net, id ? 'send:' + id : null, { kind: 'message', from, to: to || null, text: clip(args.message) });
+    feed(id ? 'send:' + id : null, { kind: 'message', from, to: to || null, text: args.message });
     if (to) pulse({ kind: 'message', from, to, text: clip(args.message, 60) });
   } else if (name === 'subagent_stop') {
     const to = args.callId ? String(args.callId) : '';
-    addFeed(net, id ? 'stop:' + id : null, { kind: 'stop', from, to: to || null, text: 'stop' });
+    feed(id ? 'stop:' + id : null, { kind: 'stop', from, to: to || null, text: 'stop' });
     if (to) pulse({ kind: 'stop', from, to, text: 'stop' });
   } else if (name === 'subagent_publish') {
     const node = net.nodes.get(from);
     const to = node && node.parentId ? node.parentId : null;
-    addFeed(net, id ? 'publish:' + id : null, { kind: 'handoff', from, to, text: clip([args.name, args.summary].filter(Boolean).join(': ')) });
+    feed(id ? 'publish:' + id : null, { kind: 'handoff', from, to, text: [args.name, args.summary].filter(Boolean).join(': ') });
     if (to) pulse({ kind: 'handoff', from, to, text: clip(args.name, 40) });
   } else if (name === 'subagent_decision' || name === 'subagent_conflict') {
     const node = net.nodes.get(from);
     const to = node && node.parentId ? node.parentId : null;
     const kind = name === 'subagent_decision' ? 'decision' : 'conflict';
-    addFeed(net, id ? kind + ':' + id : null, { kind, from, to, text: clip([args.name, args.proposal || args.summary].filter(Boolean).join(': ')) });
+    feed(id ? kind + ':' + id : null, { kind, from, to, text: [args.name, args.proposal || args.summary].filter(Boolean).join(': ') });
     if (to) pulse({ kind, from, to, text: clip(args.name, 40) });
   } else if (name === 'subagent_group_update' && args.action) {
-    addFeed(net, id ? 'group-update:' + id : null, { kind: 'decision', from, to: null, text: clip([args.action, args.name, args.contract].filter(Boolean).join(' · ')) });
+    feed(id ? 'group-update:' + id : null, { kind: 'decision', from, to: null, text: [args.action, args.name, args.contract].filter(Boolean).join(' · ') });
   }
   return pulses;
 }
@@ -200,6 +245,7 @@ export function noteToolResult(net, parentId, res, live) {
   const failed = (res && res.ok === false) || !!r.error;
   const pulses = [];
   const pulse = (p) => { if (live) pulses.push(p); };
+  const feed = (key, entry) => addFeed(net, key, entry, live);
 
   if (name === 'subagent') {
     if (!id) return [];
@@ -215,10 +261,13 @@ export function noteToolResult(net, parentId, res, live) {
       setStatus(net, node, mapState(r.state) || 'running');
     } else {
       setStatus(net, node, failed ? (r.error && /ABORT|CANCEL/i.test(String(r.error.code || '')) ? 'cancelled' : 'failed') : 'done');
-      const answer = typeof r.text === 'string' && r.text ? r.text : (r.error && (r.error.message || r.error.code)) || '';
-      addFeed(net, 'result:' + id, { kind: failed ? 'error' : 'result', from: id, to: from, text: clip(answer) });
-      pulse({ kind: failed ? 'error' : 'result', from: id, to: from, text: failed ? 'failed' : 'done' });
+      const answer = typeof r.text === 'string' && r.text ? r.text : errorText(r.error);
+      setAnswer(net, node, answer, failed);
+      // The run's own exchanges happened before its answer: fold them in
+      // first so the feed (and the head's latest message) stay in order.
       if (Array.isArray(r.chat)) ingestNestedChat(net, id, r.chat);
+      feed('result:' + id, { kind: failed ? 'error' : 'result', from: id, to: from, text: answer });
+      pulse({ kind: failed ? 'error' : 'result', from: id, to: from, text: failed ? 'failed' : 'done' });
     }
   } else if (name === 'subagent_group_create' || name === 'subagent_group_status' || name === 'subagent_group_update') {
     noteGroups(net, from, r, args);
@@ -227,24 +276,42 @@ export function noteToolResult(net, parentId, res, live) {
     for (const run of runs) {
       if (!run || !run.callId) continue;
       const node = net.nodes.get(String(run.callId));
-      if (node) setStatus(net, node, mapState(run.state));
+      if (!node) continue;
+      const status = mapState(run.state);
+      setStatus(net, node, status);
+      // A background run that finished reports its answer here; it shares
+      // the key of a direct answer, so it is listed once either way.
+      const answer = typeof run.text === 'string' && run.text ? run.text : errorText(run.error);
+      if (!TERMINAL.has(status) || !answer) continue;
+      const bad = status !== 'done';
+      setAnswer(net, node, answer, bad);
+      const to = net.nodes.has(node.parentId) ? node.parentId : ROOT;
+      if (feed('result:' + node.id, { kind: bad ? 'error' : 'result', from: node.id, to, text: answer })) {
+        pulse({ kind: bad ? 'error' : 'result', from: node.id, to, text: bad ? 'failed' : 'done' });
+      }
     }
   } else if (name === 'subagent_messages') {
     const target = args.callId ? String(args.callId) : (r.callId ? String(r.callId) : '');
     const lines = Array.isArray(r.lines) ? r.lines : [];
+    const since = Number.isInteger(args.since) ? args.since : 0;
+    let added = 0;
     lines.forEach((line, idx) => {
       const text = typeof line === 'string' ? line : (line && (line.text || line.message || line.line)) || '';
       if (!text) return;
       const lineFrom = (line && line.callId) ? String(line.callId) : target;
-      addFeed(net, 'lines:' + (id || target) + ':' + idx, { kind: 'report', from: lineFrom || null, to: from, text: clip(text) });
+      // Keyed by the line's own cursor, so polling the same lines again
+      // (from cursor 0, or an overlapping `since`) never repeats them.
+      const cursor = line && Number.isFinite(line.cursor) ? line.cursor : since + idx + 1;
+      const key = target ? 'line:' + (lineFrom || target) + ':' + cursor : 'lines:' + id + ':' + idx;
+      if (feed(key, { kind: 'report', from: lineFrom || null, to: from, text })) added++;
     });
-    if (target && lines.length) pulse({ kind: 'report', from: target, to: from, text: lines.length + ' line' + (lines.length === 1 ? '' : 's') });
+    if (target && added) pulse({ kind: 'report', from: target, to: from, text: added + ' line' + (added === 1 ? '' : 's') });
     if (target && r.state) setStatus(net, net.nodes.get(target), mapState(r.state));
   } else if (name === 'subagent_send') {
     const target = args.callId ? String(args.callId) : '';
     const state = String(r.state || r.status || '');
     if (state === 'undelivered') {
-      addFeed(net, 'undelivered:' + (id || target), { kind: 'error', from, to: target || null, text: 'message undelivered' });
+      feed('undelivered:' + (id || target), { kind: 'error', from, to: target || null, text: 'message undelivered' });
     }
   } else if (name === 'subagent_read') {
     const arts = Array.isArray(r.artifacts) ? r.artifacts : (r.name ? [r] : []);
@@ -252,7 +319,7 @@ export function noteToolResult(net, parentId, res, live) {
       if (!art || !art.name || !art.author) continue;
       const author = findNodeByCallOrMember(net, art.author, art.groupId, art.memberId);
       if (!author || author.id === from) continue;
-      addFeed(net, 'read:' + (id || '') + ':' + art.name, { kind: 'handoff', from: author.id, to: from, text: clip('read ' + art.name) });
+      feed('read:' + (id || '') + ':' + art.name, { kind: 'handoff', from: author.id, to: from, text: 'read ' + art.name });
       pulse({ kind: 'handoff', from: author.id, to: from, text: clip(art.name, 40) });
     }
   }
@@ -348,6 +415,8 @@ export function ingestMessages(net, messages) {
   if (!Array.isArray(messages)) return;
   let lastUser = -1;
   const callRow = new Map();
+  // Top-level delegations by the user row that started their turn.
+  const turnOf = new Map();
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
     if (!m) continue;
@@ -355,13 +424,20 @@ export function ingestMessages(net, messages) {
     if (m.role !== 'tool' || !m.toolCallId) continue;
     const name = toolName(m.name);
     if (name !== 'subagent' && !name.startsWith('subagent_')) continue;
-    if (m.phase === 'call') callRow.set(String(m.toolCallId), i);
+    if (m.phase === 'call') {
+      callRow.set(String(m.toolCallId), i);
+      if (name === 'subagent') turnOf.set(String(m.toolCallId), lastUser);
+    }
     const key = m.phase + ':' + m.toolCallId;
     if (net.seenRows.has(key)) continue;
     net.seenRows.add(key);
+    const ts = m.ts ? Date.parse(m.ts) : NaN;
+    net.ingestAt = Number.isFinite(ts) ? ts : 0;
     if (m.phase === 'call') noteToolCall(net, ROOT, { id: m.toolCallId, name, args: m.args }, false);
     else if (m.phase === 'result') noteToolResult(net, ROOT, { id: m.toolCallId, name, args: m.args, ok: m.ok, result: m.content }, false);
   }
+  net.ingestAt = 0;
+  noteLatestTurn(net, turnOf);
   if (lastUser < 0) return;
   const endedRoots = new Set();
   for (const [id, idx] of callRow) if (idx < lastUser) endedRoots.add(id);
@@ -371,7 +447,39 @@ export function ingestMessages(net, messages) {
   }
 }
 
-function topLevelAncestor(net, node) {
+// The latest turn that delegated, from row positions (paging older rows in
+// never changes which turn is the latest). A live turn still adding
+// delegations that are not persisted yet keeps its own.
+function noteLatestTurn(net, turnOf) {
+  if (!turnOf.size) return;
+  let latest = -Infinity;
+  for (const turn of turnOf.values()) latest = Math.max(latest, turn);
+  const roots = new Set();
+  for (const [id, turn] of turnOf) if (turn === latest) roots.add(id);
+  if (net.liveTurn && net.turnRoots.size) {
+    // Rows of the running turn may not be persisted yet: the persisted
+    // latest turn is then an older one, which the live turn replaces.
+    if (![...roots].some((id) => net.turnRoots.has(id))) roots.clear();
+    for (const id of net.turnRoots) roots.add(id);
+  }
+  const same = roots.size === net.turnRoots.size && [...roots].every((id) => net.turnRoots.has(id));
+  if (same) return;
+  net.turnRoots = roots;
+  net.version++;
+}
+
+// latestTurnFailed(net) — whether an agent of the latest turn that delegated
+// (at any depth) failed. Older turns no longer colour the head.
+export function latestTurnFailed(net) {
+  for (const node of net.nodes.values()) {
+    if (node.status !== 'failed') continue;
+    const top = topLevelAncestor(net, node);
+    if (top && net.turnRoots.has(top.id)) return true;
+  }
+  return false;
+}
+
+export function topLevelAncestor(net, node) {
   let cur = node;
   for (let guard = 0; cur && guard < 64; guard++) {
     if (!cur.parentId || cur.parentId === ROOT) return cur;
@@ -402,14 +510,11 @@ export function ingestStreamEvent(net, parentCallId, kind, data) {
     if (node.status === 'waiting') setStatus(net, node, 'running');
     return [];
   }
+  // A child writing or thinking is working, not sending anything: its ring
+  // already says so, so no pulse travels.
   if ((kind === 'message' || kind === 'reasoning') && owner !== ROOT) {
     const node = net.nodes.get(owner);
     if (node.status === 'waiting') setStatus(net, node, 'running');
-    const now = Date.now();
-    const last = net.lastStreamPulse.get(owner) || 0;
-    if (now - last < STREAM_PULSE_MS) return [];
-    net.lastStreamPulse.set(owner, now);
-    return [{ kind: 'stream', from: owner, to: node.parentId || ROOT, text: kind === 'reasoning' ? 'thinking' : 'writing' }];
   }
   return [];
 }
@@ -417,6 +522,7 @@ export function ingestStreamEvent(net, parentCallId, kind, data) {
 // settleRunning(net) — the parent turn ended: background children that never
 // reported back ended with it (handles do not outlive the turn).
 export function settleRunning(net) {
+  net.liveTurn = false;
   for (const node of net.nodes.values()) {
     if (node.id === ROOT || node.ghost) continue;
     if (node.status === 'running' || node.status === 'waiting') setStatus(net, node, 'ended');

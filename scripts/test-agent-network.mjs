@@ -6,12 +6,15 @@
 //      a settled run's nested chat) without animating anything.
 //   2. Live frames, nested to any depth, add the same nodes and return the
 //      pulses the dock animates: delegation down, messages to a child,
-//      answers back up, throttled "writing" pulses while a child streams.
+//      answers back up. A child that only streams text sends no pulse.
 //   3. Cooperative groups show declared members before they launch, their
 //      dependency edges, and swap the placeholder for the real run.
 //   4. Status only moves forward, except the soft "ended" a finished turn
 //      gives a delegation that never reported back.
 //   5. Re-ingesting the same rows is a no-op (it runs on every reconcile).
+//   6. Feed entries keep a growing seq past the cap, nested exchanges come
+//      before the answer, repeated polls add nothing, background answers
+//      reach the feed, and the head's failure state follows the latest turn.
 
 import assert from 'node:assert/strict';
 
@@ -23,7 +26,8 @@ const {
   layoutNetwork,
   agentCount,
   activeCount,
-  settleRunning
+  settleRunning,
+  latestTurnFailed
 } = await import('../frontend/src/components/chat/agentNetwork.js');
 
 let failed = 0;
@@ -91,10 +95,8 @@ check('live frames return pulses, nested envelopes unwrap to any depth', () => {
   // c1 messages g1
   pulses = ingestStreamEvent(net, 'c1', 'tool_call', { id: 's1', name: 'subagent_send', args: { callId: 'g1', message: 'hurry' } });
   assert.deepEqual(pulses.map((p) => [p.kind, p.from, p.to, p.text]), [['message', 'c1', 'g1', 'hurry']]);
-  // g1 streams text: one pulse, then throttled
+  // g1 streams text: it is working, not sending anything
   pulses = ingestStreamEvent(net, 'c1', 'subagent_event', { parentCallId: 'g1', kind: 'message', data: { delta: 'hi' } });
-  assert.deepEqual(pulses.map((p) => [p.kind, p.from, p.to]), [['stream', 'g1', 'c1']]);
-  pulses = ingestStreamEvent(net, 'c1', 'subagent_event', { parentCallId: 'g1', kind: 'message', data: { delta: ' there' } });
   assert.equal(pulses.length, 0);
   // g1 answers c1
   pulses = ingestStreamEvent(net, 'c1', 'tool_result', { id: 'g1', name: 'subagent', ok: true, result: { text: 'found it' } });
@@ -208,6 +210,88 @@ check('a subagent\'s shell commands never add agents', () => {
   ingestStreamEvent(net, null, 'subagent_event', { parentCallId: 'c1', kind: 'usage_update', data: { totalCost: 0.01 } });
   assert.equal(agentCount(net), 1);
   assert.deepEqual([...net.nodes.keys()], [ROOT, 'c1']);
+});
+
+check('feed seq keeps growing past the cap, so the dock can key rows by it', () => {
+  const net = createAgentNetwork();
+  ingestStreamEvent(net, null, 'tool_call', { id: 'c1', name: 'subagent', args: { task: 't', background: true } });
+  for (let i = 0; i < 90; i++) ingestStreamEvent(net, null, 'tool_call', { id: 's' + i, name: 'subagent_send', args: { callId: 'c1', message: 'm' + i } });
+  assert.equal(net.feed.length, 80);
+  assert.equal(net.feedSeq, 91);
+  assert.equal(net.feed[net.feed.length - 1].seq, 91);
+  assert.equal(new Set(net.feed.map((f) => f.seq)).size, 80);
+  assert.ok(net.feed.every((f) => f.live));
+});
+
+check('a long message keeps its full text next to the one-line clip', () => {
+  const net = createAgentNetwork();
+  const long = 'line one\n' + 'x'.repeat(400);
+  ingestStreamEvent(net, null, 'tool_call', { id: 'c1', name: 'subagent', args: { task: 't' } });
+  ingestStreamEvent(net, null, 'tool_result', { id: 'c1', name: 'subagent', ok: true, result: { text: long } });
+  const res = net.feed.find((f) => f.kind === 'result');
+  assert.ok(res.text.length <= 140 && res.text.endsWith('…'));
+  assert.equal(res.full, long);
+  assert.equal(net.nodes.get('c1').answer, long);
+});
+
+check('reopened chats list a run\'s nested exchanges before its answer', () => {
+  const net = createAgentNetwork();
+  ingestMessages(net, history);
+  const order = net.feed.map((f) => f.kind + ':' + f.from + '>' + f.to);
+  assert.equal(order[order.length - 1], 'result:c1>root', order);
+  assert.ok(order.indexOf('delegate:c1>g1') < order.indexOf('result:c1>root'));
+  assert.equal(net.nodes.get('c1').answer, 'Parser looks fine');
+});
+
+check('polling the same lines again does not repeat them', () => {
+  const net = createAgentNetwork();
+  ingestStreamEvent(net, null, 'tool_call', { id: 'b1', name: 'subagent', args: { task: 'bg', background: true } });
+  const lines = [{ cursor: 1, kind: 'text', text: 'one' }, { cursor: 2, kind: 'text', text: 'two' }];
+  let pulses = ingestStreamEvent(net, null, 'tool_result', { id: 'p1', name: 'subagent_messages', args: { callId: 'b1' }, ok: true, result: { callId: 'b1', state: 'running', lines } });
+  assert.equal(pulses.length, 1);
+  pulses = ingestStreamEvent(net, null, 'tool_result', { id: 'p2', name: 'subagent_messages', args: { callId: 'b1' }, ok: true, result: { callId: 'b1', state: 'running', lines: [...lines, { cursor: 3, kind: 'text', text: 'three' }] } });
+  const reports = net.feed.filter((f) => f.kind === 'report').map((f) => f.text);
+  assert.deepEqual(reports, ['one', 'two', 'three']);
+  assert.deepEqual(pulses.map((p) => p.text), ['1 line']);
+});
+
+check('a background answer from subagent_status reaches the feed once', () => {
+  const net = createAgentNetwork();
+  ingestStreamEvent(net, null, 'tool_call', { id: 'b1', name: 'subagent', args: { task: 'bg', background: true } });
+  ingestStreamEvent(net, null, 'tool_result', { id: 'b1', name: 'subagent', ok: true, result: { callId: 'b1', backgroundPending: true, state: 'running' } });
+  const status = { runs: [{ callId: 'b1', state: 'completed', ok: true, text: 'all good' }] };
+  const pulses = ingestStreamEvent(net, null, 'tool_result', { id: 'st1', name: 'subagent_status', ok: true, result: status });
+  ingestStreamEvent(net, null, 'tool_result', { id: 'st2', name: 'subagent_status', ok: true, result: status });
+  const results = net.feed.filter((f) => f.kind === 'result');
+  assert.equal(results.length, 1);
+  assert.equal(results[0].text, 'all good');
+  assert.deepEqual(pulses.map((p) => [p.kind, p.from, p.to]), [['result', 'b1', ROOT]]);
+  assert.equal(net.nodes.get('b1').answer, 'all good');
+});
+
+check('the head\'s failure state follows the latest turn that delegated', () => {
+  const fail = (id) => ({ role: 'tool', phase: 'result', toolCallId: id, name: 'subagent', ok: false, content: JSON.stringify({ error: { code: 'EFAIL', message: 'boom' } }) });
+  const okRow = (id) => ({ role: 'tool', phase: 'result', toolCallId: id, name: 'subagent', ok: true, content: JSON.stringify({ text: 'ok' }) });
+  const call = (id) => ({ role: 'tool', phase: 'call', toolCallId: id, name: 'subagent', args: { task: id } });
+  const net = createAgentNetwork();
+  const turn1 = [{ role: 'user', content: 'a' }, call('f1'), fail('f1')];
+  ingestMessages(net, turn1);
+  assert.equal(latestTurnFailed(net), true);
+  ingestMessages(net, [...turn1, { role: 'user', content: 'b' }, call('k1'), okRow('k1')]);
+  assert.equal(latestTurnFailed(net), false, 'an older failure no longer counts');
+  // A live turn replaces the persisted one before its rows are saved.
+  ingestStreamEvent(net, null, 'tool_call', { id: 'l1', name: 'subagent', args: { task: 'live' } });
+  ingestStreamEvent(net, null, 'tool_result', { id: 'l1', name: 'subagent', ok: false, result: { error: { code: 'EFAIL' } } });
+  assert.equal(latestTurnFailed(net), true);
+  settleRunning(net);
+  assert.equal(latestTurnFailed(net), true);
+});
+
+check('persisted messages keep their row time and do not count as live', () => {
+  const net = createAgentNetwork();
+  ingestMessages(net, [{ role: 'tool', phase: 'call', seq: 42, ts: '2026-11-13T10:00:00Z', toolCallId: 'c1', name: 'subagent', args: { task: 't' } }]);
+  assert.equal(net.feed[0].at, Date.parse('2026-11-13T10:00:00Z'));
+  assert.equal(net.feed[0].live, false);
 });
 
 console.log(passed + ' checks, ' + failed + ' failed');

@@ -1,7 +1,7 @@
 // The run list's jump (frontend/src/components/chat/jumpToRun.js): load older
 // pages until the run's row exists, then scroll to it.
 import assert from 'node:assert/strict';
-import { findRowBySeq, jumpToSeq } from '../frontend/src/components/chat/jumpToRun.js';
+import { findRowBySeq, findToolCard, jumpToSeq } from '../frontend/src/components/chat/jumpToRun.js';
 
 // A transcript with rows by seq; loadOlder reveals the next ten older seqs.
 function transcript(visibleFrom, oldest = 0) {
@@ -62,4 +62,12 @@ ok = await jumpToSeq({ root: { querySelector: () => null }, seq: 5, hasMore: () 
   scrollTo() {}, wait: async () => { time += 5000; }, now: () => time, timeoutMs: 20000 });
 assert.equal(ok, false);
 
-console.log('jump to run: found on screen, loads older pages, stops at the row, gives up cleanly passed');
+// A custom finder (the agent dock's tool card by call id) pages the same way.
+t = transcript(90);
+let found = null;
+ok = await jumpToSeq({ ...options(t), find: () => (t.rows.has(40) ? { seq: 'card' } : null), flash: (el) => { found = el; } });
+assert.deepEqual([ok, found && found.seq, landed.at(-1)], [true, 'card', 'card']);
+assert.equal(findToolCard(null, 'x'), null);
+assert.equal(findToolCard({ querySelector: (sel) => sel }, 'c1'), '.tool-card[data-tool-id="c1"]');
+
+console.log('jump to run: found on screen, loads older pages, stops at the row, gives up cleanly, custom finder passed');

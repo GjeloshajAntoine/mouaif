@@ -22,10 +22,10 @@
   padding-inline: 14px;
   box-sizing: border-box;
 }
-.agent-net .agent-net__latest {
-  min-width: 0;
-  animation: agent-net-arrive 420ms var(--ease-out);
-}
+.agent-net .agent-net__latest { min-width: 0; }
+.agent-net .agent-net__latest.is-arriving { animation: agent-net-arrive 420ms var(--ease-out); }
+/* "3/4 active" stays on one line next to the latest message. */
+.agent-net .tool-card__result-summary { white-space: nowrap; }
 .agent-net .agent-net__latest--result,
 .agent-net .agent-net__latest--report { color: color-mix(in srgb, var(--success) 70%, var(--muted)); }
 .agent-net .agent-net__latest--error,
@@ -148,11 +148,6 @@
   stroke-dasharray: 4 4;
   opacity: 0.75;
 }
-.agent-net__edge.is-running {
-  stroke: color-mix(in srgb, var(--agent-running) 55%, var(--border-strong));
-  stroke-dasharray: 6 6;
-  animation: agent-net-flow 1.1s linear infinite;
-}
 .agent-net__edge.is-live {
   stroke: var(--accent-hi);
   stroke-width: 2.5;
@@ -160,7 +155,13 @@
 .agent-net__arrow { fill: var(--agent-waiting); }
 
 /* Nodes */
-.agent-net__node { cursor: pointer; outline: none; }
+.agent-net__node {
+  cursor: pointer;
+  outline: none;
+  /* Boxes glide to their new place when an agent joins. */
+  transition: transform 260ms var(--ease-out);
+}
+.agent-net__node.is-new { animation: agent-net-node-in 240ms var(--ease-out); }
 .agent-net__node--root { cursor: default; }
 .agent-net__box {
   fill: var(--surface-2);
@@ -208,7 +209,8 @@
 }
 .agent-net__node--failed .agent-net__sub { fill: var(--agent-failed); }
 
-/* Pulses: a dot travelling along the edge between sender and receiver. */
+/* Pulses: a dot travelling along the edge between sender and receiver.
+   Only real messages travel; a child that is writing just spins its ring. */
 .agent-net__pulse { pointer-events: none; }
 .agent-net__pulse-track { fill: none; stroke: none; }
 .agent-net__pulse-dot { fill: var(--accent-hi); }
@@ -227,8 +229,6 @@
 .agent-net__pulse--error .agent-net__pulse-halo,
 .agent-net__pulse--conflict .agent-net__pulse-halo,
 .agent-net__pulse--stop .agent-net__pulse-halo { fill: var(--danger-soft); }
-.agent-net__pulse--stream .agent-net__pulse-dot { fill: var(--accent); opacity: 0.7; }
-.agent-net__pulse--stream .agent-net__pulse-halo { opacity: 0.5; }
 
 /* Selected agent */
 .agent-net__detail {
@@ -269,16 +269,44 @@
   cursor: pointer;
 }
 .agent-net__link:hover { border-color: var(--accent); }
+.agent-net__link:disabled { opacity: 0.6; cursor: progress; }
+.agent-net__close {
+  display: inline-grid;
+  place-items: center;
+  width: var(--tap-xs);
+  height: var(--tap-xs);
+  margin: -4px -6px -4px 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.agent-net__close:hover { color: var(--fg); background: var(--surface-3); }
+.agent-net__section { margin-top: 8px; }
+.agent-net__section-title {
+  color: var(--muted);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.agent-net__note { margin: 6px 0 0; color: var(--muted); font-size: 11.5px; }
 .agent-net__task,
 .agent-net__meta-line {
-  margin: 6px 0 0;
+  margin: 3px 0 0;
   color: var(--fg-soft);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   max-height: 7.5em;
   overflow: auto;
 }
-.agent-net__meta-line { color: var(--muted); font-size: 11.5px; }
+.agent-net__meta-line { margin-top: 6px; color: var(--muted); font-size: 11.5px; }
+.agent-net__answer { max-height: 12em; }
+.agent-net__answer--error { color: var(--danger); }
 
 /* Message feed: newest first. */
 .agent-net__feed { margin-top: 8px; text-align: left; }
@@ -292,6 +320,18 @@
   color: var(--muted);
   font-weight: 400;
 }
+.agent-net__all {
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 400;
+  cursor: pointer;
+}
+.agent-net__all:hover { text-decoration: underline; }
 .agent-net__feed-list {
   list-style: none;
   margin: 6px 0 0;
@@ -310,7 +350,7 @@
   background: color-mix(in srgb, var(--surface-2) 60%, transparent);
   font-size: 12px;
 }
-.agent-net__msg:first-child { animation: agent-net-arrive 420ms var(--ease-out); }
+.agent-net__msg.is-arriving { animation: agent-net-arrive 420ms var(--ease-out); }
 .agent-net__msg--delegate,
 .agent-net__msg--message { border-left-color: var(--accent); }
 .agent-net__msg--result,
@@ -336,12 +376,39 @@
   cursor: pointer;
 }
 .agent-net__who:hover { color: var(--accent-hi); text-decoration: underline; }
+.agent-net__who[aria-pressed="true"] { color: var(--accent-hi); }
+.agent-net__who--plain { cursor: default; }
+.agent-net__who--plain:hover { color: var(--fg); text-decoration: none; }
 .agent-net__msg-arrow { color: var(--muted); }
+.agent-net__msg-time {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
 .agent-net__msg-text {
   flex-basis: 100%;
   color: var(--fg-soft);
   overflow-wrap: anywhere;
 }
+/* A clipped message: tap the text to read all of it. */
+.agent-net__msg-more {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.agent-net__msg-more:not(.is-open)::after {
+  content: ' more';
+  color: var(--accent);
+  font-size: 11px;
+}
+.agent-net__msg-more.is-open { white-space: pre-wrap; }
+.agent-net__msg-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* "Show in chat" landing highlight on the card. */
 .is-agent-flash {
@@ -349,6 +416,7 @@
 }
 
 @keyframes agent-net-flow { to { stroke-dashoffset: -36; } }
+@keyframes agent-net-node-in { from { opacity: 0; } }
 @keyframes agent-net-open { from { opacity: 0; transform: translateY(6px); } }
 @keyframes agent-net-blink { 50% { opacity: 0.2; } }
 @keyframes agent-net-arrive {

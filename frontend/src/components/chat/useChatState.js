@@ -26,7 +26,7 @@ import {
 renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender, reconcileTranscript
 } from './transcript.js';
 import { buildToolsCard, toggleTool, toggleToolGroup, toggleAgentFiles, toggleSkills, toggleSkill } from './cards.js';
-import { jumpToSeq as jumpToSeqRow, flashRow } from './jumpToRun.js';
+import { jumpToSeq as jumpToSeqRow, flashRow, findToolCard } from './jumpToRun.js';
 import { scrollTranscriptToBottom, scrollToAdjacentMessage, scrollToTranscriptRow, noteTranscriptScrollTop, noteTranscriptScroll, isNearBottom, updateJumpButton, syncNavScrollbarLane, afterTranscriptAppend, pinTranscriptAfterSettle, cancelTranscriptPin, isTranscriptPinScroll, trackUserScrollIntent } from './scroll.js';
 import { updateUsageSummary, refreshProviderCredit, updateProviderCredit, setChatStatus } from './usage.js';
 import {
@@ -1680,6 +1680,16 @@ onComposerInput(refs, projectDir, chatId, updateChatBound);
       loadOlder: () => loadOlderMessages(state, refs, session.current.pager),
       scrollTo: (row) => scrollToTranscriptRow(refs, row),
       flash: flashRow
+    }),
+    // Same, for a top-level tool card by call id (the agent dock's "Show in
+    // chat" when the card is on an older page). `flash` highlights the card.
+    jumpToToolCard: (callId, flash) => jumpToSeqRow({
+      root: refs.transcript.current,
+      find: (root) => findToolCard(root, callId),
+      hasMore: () => { const pager = session.current.pager; return !!pager && pager.hasMore && pager.beforeSeq !== null; },
+      loadOlder: () => loadOlderMessages(state, refs, session.current.pager),
+      scrollTo: (row) => scrollToTranscriptRow(refs, row),
+      flash
     }),
     onJumpToBottom: () => scrollTranscriptToBottom(refs),
     onJumpToPrevMessage: () => scrollToAdjacentMessage(refs, -1),

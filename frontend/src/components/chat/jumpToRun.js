@@ -13,18 +13,29 @@ export function findRowBySeq(root, seq) {
   return root.querySelector('[data-seq="' + Math.trunc(seq) + '"]');
 }
 
-// jumpToSeq({ root, seq, hasMore, loadOlder, scrollTo, flash, wait, now, timeoutMs }) -> Promise<boolean>
+// findToolCard(root, callId) -> Element | null — a top-level tool card.
+export function findToolCard(root, callId) {
+  if (!root || typeof root.querySelector !== 'function' || !callId) return null;
+  const id = String(callId);
+  const esc = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(id) : id.replace(/["\\]/g, '\\$&');
+  return root.querySelector('.tool-card[data-tool-id="' + esc + '"]');
+}
+
+// jumpToSeq({ root, seq, find, hasMore, loadOlder, scrollTo, flash, wait, now, timeoutMs }) -> Promise<boolean>
 //
+//   find(root)  optional: the element to land on, in place of the row with
+//               `seq` (the agent dock looks for a tool card by call id)
 //   hasMore()   whether an older page still exists
 //   loadOlder() fetches and prepends one older page; resolves false when nothing
 //               was inserted (also while the background drain holds the page latch)
 // Resolves true once the row was found and scrolled to, false if it never
 // appeared (deleted, or the wait ran out).
-export async function jumpToSeq({ root, seq, hasMore, loadOlder, scrollTo, flash, wait, now = Date.now, timeoutMs = DEFAULT_TIMEOUT_MS }) {
+export async function jumpToSeq({ root, seq, find, hasMore, loadOlder, scrollTo, flash, wait, now = Date.now, timeoutMs = DEFAULT_TIMEOUT_MS }) {
   const sleep = wait || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   const deadline = now() + timeoutMs;
+  const locate = find || ((r) => findRowBySeq(r, seq));
   for (;;) {
-    const row = findRowBySeq(root, seq);
+    const row = locate(root);
     if (row) {
       scrollTo(row);
       if (flash) flash(row);
@@ -34,7 +45,7 @@ export async function jumpToSeq({ root, seq, hasMore, loadOlder, scrollTo, flash
     if (!hasMore()) {
       // Rows can still be arriving from the background drain.
       await sleep(BUSY_WAIT_MS);
-      if (!findRowBySeq(root, seq) && !hasMore()) return false;
+      if (!locate(root) && !hasMore()) return false;
       continue;
     }
     const inserted = await loadOlder();
