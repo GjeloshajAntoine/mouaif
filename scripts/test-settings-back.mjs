@@ -136,7 +136,6 @@ function harness(globals) {
     Fragment: 'fragment', ToolTree: 'tree', McpAuthSeg: 'seg', ToolAuthSeg: 'seg',
     TOOL_MODE_CHOICES: [], ASK_USER_MODE_CHOICES: [], segMode: (m) => m,
     AgentFilePicker: 'picker', WebpreviewModal: 'modal', PreviewUrlPrompt: 'prompt',
-    SubagentModelDefaults: 'subagent-defaults',
     projectsReload: { value: 0 }, getProjectStorage() {}, setProjectStorage() {}, requestWebpreview() {},
     sectionIcon: () => null, toolModeSegs: () => [], shortDesc: () => '',
     fetchJson: async () => ({ status: 200, body: {} })

@@ -1045,10 +1045,6 @@ padding-right: 10px;
   flex-direction: column;
   gap: 6px;
 }
-.tool-card--authorization .auth-model-picker .thinking-select-field {
-  width: 100%;
-  min-height: var(--tap);
-}
 
 /* ---- Web preview tool result ----------------------------------------- */
 /* The screenshot itself lives in the fixed preview dock above the composer.

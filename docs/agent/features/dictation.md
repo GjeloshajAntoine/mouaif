@@ -78,7 +78,9 @@
 - `frontend/src/components/ModelPickerField.jsx` — the shared picker, which
   takes an optional `recommended` list of rows to show above Pinned/Recent, and
   already owned the `pinned`/`onTogglePin`/`recent` props. The chat head and the
-  dictation page are the same control with different props.
+  dictation page are the same control with different props: the page renders
+  `variant: 'chat'` inside the shared `.model-row` (chat-view.css), so its
+  trigger looks like the chat head's.
 - `frontend/src/components/DictationPage.jsx` — the Dictation page
   (`#/settings/dictation`; `#/dictation` is the legacy alias), reached from
   Settings → App defaults, and `frontend/src/components/chat/MicButton.jsx` — the

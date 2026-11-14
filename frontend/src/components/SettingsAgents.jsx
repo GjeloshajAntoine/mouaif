@@ -19,6 +19,7 @@ import { ToolTree, buildAgentToolGroups } from './ToolTree.jsx';
 import { TOOL_GROUPS } from '../toolGroups.js';
 import { ModelPickerField } from './ModelPickerField.jsx';
 import { ThinkingSelectField } from './ThinkingSelectField.jsx';
+import { loadPinned, loadRecent, loadRecentFromServer, touchRecent, togglePin } from './chat/modelPicker.js';
 import './settings/agents.css';
 
 function resolveProjectDir(view) {
@@ -179,7 +180,7 @@ export function SettingsAgentsView(props) {
             h('div', { class: 'prompt-row__meta' }, 'Used when the subagent tool is called without an agent'),
             h('div', { class: 'prompt-row__meta' }, defaultAgent && defaultAgent.modelId
             ? 'Runs on: ' + (providerLabel(defaultAgent.providerId) || 'project model') + ' / ' + defaultAgent.modelId
-            : 'Follows chat / project subagent defaults, then the chat model'),
+            : 'Uses the chat model'),
             h('div', { class: 'prompt-row__chev' }, '›')
           )
         )
@@ -191,7 +192,7 @@ export function SettingsAgentsView(props) {
             ? a.tools.length + (a.tools.length === 1 ? ' tool' : ' tools')
             : 'all tools');
           bits.push(a.modelId ? 'Runs on: ' + (providerLabel(a.providerId) || 'project model') + ' / ' + a.modelId
-          : 'Follows chat / project subagent defaults, then the chat model');
+          : 'Uses the chat model');
           const snippet = (a.content || '').trim().replace(/\s+/g, ' ');
           if (snippet) bits.push(snippet.length > 48 ? snippet.slice(0, 48) + '…' : snippet);
           return h('li', { key: a.name, class: 'prompt-row' },
@@ -214,6 +215,35 @@ export function SettingsAgentsView(props) {
   );
 }
 
+// liveModelUnion(saved, providers, force) -> model rows
+//
+// Reads both the chat slice and the image slice of every provider's
+// catalog and unions them with the project's saved models: an image-only
+// model (OpenRouter's /images/models rows, a Gemini Imagen model) is never
+// in the chat slice, so a pinned agent could not select one. A provider
+// without a separate image slice returns its chat list, so asking everywhere
+// is safe; the union de-dupes on provider + id. `force` bypasses the cache
+// (the picker's refresh button).
+async function liveModelUnion(saved, providers, force = false) {
+  const live = await Promise.all(providers.map((provider) =>
+    Promise.all(['', 'image'].map((purpose) => fetchLiveModels(provider, { force, purpose })
+      .then((result) => result.models || [])
+      .catch(() => [])))
+      .then((groups) => ({ provider, models: groups.flat() }))));
+  const union = new Map();
+  for (const m of saved) {
+    if (m && m.id && m.provider) union.set(m.provider + '\u0000' + m.id, m);
+  }
+  for (const group of live) {
+    for (const m of group.models) {
+      if (!m || !m.id) continue;
+      const key = group.provider + '\u0000' + m.id;
+      if (!union.has(key)) union.set(key, Object.assign({}, m, { provider: group.provider }));
+    }
+  }
+  return Array.from(union.values());
+}
+
 export function SettingsAgentEditView(props) {
   // `edit=1` disambiguates an existing agent literally named "new".
   const isNew = props.isNew ?? (props.id === 'new');
@@ -232,6 +262,12 @@ export function SettingsAgentEditView(props) {
   const mutationBusy = useRef(false);
   const [projectModels, setProjectModels] = useState([]);
   const [modelProviders, setModelProviders] = useState([]);
+  const savedModels = useRef([]);
+  // Pinned / Recent bookmarks are app-wide, the same lists the chat's
+  // model picker shows.
+  const bookmarks = useRef({ recentModels: [] });
+  const [pinned, setPinned] = useState(() => loadPinned());
+  const [recent, setRecent] = useState(() => loadRecent(bookmarks.current));
   const [mcpServers, setMcpServers] = useState([]);
   // Tool catalog from GET /api/tools/list — supplies each native tool's
   // description so the Tools tree matches the chat view.
@@ -288,37 +324,9 @@ export function SettingsAgentEditView(props) {
         // agent editor's tool rows read the same as the chat tools card
         // and the project Tools section.
         if (tr.status === 200 && Array.isArray(tr.body.tools)) setToolsCatalog(tr.body.tools);
-        // Read both the chat slice and the image slice of every provider's
-        // catalog and union them: an image-only model (OpenRouter's
-        // /images/models rows, a Gemini Imagen model) is never in the chat
-        // slice, so a pinned agent could not select one. A provider without a
-        // separate image slice returns its chat list, so asking everywhere is
-        // safe; the union de-dupes on provider + id.
-        const live = (await Promise.all(providers.map((provider) =>
-        Promise.all([
-        fetchLiveModels(provider)
-        .then((result) => ({ provider, models: result.models || [] }))
-        .catch(() => ({ provider, models: [] })),
-        fetchLiveModels(provider, { purpose: 'image' })
-        .then((result) => ({ provider, models: result.models || [] }))
-        .catch(() => ({ provider, models: [] }))
-        ]).then((groups) => ({
-        provider,
-        models: groups.flatMap((g) => g.models)
-        }))
-        )));
-        const union = new Map();
-        for (const m of saved) {
-          if (m && m.id && m.provider) union.set(m.provider + '\u0000' + m.id, m);
-        }
-        for (const group of live) {
-          for (const m of group.models) {
-            if (!m || !m.id) continue;
-            const key = group.provider + '\u0000' + m.id;
-            if (!union.has(key)) union.set(key, Object.assign({}, m, { provider: group.provider }));
-          }
-        }
-        if (!cancelled) setProjectModels(Array.from(union.values()));
+        savedModels.current = saved;
+        const union = await liveModelUnion(saved, providers);
+        if (!cancelled) setProjectModels(union);
       } catch { /* the form remains usable without catalog data */ }
     }
     loadCatalogs();
@@ -380,6 +388,11 @@ export function SettingsAgentEditView(props) {
   function onModelChange(sel) {
     const modelId = (sel && sel.modelId) || '';
     const providerId = (sel && sel.providerId) || '';
+    // A real pick goes to Recent, as it does in the chat's picker.
+    if (modelId && providerId) {
+      touchRecent(bookmarks.current, providerId, modelId);
+      setRecent(loadRecent(bookmarks.current));
+    }
     setAgent(a => Object.assign({}, a, {
       modelId: modelId || undefined,
       providerId: providerId || undefined
@@ -503,7 +516,7 @@ catalog: toolsCatalog
     ),
     h('section', { class: 'agent-editor' },
       h('p', { class: 'hint hint--compact' }, h('code', null, projectDir)),
-      isDefault && h('p', { class: 'hint hint--compact' }, 'Used when the subagent tool (or the model) delegates without naming an agent. Every field is optional; empty model fields follow chat / project subagent defaults, then the chat model.'),
+      isDefault && h('p', { class: 'hint hint--compact' }, 'Used when the subagent tool (or the model) delegates without naming an agent. Every field is optional; an empty model uses the chat model.'),
       h('fieldset', { class: 'agent-editor__fields', disabled: isCreating || isDeleting },
         !isDefault && h('div', { class: 'row' },
           h('label', { class: 'label', for: 'sae-name' }, 'Name'),
@@ -528,36 +541,53 @@ catalog: toolsCatalog
         ),
         h('div', { class: 'row' },
           h('span', { class: 'label' }, 'Model'),
-          h(ModelPickerField, {
-            models: projectModels,
-            value: agent.modelId
-              ? {
-                providerId: agent.providerId || (projectModels.find(m => m.id === agent.modelId) || {}).provider || '',
-                modelId: agent.modelId
-              }
-              : null,
-            variant: 'sheet',
-            extraProviders: modelProviders,
-            allowClear: true,
-            clearLabel: 'Follow chat / project subagent defaults',
-            placeholder: 'Pick a model',
-            disabled: isCreating || isDeleting,
-            ariaLabel: 'Model for this agent',
-            onChange: onModelChange
-          }),
-          h('p', { class: 'hint hint--compact' }, 'No pin: this chat’s subagent default → project subagent default → the chat model. A one-run approval pick wins over every default.')
+          // Same controls as the chat bar: the compact model picker (with
+          // Pinned, Recent, pin stars and refresh) and the thinking select
+          // on one line.
+          h('div', { class: 'model-row' },
+            h(ModelPickerField, {
+              models: projectModels,
+              value: agent.modelId
+                ? {
+                  providerId: agent.providerId || (projectModels.find(m => m.id === agent.modelId) || {}).provider || '',
+                  modelId: agent.modelId
+                }
+                : null,
+              variant: 'chat',
+              extraProviders: modelProviders,
+              pinned,
+              recent,
+              onTogglePin: (m) => {
+                togglePin(m.provider, m.id);
+                setPinned(loadPinned());
+                setRecent(loadRecent(bookmarks.current));
+              },
+              onOpen: () => {
+                loadRecentFromServer(bookmarks.current).then((fresh) => {
+                  if (fresh) setRecent(loadRecent(bookmarks.current));
+                });
+              },
+              refresh: async () => {
+                setProjectModels(await liveModelUnion(savedModels.current, modelProviders, true));
+              },
+              refreshEmpty: 'Refresh models',
+              allowClear: true,
+              clearLabel: 'Same as the chat model',
+              disabled: isCreating || isDeleting,
+              ariaLabel: 'Model for this agent',
+              onChange: onModelChange
+            }),
+            h(ThinkingSelectField, {
+              class: 'chat-view__thinking-select',
+              value: agent.thinkingLevel || '',
+              descriptor: (projectModels.find(m => m.id === agent.modelId && (!agent.providerId || m.provider === agent.providerId)) || {}).thinking,
+              inheritLabel: 'Chat thinking',
+              disabled: isCreating || isDeleting,
+              ariaLabel: 'Thinking level for this agent',
+              onChange: onThinkingLevelChange
+            })
           ),
-        h('div', { class: 'row' },
-          h('span', { class: 'label' }, 'Thinking'),
-          h(ThinkingSelectField, {
-            value: agent.thinkingLevel || '',
-            descriptor: (projectModels.find(m => m.id === agent.modelId && (!agent.providerId || m.provider === agent.providerId)) || {}).thinking,
-            inheritLabel: 'Inherit chat thinking',
-            disabled: isCreating || isDeleting,
-            ariaLabel: 'Thinking level for this agent',
-            onChange: onThinkingLevelChange
-          }),
-          h('p', { class: 'hint hint--compact' }, 'How much reasoning this agent does before answering. "Inherit chat thinking" follows the chat\'s current model.')
+          h('p', { class: 'hint hint--compact' }, 'Empty uses the chat’s model and thinking. A pick on the approval card applies to one run only.')
         ),
         h('div', { class: 'row' },
           h('span', { class: 'label' }, 'Tools'),

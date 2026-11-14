@@ -231,6 +231,7 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
         h('div', { class: 'group__title settings-project__section-title' }, 'Review model'),
         h('ul', { class: 'group__list' },
         h('li', { class: 'settings-project__item settings-project__item--col' },
+        h('div', { class: 'model-row' },
         h(ModelPickerField, {
         models, extraProviders: providers, variant: 'chat',
         pinned, recent, onOpen: refreshRecent,
@@ -254,13 +255,10 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
           setNote(stateFor(next));
           write(next);
         }
-        })
-        ),
-        h('li', { class: 'settings-project__item settings-project__item--col' },
-        h('label', { class: 'settings-project__item-title', for: 'sr-thinking' }, 'Thinking / reasoning'),
+        }),
         h(ThinkingSelectField, {
         id: 'sr-thinking',
-        class: 'settings-project__select',
+        class: 'chat-view__thinking-select',
           value: config ? config.thinkingLevel : '',
           descriptor: models.find(model => config && model.id === config.modelId && model.provider === config.providerId)?.thinking,
           inheritLabel: 'Model default',
@@ -272,6 +270,7 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
             write(next);
           }
         })
+        )
         )
         )
       ),

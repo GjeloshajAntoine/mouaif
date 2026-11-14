@@ -48,7 +48,11 @@ if (alive && refreshed) setRecent(loadRecent(bookmarks));
 return () => { alive = false; };
 }, [bookmarks]);
 function onModelChange(next) {
-const nextValue = next;
+// Picking the default's own row is the same as "Use default": keep no
+// override, so the clear row stays the one marked as chosen.
+const isDefault = next && initialValue && next.modelId === initialValue.modelId
+  && (next.providerId || '') === (initialValue.providerId || '');
+const nextValue = isDefault ? null : next;
 setValue(nextValue);
 // Record recency for a real pick (mirrors the chat top bar), so the
 // authored model surfaces under Recent next time the picker opens.
@@ -89,10 +93,13 @@ h('p', { class: 'hint hint--compact', 'aria-live': 'polite' },
   !value && modelError ? 'Default unavailable: ' + modelError + '. Choose a model for this run.'
   : 'Runs on ' + identity(effective) + (differs ? ' instead of ' + identity(chatValue) : '')
     + ' (' + (value ? 'this run only' : modelSource || 'chat model') + ').'),
+h('div', { class: 'model-row' },
 h(ModelPickerField, {
 models,
-value: effective,
-variant: 'sheet',
+// Only a one-run pick is a selection. With none, the "Use default" row is
+// the chosen one, rather than the default model's row in the list.
+value,
+variant: 'chat',
 allowClear: true,
 clearLabel,
 ariaLabel: 'Model for this subagent run',
@@ -103,11 +110,13 @@ onOpen: refreshRecent,
 onChange: onModelChange
 }),
 h(ThinkingSelectField, {
+class: 'chat-view__thinking-select',
 value: thinking,
 descriptor: pickedModel && pickedModel.thinking,
 inheritLabel: 'Inherit chat thinking',
 ariaLabel: 'Thinking level for this subagent run',
 onChange: onThinkingChange
 })
+)
 );
 }

@@ -11,7 +11,7 @@
 //   - the chat top bar (pinned/recent sections, sheet variant,
 //     max-output slot, iOS keyboard + scroll handling)
 //   - the subagent authorization card (project + live catalog union)
-//   - the Settings → Project → Agents editor and subagent defaults (project + live catalogs)
+//   - the Settings → Project → Agents editor (project + live catalogs)
 //
 // It is self-contained: no dependency on the chat state hook or the
 // imperative chat picker module. Bookmark state (pinned/recent) is
@@ -504,7 +504,7 @@ h('span', { class: 'mp__clear-id' }, clearLabel)
           h('p', { class: 'mp__empty-title' }, hasQuery ? 'No matches' : (list.length ? 'No models for this provider' : (hasRows ? 'No other models' : 'No models yet'))),
           h('p', { class: 'mp__empty-text' }, hasQuery
             ? 'No model matches "' + q + '". Try a shorter query or clear the search.'
-            : refreshEmpty),
+            : (refresh ? refreshEmpty : (list.length ? '' : 'Connect a provider in Settings to list its models.'))),
           h('div', { class: 'mp__empty-actions' },
             refresh ? h('button', {
               type: 'button',

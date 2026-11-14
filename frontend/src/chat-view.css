@@ -897,6 +897,24 @@ max-width: 200px;
   white-space: nowrap;
 }
 
+/* Model + thinking on one line, the same compact pair as the chat bar
+   (.chat-view__model-row), for every picker outside the chat head: the
+   agent editor, the subagent approval card, Shell review and Dictation.
+   The picker takes the free width; a thinking select beside it keeps the
+   chat's 110px cap (.chat-view__thinking-select). */
+.model-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+}
+.model-row > .mp--chat {
+  flex: 1 1 0;
+  max-width: none;
+}
+
 /* Keep agent-editor and subagent-authorization triggers visually in
 sync with chat: one line, no provider subline, and the same active
 border/fill. */

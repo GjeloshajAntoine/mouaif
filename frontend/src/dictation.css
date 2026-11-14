@@ -54,21 +54,6 @@
 }
 .dictation__model-card .hint { margin: 0; }
 .dictation__provider-link { align-self: flex-start; }
-.dictation__model-card .mp__trigger {
-  min-height: var(--tap);
-  padding: 0.5rem 0.75rem;
-}
-.dictation__model-card .mp__trigger .mp__stack {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.25rem;
-}
-.dictation__model-card .mp__trigger .mp__id { font-size: 1rem; }
-.dictation__model-card .mp__trigger .mp__provider {
-  display: block;
-  color: var(--fg-soft);
-  font-size: 0.75rem;
-}
 
 /* ---- Recorder ------------------------------------------------------- */
 

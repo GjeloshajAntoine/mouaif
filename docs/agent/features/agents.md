@@ -4,7 +4,7 @@
 
 ## Overview
 
-Named and default agents share a provider-qualified model picker. Unpinned runs can opt into chat/project model defaults; approval cards describe the server-resolved choice without implicitly overriding it.
+Named and default agents share a provider-qualified model picker; Project settings has none (`SubagentModelDefaults` was removed). Chat/project subagent defaults remain server-side (project file, `update_chat`). Approval cards describe the server-resolved choice without implicitly overriding it; their picker marks **Use default** as chosen until a one-run pick differs from the default.
 
 ## Usage
 
@@ -32,7 +32,7 @@ The mobile agent editor sheet reserves the top safe area at its fixed overlay so
 
 - Storage: `.mouaif.json` under `agents` as `{ name, content, tools?, modelId?, providerId?, thinkingLevel?, createdAt, updatedAt }`. The legacy `agentPresets` key is read as a one-release fallback (its `id` becomes `name`; extra fields like `title`/`promptSize`/`agentFiles` are dropped, `modelId` is kept) and removed on first write.
 - `agents.resolveSubagentModel()` resolves only the winning identity: approval → selected agent pin (defaultAgent only for an unnamed call) → chat subagent default → resolved project subagent default → hydrated chat model. `subagentModelForCall()` supplies the stored agent/chat/resolved settings for both approval display and dispatch. Invalid winners retain typed errors; an override skips invalid lower-priority model pins but not an unknown agent persona.
-- `SubagentModelDefaults.jsx` reuses `ModelPickerField`, loads both catalog purposes across configured providers, and never saves on mount. `AuthModelPicker.jsx` keeps the display default separate from its nullable override, including thinking-only edits. The card continues working with an empty catalog or a ghost pin.
+- `AuthModelPicker.jsx` keeps the display default separate from its nullable override, including thinking-only edits. The card continues working with an empty catalog or a ghost pin.
 - The model pin resolves at dispatch time: `agents.resolveModel()` first finds a matching project model by provider + id, then accepts a provider-qualified live-catalog identity. The subagent dispatcher hydrates either with the app-level provider connection; credentials never come from the project file.
 - The thinking override resolves in the subagent dispatcher (`src/ai-stream.js`): the authorization card's per-run value wins, then the agent's `thinkingLevel`, then the chat's inherited value. An empty string clears the inherited level so "No thinking" is honoured explicitly.
 - Direct invocation (`POST /api/tools/subagent`) reuses the model loop's single-call runner `ai.runSingleToolCall()` — circuit breaker, authorization gate, and dispatcher are shared, so behavior matches a model-initiated call exactly. The chat's current model (and its `thinkingLevel`) is the default when the agent has no pin and no explicit `modelId` is passed.

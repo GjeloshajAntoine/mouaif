@@ -671,7 +671,7 @@ function onPickModel(next) {
       h('div', { class: 'dictation__card dictation__model-card' },
       h('div', { class: 'dictation__fields' },
         h('div', { class: 'dictation__field' },
-          h(ModelPickerField, {
+          h('div', { class: 'model-row' }, h(ModelPickerField, {
             models: pickerList,
             value: selection,
             onChange: onPickModel,
@@ -687,13 +687,12 @@ function onPickModel(next) {
             pinned,
             onTogglePin,
             recent,
-            // 'sheet' rather than 'dropdown': on a phone the dropdown popup
-            // renders in flow and covers the transcript directly beneath it,
-            // while the sheet variant uses the same mobile viewport modal the
-            // chat head's picker does (and the same desktop card).
-            variant: 'sheet',
+            // The chat head's picker: its compact trigger and the same mobile
+            // viewport modal (a dropdown would render in flow and cover the
+            // transcript directly beneath it on a phone).
+            variant: 'chat',
             refreshEmpty: 'No dictation models'
-          })
+          }))
         ),
         // Read-only. The shape a transcription will use is not a user choice: it
         // follows from the model's provider connection (Gemini speaks

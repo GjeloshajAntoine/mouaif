@@ -338,10 +338,15 @@ font-size: 0.78rem;
 
 .settings-project .group { margin-top: 8px; }
 .settings-project .group__list { background: var(--surface); border: 1px solid var(--border); }
-.settings-project .group .input { background: var(--surface-2); border: 1px solid var(--border-strong); }
-.settings-project .group .input:focus { background: var(--surface-3); border-color: var(--accent); box-shadow: none; }
+/* background-color, not the `background` shorthand: the shorthand also reset
+   background-image and stripped the caret from every select in these cards. */
+.settings-project .group .input { background-color: var(--surface-2); border: 1px solid var(--border-strong); }
+/* The model row's thinking select keeps the chat's border, like the picker
+   trigger beside it. Placed before :focus/:hover so the accent still wins. */
+.settings-project .group .model-row > .input { border-color: var(--border); }
+.settings-project .group .input:focus { background-color: var(--surface-3); border-color: var(--accent); box-shadow: none; }
 @media (hover: hover) {
-  .settings-project .group .input:hover { background: var(--surface-3); border-color: var(--accent); box-shadow: none; }
+  .settings-project .group .input:hover { background-color: var(--surface-3); border-color: var(--accent); box-shadow: none; }
 }
 
 /* Compact page header: path + save status on one line, one-line lede. */
@@ -1076,33 +1081,6 @@ textarea#projectEditor {
    `.group` sections, a `.group__list` of `.settings-project__item` cards, the
    shared `ModelPickerField` — so it has almost no styles of its own. */
 
-/* Full-width two-line model trigger inside the settings card (same treatment as
-   Dictation's model card, since `.mp--sheet` hides `.mp__provider` and shrinks
-   `.mp__id` to 0.72rem for the compact chat header). */
-.settings-project__shell-review-model {
-  width: 100%;
-}
-.settings-project__shell-review-model > .mp__trigger {
-  min-height: var(--tap);
-  padding: 6px 10px;
-  border-color: var(--border-strong);
-}
-.settings-project__shell-review-model > .mp__trigger .mp__stack {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-}
-.settings-project__shell-review-model > .mp__trigger .mp__id {
-  font-size: 0.84rem;
-}
-.settings-project__shell-review-model > .mp__trigger .mp__provider {
-  display: block;
-  color: var(--fg-soft);
-  font-size: 0.68rem;
-}
-.settings-project__shell-review-model > .mp__trigger .mp__provider:empty {
-  display: none;
-}
 .settings-project__shell-review-providers-link {
   align-self: flex-start;
   min-height: var(--tap);

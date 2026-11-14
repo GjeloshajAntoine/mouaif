@@ -20,10 +20,9 @@ const bundle = await build({
 stdin: {
 contents: `import { h, render } from 'preact';
 import { AuthModelPicker } from './frontend/src/components/AuthModelPicker.jsx';
-import { SubagentModelDefaults } from './frontend/src/components/SubagentModelDefaults.jsx';
 import { SettingsAgentsView } from './frontend/src/components/SettingsAgents.jsx';
 import { loadPinned } from './frontend/src/components/chat/modelPicker.js';
-window.authPickerTest = { h, render, AuthModelPicker, SubagentModelDefaults, SettingsAgentsView, loadPinned };`,
+window.authPickerTest = { h, render, AuthModelPicker, SettingsAgentsView, loadPinned };`,
 resolveDir: root, sourcefile: 'auth-model-picker-test.js'
 }, bundle: true, write: false, format: 'iife', platform: 'browser', loader: { '.css': 'empty' }
 });
@@ -68,7 +67,7 @@ const wait = () => evaluate('new Promise(resolve => setTimeout(resolve, 120))');
 const pickProvider = async (provider) => {
 await evaluate(`(() => {
 const row = Array.from(document.querySelectorAll('.mp__row')).find(el => el.querySelector('.mp__row-meta')?.textContent === ${JSON.stringify(provider)});
-if (!row) throw new Error('Missing provider row'); row.click();
+if (!row) throw new Error('Missing provider row'); row.querySelector('.mp__row-select').click();
 })()`);
 await wait();
 };
@@ -123,8 +122,10 @@ await check('mounting never creates an override', 'selections.length === 0');
 await evaluate(`document.querySelector('.auth-model-picker select').dispatchEvent(new Event('change', { bubbles: true }))`);
 await wait();
 await check('thinking-only edit does not override the default model', 'selections.at(-1).modelOverride === null');
+await check('trigger names the default when nothing is picked', `document.querySelector('.auth-model-picker .mp__trigger').textContent.includes('Use default: one / alpha')`);
 await tap('.auth-model-picker .mp__trigger');
 await wait();
+await check('with no pick, the default row is the chosen one', `!!document.querySelector('.mp__clear.is-active') && !document.querySelector('.mp__row.is-active')`);
 await check('auth picker shows the Pinned section', `Array.from(document.querySelectorAll('.mp__section-title'), el => el.textContent).includes('Pinned')`);
 await check('auth picker shows the Recent section', `Array.from(document.querySelectorAll('.mp__section-title'), el => el.textContent).includes('Recent')`);
 // The card is mounted with projectDir '/fixture/auth', yet the pin seeded above
@@ -149,9 +150,13 @@ console.log('  ok - Recent section lists the used model');
 await tap('.mp__clear');
 await check('clearing keeps the default without an override', 'selections.at(-1).modelOverride === null');
 await tap('.auth-model-picker .mp__trigger');
+await pickProvider('one');
+await check('picking the default model is not an override', `selections.at(-1).modelOverride === null && document.querySelector('.auth-model-picker').textContent.includes('(agent)')`);
+await tap('.auth-model-picker .mp__trigger');
 await pickProvider('two');
 await check('explicit pick is a provider-qualified one-run override', `selections.at(-1).modelOverride.providerId === 'two' && selections.at(-1).modelOverride.modelId === 'beta'`);
 await check('override summary updates', `document.querySelector('.auth-model-picker').textContent.includes('Runs on two / beta (this run only)')`);
+await check('a one-run pick is the chosen row', `document.querySelector('.auth-model-picker .mp__trigger').textContent.includes('beta')`);
 await check('360px approval has no horizontal overflow', 'document.documentElement.scrollWidth <= 360');
 await evaluate(`authPickerTest.render(null, document.getElementById('fixture'));
 authPickerTest.render(authPickerTest.h(authPickerTest.AuthModelPicker, { models: [], initialValue: { providerId: 'gone', modelId: 'ghost' }, modelSource: 'agent' }), document.getElementById('fixture'));`);
@@ -163,43 +168,6 @@ await evaluate(`authPickerTest.render(null, document.getElementById('fixture'));
 authPickerTest.render(authPickerTest.h(authPickerTest.AuthModelPicker, { models: [], modelError: 'Unknown pinned model' }), document.getElementById('fixture'));`);
 await wait();
 await check('invalid default is explained before approval', `document.querySelector('.auth-model-picker').textContent.includes('Default unavailable: Unknown pinned model')`);
-await evaluate(`authPickerTest.render(null, document.getElementById('fixture'));
-window.writes = [];
-window.catalogQueries = [];
-window.failNext = false;
-window.fetch = async (url, init = {}) => {
-  if (init.method === 'PUT' || init.method === 'PATCH') {
-    writes.push({ url, method: init.method, body: JSON.parse(init.body) });
-    if (failNext) { failNext = false; return new Response('{}', { status: 500 }); }
-    return new Response(JSON.stringify({ project: JSON.parse(init.body), chat: JSON.parse(init.body) }));
-  }
-  if (url.startsWith('/api/settings/resolved')) return new Response(JSON.stringify({ resolved: {} }));
-  if (url.startsWith('/api/chats/')) return new Response(JSON.stringify({ chat: {} }));
-  if (url === '/api/ai/models/providers') return new Response(JSON.stringify({ providers: [{ id: 'one' }, { id: 'two' }] }));
-  if (url.startsWith('/api/ai/models/live')) { catalogQueries.push(url); return new Response(JSON.stringify({ models: [{ id: 'alpha' }] })); }
-  return new Response(JSON.stringify({ models: [] }));
-};
-authPickerTest.render(authPickerTest.h(authPickerTest.SubagentModelDefaults, { projectDir: '/fixture/defaults', chatId: 'chat' }), document.getElementById('fixture'));`);
-await wait();
-await check('opening defaults never changes configuration', 'writes.length === 0');
-await check('chat and project defaults have discoverable touch controls', `document.querySelectorAll('#fixture .mp__trigger').length === 2 && Array.from(document.querySelectorAll('#fixture .mp__trigger')).every(el => el.getBoundingClientRect().height >= 44 && el.getBoundingClientRect().width >= 44)`);
-await check('catalog loads provider-qualified chat and image slices', `catalogQueries.length === 4 && catalogQueries.every(url => !url.includes('object'))`);
-await tap('#fixture .mp__trigger');
-await pickProvider('two');
-await check('project choice uses the existing settings PUT', `writes.at(-1).method === 'PUT' && writes.at(-1).body.subagentProviderId === 'two' && writes.at(-1).body.subagentModelId === 'alpha' && !('patch' in writes.at(-1).body)`);
-await evaluate(`document.querySelectorAll('#fixture .mp__trigger')[1].click()`);
-await wait();
-await pickProvider('one');
-await check('chat choice uses the existing chat PATCH', `writes.at(-1).method === 'PATCH' && writes.at(-1).body.subagentProviderId === 'one'`);
-await evaluate(`document.querySelectorAll('#fixture .mp__trigger')[1].click()`);
-await wait();
-await tap('.mp__clear');
-await check('clearing chat follows project and clears both fields', `writes.at(-1).body.subagentModelId === '' && writes.at(-1).body.subagentProviderId === ''`);
-await evaluate(`failNext = true; document.querySelectorAll('#fixture .mp__trigger')[1].click()`);
-await wait();
-await pickProvider('two');
-await check('failed save stays unsaved and offers retry by picking again', `document.getElementById('fixture').textContent.includes('Not saved: HTTP 500') && document.querySelectorAll('#fixture .mp__trigger')[1].textContent.includes('Follow project default')`);
-await check('360px defaults have no horizontal overflow', 'document.documentElement.scrollWidth <= 360');
 if (process.env.TRACK_C_SCREENSHOT) {
   const shot = await send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(process.env.TRACK_C_SCREENSHOT, Buffer.from(shot.data, 'base64'));
@@ -211,7 +179,7 @@ window.fetch = async url => new Response(JSON.stringify(url.startsWith('/api/age
 authPickerTest.render(authPickerTest.h(authPickerTest.SettingsAgentsView, { projectDir: '/fixture/agents' }), document.getElementById('fixture'));`);
 await wait();
 await check('Agents list shows named and default provider-qualified pins', `document.getElementById('fixture').textContent.includes('Runs on: one / same-slug') && document.getElementById('fixture').textContent.includes('Runs on: two / default-pin')`);
-await check('unpinned agent explicitly follows defaults, not defaultAgent pin', `document.getElementById('fixture').textContent.includes('Follows chat / project subagent defaults, then the chat model')`);
+await check('unpinned agent uses the chat model, not defaultAgent pin', `document.getElementById('fixture').textContent.includes('Uses the chat model')`);
 await check('360px Agents list has no horizontal overflow', 'document.documentElement.scrollWidth <= 360');
 await check('unhandled errors', 'errors.length === 0');
 console.log('\nAuth model picker browser regressions passed.');

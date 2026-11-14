@@ -17,7 +17,6 @@ import { sectionIcon, toolModeSegs } from './settingsProjectUi.js';
 import { shellReviewFromResolved } from './chat/shellReview.js';
 import { McpAuthSeg, ToolAuthSeg, segMode, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from './settings/toolAuth.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
-import { SubagentModelDefaults } from './SubagentModelDefaults.jsx';
 
 import { agentEditorPath } from './settings/agentNavigation.js';
 import { backHref, backTarget, settingsLink } from './settings/projectNavigation.js';
@@ -1526,16 +1525,10 @@ class: 'view-back',
           h('details', { class: 'settings-project__info' },
             h('summary', { 'aria-label': 'About agents' }, '?'),
             h('div', { class: 'settings-project__info-body' },
-              h('p', null, 'Agents are reusable sub-personas the main chat can delegate to. Each has its own name, instructions, an optional model override, and an optional tool allowlist (no allowlist = all tools). Tap an agent to edit it; edits save automatically. Default subagent configures the persona, model, thinking, and tools used when the subagent tool is called without naming an agent.')
+              h('p', null, 'Agents are reusable sub-personas the main chat can delegate to. Each has its own name, instructions, an optional model (empty = the chat model), and an optional tool allowlist (no allowlist = all tools). Tap an agent to edit it; edits save automatically. Default subagent configures the persona, model, thinking, and tools used when the subagent tool is called without naming an agent.')
             )
           )
         ),
-        (dir() || initialDir) && h(SubagentModelDefaults, { projectDir: dir() || initialDir, chatId: chatId(),
-        onProjectSaved: project => {
-        setCurrentProject(project);
-        setEditorText(JSON.stringify(project, null, 2));
-        }
-        }),
         h('div', { class: 'settings-project__agents' },
           h('ul', { class: 'settings-project__agents-list' },
             h('li', null,
