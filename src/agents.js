@@ -7,7 +7,13 @@
 // message is the agent's instructions, optionally restricted to the
 // agent's tool allowlist.
 //
-// Each agent = { name, content, tools?, modelId?, providerId?, thinkingLevel?, createdAt, updatedAt }
+// Each agent = { name, content, tools?, modelId?, providerId?, thinkingLevel?,
+//                maxNesting?, maxRuns?, createdAt, updatedAt }
+//   maxRuns: optional limit on the subagents this agent starts, at every
+//            level below it: runs in total (≥ 1). Absent = only its ancestors'.
+//   maxNesting: optional integer ≥ 0, how many levels of subagents this agent
+//            may start below itself (0 = it cannot delegate). Absent = the
+//            launching parent's budget (subagentLimits.maxDepth at the root).
 //   name:    user-defined, unique per project, immutable. Matches
 //            NAME_RE. This is the value the subagent `agent` argument
 //            is matched against.
@@ -61,6 +67,38 @@ function capContent(content) {
   return text;
 }
 
+// Per-agent subagent limits and their minimums (no maximum). maxNesting:
+// levels below the agent (0 = it cannot delegate).
+const AGENT_LIMITS = Object.freeze({
+  maxNesting: Object.freeze({ min: 0 }),
+  maxRuns: Object.freeze({ min: 1 })
+});
+const LIMIT_KEYS = Object.keys(AGENT_LIMITS);
+function limitOf(key, v) {
+  const r = AGENT_LIMITS[key];
+  return Number.isInteger(v) && v >= r.min ? v : undefined;
+}
+// checkLimits(patch) throws EBADINPUT for a limit that is set (not null/'')
+// and out of range, so a write never silently drops it.
+function checkLimits(patch) {
+  for (const key of LIMIT_KEYS) {
+    if (!patch || !Object.prototype.hasOwnProperty.call(patch, key)) continue;
+    const v = patch[key];
+    if (v === null || v === '' || v === undefined || limitOf(key, v) !== undefined) continue;
+    const error = new Error(key + ' must be a whole number of at least ' + AGENT_LIMITS[key].min);
+    error.code = 'EBADINPUT';
+    throw error;
+  }
+}
+// limitsPatch(current, patch) -> the three limits after `patch` (null/'' clears).
+function limitsPatch(current, patch) {
+  const out = {};
+  for (const key of LIMIT_KEYS) {
+    out[key] = patch && Object.prototype.hasOwnProperty.call(patch, key) ? limitOf(key, patch[key]) : current[key];
+  }
+  return out;
+}
+
 function normalizeAgent(raw) {
   if (!raw || typeof raw !== 'object') return null;
   // Accept legacy { id, title, content, tools } entries: id becomes
@@ -81,6 +119,7 @@ function normalizeAgent(raw) {
     modelId,
     providerId,
     thinkingLevel,
+    ...limitsPatch({}, raw),
     createdAt: raw.createdAt || new Date().toISOString(),
     updatedAt: raw.updatedAt || raw.createdAt || new Date().toISOString()
   };
@@ -172,6 +211,7 @@ function writeList(projectDir, agents) {
 }
 
 function create(projectDir, opts) {
+  checkLimits(opts);
   const name = opts && typeof opts.name === 'string' ? opts.name.trim() : '';
   if (!isValidName(name)) {
     const error = new Error('Agent name is required and must match ' + NAME_RE);
@@ -193,6 +233,7 @@ function create(projectDir, opts) {
     modelId: typeof opts.modelId === 'string' ? opts.modelId : undefined,
     providerId: typeof opts.providerId === 'string' ? opts.providerId : undefined,
     thinkingLevel: typeof opts.thinkingLevel === 'string' ? opts.thinkingLevel : undefined,
+    ...limitsPatch({}, opts),
     createdAt: now,
     updatedAt: now
   });
@@ -202,6 +243,7 @@ function create(projectDir, opts) {
 }
 
 function update(projectDir, name, patch) {
+  checkLimits(patch);
   if (!isValidName(name)) return null;
   const agents = list(projectDir);
   const idx = agents.findIndex((a) => a.name === name);
@@ -247,6 +289,7 @@ function update(projectDir, name, patch) {
     thinkingLevel: Object.prototype.hasOwnProperty.call(patch || {}, 'thinkingLevel')
       ? (typeof patch.thinkingLevel === 'string' && patch.thinkingLevel.trim() ? patch.thinkingLevel.trim() : undefined)
       : current.thinkingLevel,
+    ...limitsPatch(current, patch),
     createdAt: current.createdAt,
     updatedAt: new Date().toISOString()
   };
@@ -273,11 +316,14 @@ function getDefault(projectDir) {
     modelId: normalized.modelId,
     providerId: normalized.providerId,
     thinkingLevel: normalized.thinkingLevel,
+    maxNesting: normalized.maxNesting,
+    maxRuns: normalized.maxRuns,
     updatedAt: raw.updatedAt || undefined
   };
 }
 
 function updateDefault(projectDir, patch) {
+  checkLimits(patch);
   const current = getDefault(projectDir);
   const has = (k) => Object.prototype.hasOwnProperty.call(patch || {}, k);
   const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
@@ -289,12 +335,13 @@ function updateDefault(projectDir, patch) {
     modelId: has('modelId') ? str(patch.modelId) : current.modelId,
     providerId: has('providerId') ? str(patch.providerId)
       : (has('modelId') && !patch.modelId ? undefined : current.providerId),
-    thinkingLevel: has('thinkingLevel') ? str(patch.thinkingLevel) : current.thinkingLevel
+    thinkingLevel: has('thinkingLevel') ? str(patch.thinkingLevel) : current.thinkingLevel,
+    ...limitsPatch(current, patch)
   };
   if (next.tools && !next.tools.length) next.tools = undefined;
   const stored = { updatedAt: new Date().toISOString() };
   if (next.content && next.content.trim()) stored.content = next.content;
-  for (const k of ['tools', 'modelId', 'providerId', 'thinkingLevel']) {
+  for (const k of ['tools', 'modelId', 'providerId', 'thinkingLevel', ...LIMIT_KEYS]) {
     if (next[k] !== undefined) stored[k] = next[k];
   }
   // Everything back to built-in: drop the key so .mouaif.json stays clean.
@@ -315,6 +362,7 @@ function remove(projectDir, name) {
 
 module.exports = {
   MAX_BYTES,
+  AGENT_LIMITS,
   NAME_RE,
   DEFAULT_NAME,
   DEFAULT_CONTENT,

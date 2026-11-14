@@ -15,6 +15,7 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Added
 
+- **Per-agent subagent limits** — each agent, the default subagent included, sets its own limits in its editor: nesting levels below it (`maxNesting`) and total runs (`maxRuns`) for its subtree, which never loosen the turn-wide limits. Empty means the launch's own limits apply.
 - **Subagent limits are a setting** — how deep subagents may nest and how many one turn may start (`subagentLimits`) can be set per project or app-wide in the settings files, `PUT /api/settings/*` and `update_settings`. A value that is not a whole number of at least 1 is refused when it is written; there is no maximum. The `subagent` tool now tells the model the configured depth, and with depth 1 no longer says that subagents can delegate. See [Recursive subagent delegation](docs/features/recursive-subagent-delegation.md).
 - **Yellow Paper theme** — a built-in light theme with warm yellow cards on an ivory background, near-black ink and amber highlights. Pick it in **Settings → Themes**. See [Themes](docs/features/themes.md).
 - **`subagent.end` hooks** — a hook can run when a delegated run finishes, at any depth, whether the model waited for it or ran it in the background, and add context for the parent. See [Hooks](docs/features/hooks.md).

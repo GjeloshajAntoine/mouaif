@@ -13,7 +13,22 @@ Recursion works out of the box. Two budgets, shared by one turn and every subage
 | `subagentLimits.maxDepth` | 3 | 1 | How many levels of subagents may stack. `1` turns nesting off: subagents cannot start their own. |
 | `subagentLimits.maxRuns` | 32 | 1 | How many subagents one turn may start in total, at every level together. |
 
-To change them, set app/project settings before starting a root turn:
+With the defaults, the root's child and grandchild can each launch subagents, and the depth-3 leaf cannot. With `maxDepth: 1`, children do not see the launch and control tools, and the `subagent` tool description no longer tells the model that subagents can delegate; at any other depth the description states the configured number of levels.
+
+### Per-agent limits
+
+Each agent, the default subagent included, has **Subagent limits** in its editor (Settings → Agents → the agent). They apply to the subagents that agent starts, at every level below it:
+
+| Field | Stored as | Minimum | What it limits |
+| --- | --- | --- | --- |
+| Nesting | `maxNesting` | 0 | Levels of subagents below the agent. `0`: it cannot start subagents and does not see the launch and control tools. |
+| Total | `maxRuns` | 1 | Runs its subtree may start in all. |
+
+An empty field sets nothing: only the limits of whoever launched the agent apply. An agent's limits never loosen the limits above it: a launch must fit every one of them. There is no maximum; a negative or non-whole value is refused when the agent is saved.
+
+### Turn-wide limits
+
+`subagentLimits` (the first table) bounds the whole turn, above every agent. It has no editor field; set it in the project's `.mouaif.json`, with `PUT /api/settings/app` or `PUT /api/settings/project`, or by asking the assistant (`update_settings`):
 
 ```json
 {
@@ -23,8 +38,6 @@ To change them, set app/project settings before starting a root turn:
   }
 }
 ```
-
-With the defaults, the root's child and grandchild can each launch subagents, and the depth-3 leaf cannot. With `maxDepth: 1`, children do not see the launch and control tools, and the `subagent` tool description no longer tells the model that subagents can delegate; at any other depth the description states the configured number of levels.
 
 A project value overrides the app value field by field: a project that sets only `maxDepth` keeps the app's `maxRuns`. A write replaces the whole `subagentLimits` object of its scope, so send every field you want that scope to keep.
 

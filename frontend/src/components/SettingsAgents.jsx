@@ -22,6 +22,12 @@ import { ThinkingSelectField } from './ThinkingSelectField.jsx';
 import { loadPinned, loadRecent, loadRecentFromServer, touchRecent, togglePin } from './chat/modelPicker.js';
 import './settings/agents.css';
 
+// Per-agent subagent limits (src/agents.js AGENT_LIMITS).
+const AGENT_LIMIT_FIELDS = [
+  { key: 'maxNesting', label: 'Nesting', min: 0 },
+  { key: 'maxRuns', label: 'Total', min: 1 }
+];
+
 function resolveProjectDir(view) {
   if (view && view.projectDir) return view.projectDir;
   return (activeProject.value && activeProject.value.dir) || '';
@@ -404,6 +410,28 @@ export function SettingsAgentEditView(props) {
     saveNow({ thinkingLevel: value || '' });
   }
 
+  // Subagent limits of this agent: empty = only its ancestors' limits apply.
+  const limitText = (a) => {
+    const out = {};
+    for (const f of AGENT_LIMIT_FIELDS) out[f.key] = a && a[f.key] != null ? String(a[f.key]) : '';
+    return out;
+  };
+  const limitsStored = limitText(agent);
+  const limitsKey = AGENT_LIMIT_FIELDS.map((f) => limitsStored[f.key]).join('|');
+  const [limitsInput, setLimitsInput] = useState(limitsStored);
+  const [limitsError, setLimitsError] = useState('');
+  useEffect(() => { setLimitsInput(limitText(agent)); setLimitsError(''); }, [limitsKey]);
+  function onLimitCommit(f) {
+    const raw = String(limitsInput[f.key] || '').trim();
+    if (raw === limitsStored[f.key]) { setLimitsError(''); return; }
+    const n = /^\d+$/.test(raw) ? Number(raw) : NaN;
+    if (raw && !(n >= f.min)) { setLimitsError(f.label + ' must be a whole number of at least ' + f.min); return; }
+    setLimitsError('');
+    const value = raw ? n : undefined;
+    setAgent(a => Object.assign({}, a, { [f.key]: value }));
+    saveNow({ [f.key]: value === undefined ? null : value });
+  }
+
   function onToolToggle(tool, checked) {
     const r = toggleToolInList(agent && agent.tools, tool, checked, toolChoices, agentToolGroups);
     setAgent(a => Object.assign({}, a, { tools: r.tools }));
@@ -588,6 +616,26 @@ catalog: toolsCatalog
             })
           ),
           h('p', { class: 'hint hint--compact' }, 'Empty uses the chat’s model and thinking. A pick on the approval card applies to one run only.')
+        ),
+        h('div', { class: 'row' },
+          h('span', { class: 'label' }, 'Subagent limits'),
+          h('div', { class: 'agent-limits__grid' },
+            AGENT_LIMIT_FIELDS.map((f) => h('div', { key: f.key, class: 'agent-limits__field' },
+              h('label', { class: 'agent-limits__label', for: 'agent-limit-' + f.key }, f.label),
+              h('input', {
+                id: 'agent-limit-' + f.key,
+                class: 'input',
+                type: 'number',
+                inputMode: 'numeric',
+                step: 1,
+                value: limitsInput[f.key],
+                disabled: isCreating || isDeleting,
+                onInput: (e) => { const v = e.currentTarget.value; setLimitsInput((p) => ({ ...p, [f.key]: v })); },
+                onBlur: () => onLimitCommit(f)
+              })
+            ))
+          ),
+          limitsError ? h('p', { class: 'hint hint--compact status--error', role: 'alert' }, limitsError) : null
         ),
         h('div', { class: 'row' },
           h('span', { class: 'label' }, 'Tools'),

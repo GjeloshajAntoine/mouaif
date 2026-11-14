@@ -810,6 +810,18 @@ function buildUpstreamRequest(model, messages, specs, requestOpts, build) {
 // reviewer and title generation too. So an unreadable or invalid stored value
 // never fails the turn: that field runs on its default and one warning per
 // distinct bad value is logged.
+// agentLimits(projectDir, name) -> the launched agent's own subagent limits
+// { maxNesting, maxRuns } (the default subagent's when `name`
+// is empty); a field it does not set is undefined. An unknown agent reads as
+// unset; the launch reports it later.
+function agentLimits(projectDir, name) {
+  try {
+    const agents = require('./agents.js');
+    const agent = name ? agents.get(projectDir, name) : agents.getDefault(projectDir);
+    return agent ? { maxNesting: agent.maxNesting, maxRuns: agent.maxRuns } : {};
+  } catch { return {}; }
+}
+
 const warnedSubagentLimits = new Set();
 function rootSubagentLimits(projectDir) {
   const { resolveLimits, DEFAULT_LIMITS, LIMIT_RANGES } = require('./tools/subagent-orchestration.js');
@@ -1038,7 +1050,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   //   same set on the chat record, so we don't need to re-read it.
   // Nested controls are excluded independently of allowlists, including
   // forged tool calls (the dispatcher checks the role again).
-  if (opts.nestedSubagent && scope.owner?.depth >= scope.root.limits.maxDepth) {
+  if (opts.nestedSubagent && scope.owner && scope.owner.depth >= (scope.owner.depthCap ?? scope.root.limits.maxDepth)) {
     for (let i = toolSpecs.length - 1; i >= 0; i--) {
       const name = toolSpecs[i]?.function?.name;
       if (name === 'subagent' || orchestration.PARENT_TOOLS.includes(name)) toolSpecs.splice(i, 1);
@@ -2301,7 +2313,7 @@ async function streamChatInScope(opts) {
     try {
     row = scope.start(id, args.agent, (run) => runDelegation(run), (exec) => {
       if (args.background) onEvent('tool_result', { id, name: 'subagent', ok: exec.ok, result: exec.result, hooks: exec.subagentEnd ? hooksMeta(exec.subagentEnd.notes, exec.subagentEnd.context || '') : undefined });
-    }, { groupId: args.groupId, memberId: args.memberId, workspace: workingDir, onEnd: (ended, exec, state) => {
+    }, { groupId: args.groupId, memberId: args.memberId, workspace: workingDir, agentLimits: agentLimits(opts.projectDir, args.agent), onEnd: (ended, exec, state) => {
       const hookCtx = hookContextFor(callOpts);
       // subagent.end fires at every depth: its payload carries `depth`.
       hookCtx.nested = false;

@@ -17,3 +17,14 @@
   margin: 0;
   min-width: 0;
 }
+
+/* Subagent limits in the agent editor: two short number fields side by
+   side, each under its own label; the columns shrink at phone width. */
+.agent-limits__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.agent-limits__field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.agent-limits__field .input { width: 100%; min-width: 0; }
+.agent-limits__label { color: var(--muted); font-size: 0.75rem; }

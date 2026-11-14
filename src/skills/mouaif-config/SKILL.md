@@ -74,9 +74,9 @@ update_settings({
 
 ## Agents
 
-An agent is a named persona (`{ name, content, tools?, modelId?, providerId?, thinkingLevel? }`) used only as a delegation target for the `subagent` tool. It is not a chat persona — a chat persona is a custom prompt. It becomes the nested call's system message, optionally restricted to a tool allowlist.
+An agent is a named persona (`{ name, content, tools?, modelId?, providerId?, thinkingLevel?, maxNesting?, maxRuns? }`) used only as a delegation target for the `subagent` tool. It is not a chat persona — a chat persona is a custom prompt. It becomes the nested call's system message, optionally restricted to a tool allowlist.
 
-`subagentLimits` bounds one turn and every subagent below it: `maxDepth` is how many levels of subagents may stack (1 means subagents cannot start their own), `maxRuns` how many the turn may start in total. Each must be a whole number of at least 1 (no maximum); anything else is refused. A write replaces the whole object in that scope, so include every field the scope should keep; fields a project leaves out come from the app value, then the default. A change applies from the next message.
+`subagentLimits` bounds one turn and every subagent below it: `maxDepth` is how many levels of subagents may stack (1 means subagents cannot start their own), `maxRuns` how many the turn may start in total. Each must be a whole number of at least 1 (no maximum); anything else is refused. A write replaces the whole object in that scope, so include every field the scope should keep; fields a project leaves out come from the app value, then the default. It has no field in the app form. Each agent can also set `maxNesting` (≥ 0) and `maxRuns` (≥ 1) for the subagents it starts, in its editor (Settings → Agents) or via the agents API; they only tighten these. A change applies from the next message.
 
 ## Tool authorization
 

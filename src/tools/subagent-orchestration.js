@@ -134,14 +134,34 @@ class Scope {
     if (this.closed || this.signal?.aborted) throw error('EABORTED', 'parent turn has ended');
     if (this.owner && !this.parentScope.accepts(this.owner)) throw error('EABORTED', 'local parent is no longer active');
     const depth = (this.owner?.depth || 0) + 1;
-    if (depth > this.root.limits.maxDepth) throw error('EDEPTH', 'root delegation depth budget exhausted');
+    // Depth cap: the deepest level a run below this parent may reach. The
+    // root's comes from subagentLimits.maxDepth; an agent with maxNesting
+    // sets its own (depth + maxNesting) for its subtree, never deeper than an
+    // ancestor agent's explicit cap or the total (subagentLimits.maxDepth).
+    const parentCap = this.owner ? this.owner.depthCap : this.root.limits.maxDepth;
+    if (depth > parentCap) throw error('EDEPTH', this.owner ? 'this subagent cannot start subagents (nesting limit reached)' : 'root delegation depth budget exhausted');
     if (this.root.allRuns.size >= this.root.limits.maxRuns) throw error('ETOOL_CAP', 'root total-run budget exhausted');
+    // An ancestor agent's own maxRuns bounds every run started below it.
+    for (let r = this.owner; r; r = r.scope.owner) {
+      if (r.runsCap !== undefined && r.subRuns >= r.runsCap) throw error('ETOOL_CAP', 'run budget of agent ' + (r.agent || 'default') + ' exhausted');
+    }
     if (this.root.allRuns.has(id)) throw error('EBADINPUT', 'duplicate rooted callId');
     if (this.runs.has(id)) throw error('EBADINPUT', 'duplicate delegation callId');
     const pair = this.groups.validateLaunch(meta);
     const row = { callId: id, author: randomUUID().replace(/-/g, '').slice(0, 12), agent: agent || null, state: 'running', startedAt: Date.now(),
       controller: new AbortController(), lines: [], cursor: 0, inbox: [], receipts: [], published: [], workspace: meta.workspace || this.projectDir };
       row.depth = depth; row.parentCallId = this.owner?.callId || null;
+      const parentExplicit = this.owner ? this.owner.explicitCap : null;
+      const own = meta.agentLimits || {};
+      row.runsCap = Number.isInteger(own.maxRuns) ? own.maxRuns : undefined; row.subRuns = 0;
+      for (let r = this.owner; r; r = r.scope.owner) r.subRuns++;
+      if (Number.isInteger(own.maxNesting)) {
+        row.depthCap = Math.min(depth + own.maxNesting, parentExplicit ?? Infinity, this.root.limits.maxDepth);
+        row.explicitCap = row.depthCap;
+      } else {
+        row.depthCap = parentCap;
+        row.explicitCap = parentExplicit;
+      }
       row.rootId = this.root.rootId || (this.root.rootId = randomUUID());
       row.scope = this; this.root.allRuns.set(id, row);
       row.complete = complete;
