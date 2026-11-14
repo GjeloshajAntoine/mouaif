@@ -67,6 +67,7 @@ One page per feature: what it does and how to use it.
 - [New-project folder picker](features/folder-picker.md) — browse to a folder or create one to add a project, and choose where its settings live (`.mouaif.json`, `.mouaif/`, or app DB).
 - [Projects in Settings](features/projects-in-settings.md) — the registered projects listed under Settings.
 - [App and project settings](features/app-and-project-settings.md) — defaults, app settings, and project overrides.
+- [Content registry](features/content-registry.md) — every setting and list declared once; defaults and allowlists generated from it.
 - [Project settings storage](features/project-settings-storage.md) — keep settings in `.mouaif.json` or in the app store.
 - [Settings](features/settings-ui.md) — the Settings tab and what each section controls.
 - [Settings back navigation](features/settings-back-navigation.md) — where the Back arrow of every settings page goes, and why.

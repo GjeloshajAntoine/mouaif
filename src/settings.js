@@ -100,97 +100,12 @@ const PROJECT_SETTINGS_TABLE = 'project_settings';
 const PROJECT_SETTINGS_KEY = '__project_settings__';
 
 // Built-in defaults. These are the floor: anything not set in app or project
-// falls back to these. They are intentionally tiny for the first commit; later
-// features (models, prompts, prompt-size profile, trace default, ...) extend
-// this object.
-const DEFAULTS = Object.freeze({
-  // App-level provider connections. Shape:
-  //   { id, baseUrl, apiKey, auth, oauthAccount }
-  // Models reference one of these provider ids from project settings.
-  providers: [],
-  // User-defined project models. Shape: { id, provider, label, contextWindow }.
-  // Kept in defaults so projects without a models key resolve to an empty list.
-  models: [],
-  // Registered projects. Shape: { id, path, name, createdAt }. Filled in by
-  // src/projects.js when the user picks a folder. Empty by default.
-  projects: [],
-  // Non-secret account index for OAuth sign-ins. Shape:
-  //   { openai: ['me@example.com'], anthropic: [], google: [], 'github-copilot': [] }
-  // The actual tokens live in the separate credentials table via src/auth.js.
-  authAccounts: {},
-  // Default prompt-size profile for new chats. One of 'very-small' | 'average' | 'extensive' | 'chat'.
-  promptSize: 'average',
-// Composer keyboard default: when true, Enter inserts a newline and the
-// send button / Cmd+Ctrl+Enter sends. When false, Enter sends and
-// Shift+Enter inserts a newline. App-level; a project may override it.
-enterForNewline: true,
-// Auto-retry failed turns. When true, the web client transparently
-// re-sends a user message once if the request fails before a stream
-// starts (network error or an HTTP rejection other than 409).
-autoRetry: true,
-// Composer file button ("File tools") style. When false the trigger is the
-// flat circle that matches the rest of the composer; when true it renders as
-// the animated glass "orb" — a shaded sphere with the git counts on a 3D
-// folder glyph inside. App-level: a display preference, so it applies to
-// every project. See docs/features/file-button-orb.md.
-fileOrbButton: false,
-  // Which optional tools the composer draws. Both are display preferences
-  // (app-level, like `fileOrbButton`) and both default to `true`: the
-  // microphone and the image button are the two controls the composer has
-  // always shown, and turning one *off* is how a user keeps a button they
-  // never use out of the way. Hiding is not disabling — the routes behind
-  // them (`/api/ai/transcribe`, image attachments) are untouched. See
-  // docs/features/composer-tool-buttons.md.
-  dictationButton: true,
-  imageButton: true,
-  // The one-line status row under the composer. `false` hides its text (the
-  // row keeps the safe-area inset, and an error state still shows).
-  statusBar: true,
-  // App-level custom prompts. Empty by default.
-  prompts: [],
-  // Tool output profile for file/result text fed back to the model. `size`
-  // controls the byte cap (`very-small`, `average`, `full`, `extensive`);
-  // `structure` controls the file-listing layout (`tree` default, `json`).
-  // Lives in the same default floor so projects without a key resolve to a
-  // sane value.
-  toolOutput: { size: 'average', structure: 'tree' },
-  // Shell review — an optional second model that reads a proposed shell
-  // command before it runs and reports what it would do. Shape:
-  //   { mode, providerId, modelId, prompt }
-  // `mode` is 'off' (default), 'always' (review every command the shell tool
-  // runs) or 'ask' (review only from the composer's review button). Nothing
-  // here grants permission: the reviewing model is display-only, and a
-  // command still passes through the normal authorization gate. See
-  // docs/features/shell-review.md.
-  shellReview: { mode: 'off' },
-  // Tool wording sets — named sets of replacement descriptions and field
-  // (parameter) names, and the one in effect ('' = Built-in). Shape:
-  //   { active: "<id>" | "", sets: { "<id>": { name, tools: { "<tool>":
-  //     { description?, fields?: { "<field>": "<new name>" } } } } } }
-  // The model sees the re-worded spec; the app still runs the original. Read
-  // defensively by src/toolOverrides.js. See docs/features/tool-overrides.md.
-  toolWording: { active: '', sets: {} },
-  // Legacy flat wording (one set's `tools` map), applied only while a
-  // project has no `toolWording` sets; the page moves it into a set on save.
-  toolOverrides: {},
-  // Maximum UTF-8 bytes of one tool result copied into model context.
-  // The complete result remains available to the UI and transcript.
-  toolFeedbackMaxBytes: 64 * 1024,
-  // OS-level browser notifications have two user-facing channels: one
-  // replaceable ASCII status per chat, plus authorization prompts. Quick
-  // actions let the user answer or approve without opening the app.
-  // `login` alerts on a new sign-in and is on by default. See
-  // src/notifications.js for the authoritative defaults.
-  notifications: {
-status: true,
-authorization: true,
-quickActions: true,
-login: true
-},
-
-  // Server-side flags. Reserved for future toggles (e.g. enableInspector, port...).
-  flags: {}
-});
+// falls back to these. Generated from the content registry
+// (src/content/registry.js), where each setting declares its own default next
+// to its label, scopes and allowlist flags. Deep-frozen: getResolved() clones
+// what it merges, so nothing downstream may mutate the floor.
+const registry = require('./content/registry.js');
+const DEFAULTS = registry.deepFreeze(registry.buildDefaults());
 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });

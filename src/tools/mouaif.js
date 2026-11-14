@@ -56,7 +56,8 @@ const MESSAGE_PREVIEW_CHARS = 400;
 // Settings keys that grant or reshape tool permissions / auth state. A
 // write to any of them always needs a user decision (see ai-stream.js),
 // so a model holding `update_settings: allow` cannot widen its own reach.
-const PERMISSION_KEYS = Object.freeze(['tools', 'mcp', 'authAccounts', 'authPending']);
+// Generated from the content registry: the declarations with `approval: true`.
+const PERMISSION_KEYS = Object.freeze(require('../content/registry.js').permissionKeys());
 
 // ---- Area table ----------------------------------------------------------
 // The action -> area map is data, not control flow: the schema enum below is

@@ -159,54 +159,19 @@ function sanitizeClientEntries(patch, key, existing) {
 // and anything a future feature stashes there. Rather than blocklist each new
 // leak, we allowlist the exact keys the web UI consumes. Everything else is
 // dropped before it ever hits the wire.
-const CLIENT_SETTINGS_KEYS = Object.freeze([
-  'providers',      // app-level provider connections (apiKey redacted below)
-  'models',         // user-defined models
-  'projects',       // registered project cards
-  'promptSize',     // default prompt-size profile
-'enterForNewline', // composer keyboard default (Enter newline vs send)
-'autoRetry',      // auto-retry failed turns before the stream starts
-'fileOrbButton',  // composer file button renders as the animated glass orb
-// Which optional composer tools are drawn. Same class as the orb: app-level
-// display preferences. A key that is stored but not allowlisted is dropped
-// from every /api/settings response, which looks exactly like a toggle that
-// will not save — and here it would be a button the user hides and the
-// composer keeps showing. See docs/features/composer-tool-buttons.md.
-'dictationButton', // the composer microphone button (`false` hides it)
-'imageButton',    // the composer image-attachment button (`false` hides it)
-'statusBar',      // the status line under the composer (`false` hides it)
-// The remembered dictation choice: `{ modelId, providerId }`, written by the
-// dictation page and read by every surface that dictates — the page's picker
-// and the composer microphone. No secret, but it must be allowlisted here:
-// a key that is stored and then stripped on the way out is a key the UI can
-// never read back, which made the pick look unsaved and left the microphone
-// saying "No dictation model yet" however often one was chosen.
-// See docs/features/dictation.md.
-'dictation',
-'prompts',        // app-level custom prompts
-// Icon + project-card pin for the built-in prompt-size profiles:
-// `{ [profileId]: { icon, showOnProjectCard } }`. Non-secret display state;
-// see docs/features/custom-prompts.md "Built-in prompts".
-'profileLaunchers',
-  'githubCopilot',  // { clientId } for the custom OAuth app
-  'modelPricing',   // per-model cost table
-  'authAccounts',   // non-secret OAuth account index
-  'tools',          // per-project tool config (e.g. tools.shell.enabled) — non-secret
-  'toolFeedbackMaxBytes', // model-facing tool-result byte cap
-  'toolOutput',     // per-project tool output profile { size, structure } — non-secret
-  'notifications',  // browser notification event preferences
-  'flags'           // server-side feature toggles (non-secret)
-]);
+//
+// Both lists are generated from the content registry
+// (src/content/registry.js): a key is client-visible when its declaration sets
+// `clientVisible`, and resettable when it has a default or sets `resettable`
+// (additive keys such as the pricing table, whose absence IS the default, but
+// which the UI must still be able to clear). A key that is stored but not
+// allowlisted is dropped from every /api/settings response, which looks like a
+// toggle that will not save — declare new app settings in the registry.
+const contentRegistry = require('./content/registry.js');
+const CLIENT_SETTINGS_KEYS = Object.freeze(contentRegistry.clientSettingsKeys());
 
-// Keys that POST /api/settings/app/reset is allowed to drop from the app
-// store. The DEFAULTS keys are the baseline; the extras are additive app
-// keys that have no in-code default (their absence IS the default) but
-// that the UI must still be able to clear — otherwise "reset" silently
-// can't reach settings like the custom pricing table or the remembered
-// dictation model.
-const RESETTABLE_APP_KEYS = Object.freeze(
-new Set([...Object.keys(settings.DEFAULTS), 'modelPricing', 'githubCopilot', 'dictation', 'profileLaunchers'])
-);
+// Keys that POST /api/settings/app/reset is allowed to drop from the app store.
+const RESETTABLE_APP_KEYS = Object.freeze(new Set(contentRegistry.resettableAppKeys()));
 
 // Allowlist projection for the APP-level store only. Project payloads must
 // use projectForClient() below — see the note there for why.
