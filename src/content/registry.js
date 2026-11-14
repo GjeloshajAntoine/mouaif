@@ -359,8 +359,8 @@ const TYPES = [
   {
     id: 'subagentLimits.maxDepth', shape: 'value', scopes: ['app', 'project'], doc: 'settings', path: 'subagentLimits.maxDepth',
     field: subagentLimit('maxDepth'),
-    label: 'Subagent nesting depth', description: 'How many levels of subagents may stack below the chat. 1 turns nesting off: subagents cannot start their own.',
-    keywords: ['subagent', 'delegate', 'recursion', 'depth', 'nesting', 'limit'],
+    label: 'Subagent nesting depth', description: 'How many levels of subagents one turn may stack. 1 turns nesting off: subagents cannot start their own.',
+    keywords: ['subagent', 'delegate', 'recursive', 'nested', 'depth', 'limit'],
     group: 'Project', page: 'settings/agents',
     clientVisible: true, resettable: true, writers: ALL_WRITERS
   },

@@ -28,7 +28,7 @@ An empty field sets nothing: only the limits of whoever launched the agent apply
 
 ### Turn-wide limits
 
-`subagentLimits` (the first table) bounds the whole turn, above every agent. It has no editor field; set it in the project's `.mouaif.json`, with `PUT /api/settings/app` or `PUT /api/settings/project`, or by asking the assistant (`update_settings`):
+`subagentLimits` (the first table) bounds the whole turn, above every agent. It has no field in the app; set it in the project's `.mouaif.json`, with `PUT /api/settings/app` or `PUT /api/settings/project`, or by asking the assistant (`update_settings`):
 
 ```json
 {
@@ -80,6 +80,6 @@ Named artifacts are scoped to the producing member's immediate-parent bus. A loc
 
 ## Lifecycle and billing
 
-Stopping a child cancels its descendants, in-flight provider requests and pending approvals, but not unrelated sibling subtrees. A local parent finishing cancels unfinished children; root finishing shuts down the full tree within the existing one-second settlement budget. Each result finalizes once and late callbacks/events cannot reopen it. Cancellation never undoes completed writes or kills deliberately detached commands.
+Stopping a child cancels its descendants, queued provider requests and pending approvals, but not unrelated sibling subtrees. A local parent finishing cancels unfinished children; root finishing shuts down the full tree within the existing one-second settlement budget. Each result finalizes once and late callbacks/events cannot reopen it. Cancellation never undoes completed writes or kills deliberately detached commands.
 
 Each descendant's usage/cost travels up its ancestor chain as deltas; ancestor completion adds only an unreported remainder. Live root deltas and final root totals therefore include descendants exactly once. The nested transcript retains recursive results and rooted identities; late billing after forced shutdown remains unreconciled. Handles are in-memory/root-turn-local, not restartable chat jobs.
