@@ -62,14 +62,19 @@ function storeFor(doc, scope, projectDir, mode) {
 // MCP: see projectMcp.moveMode — an existing `.mcp.json` is read in both
 // modes, so only a DB row moves (to file).
 // Asking for the mode the project is already in changes nothing.
+//
+// Order: the settings copy, then the MCP row, then the old settings are
+// cleared. The project's mode is the `__dbBacked` marker in the settings row,
+// so it only flips at the last step: a write that throws on the way leaves the
+// project in its old mode with every document where that mode reads it.
 function setProjectMode(projectDir, dbBacked) {
   const current = projectMode(projectDir);
   const target = dbBacked ? 'db' : 'file';
   if (current === target) return target;
-  projectMcp.moveMode(projectDir, target);
   const from = storeFor('settings', 'project', projectDir, current);
   const to = storeFor('settings', 'project', projectDir, target);
   to.write(stripMarker(from.read()));
+  projectMcp.moveMode(projectDir, target);
   if (from.clear) from.clear();
   return target;
 }

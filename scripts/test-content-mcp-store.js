@@ -155,6 +155,19 @@ check('switching to files keeps a row the user\'s own .mcp.json shadows', () => 
   assert.ok(dbRow(proj), 'the shadowed row is not deleted');
 });
 
+check('a failed settings write leaves the switch to files undone', () => {
+  const proj = newProject('halfway');
+  settings.setDbBacked(proj, true);
+  mcp.addServer(proj, server('Stays'));
+  // `.mouaif.json` as a folder: the settings file cannot be written.
+  fs.mkdirSync(path.join(proj, '.mouaif.json'));
+  assert.throws(() => settings.setDbBacked(proj, false));
+  assert.equal(stores.projectMode(proj), 'db', 'still in DB mode');
+  assert.ok(dbRow(proj), 'the MCP row is kept');
+  assert.equal(fs.existsSync(mcpFile(proj)), false, 'no .mcp.json written');
+  assert.deepStrictEqual(names(proj), ['Stays']);
+});
+
 check('the legacy block is the fallback in DB mode too', () => {
   const proj = newProject('dblegacy');
   settings.setProject(proj, { mcp: { servers: [{ id: 'old', name: 'Old', command: 'x' }] } });
