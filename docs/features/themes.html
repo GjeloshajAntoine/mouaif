@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Themes — mouaif docs</title>
+  <meta name="description" content="Themes change how the whole app looks: colours, corners, type, and anything CSS can reach. A custom theme can also run its own JavaScript for animations and…" />
+  <meta property="og:site_name" content="mouaif docs" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Themes — mouaif docs" />
+  <meta property="og:description" content="Themes change how the whole app looks: colours, corners, type, and anything CSS can reach. A custom theme can also run its own JavaScript for animations and…" />
+  <meta property="og:url" content="https://gjeloshajantoine.github.io/mouaif/features/themes.html" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/cli-commands.html">CLI</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+<a href="../features/draft-craft.html">Draft Craft</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/cli-commands.html">CLI commands</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="themes">Themes</h1>
+<h2 id="overview">Overview</h2>
+<p>Themes change how the whole app looks: colours, corners, type, and anything CSS can reach. A custom theme can also run its own JavaScript for animations and effects such as a pointer glow, a starfield, or page transitions.</p>
+<p>mouaif ships eight built-in themes:</p>
+<div class="table-wrap"><table><thead><tr><th>Theme</th><th>Base</th><th>Look</th></tr></thead><tbody><tr><td>Midnight</td><td>dark</td><td>the default cool blue</td></tr><tr><td>OLED</td><td>dark</td><td>true black surfaces</td></tr><tr><td>Aurora</td><td>dark</td><td>teal and violet, with a slow drifting glow behind the app</td></tr><tr><td>Paper</td><td>light</td><td>warm paper with a terracotta accent</td></tr><tr><td>Parchment</td><td>light</td><td>aged paper: soft mottling, foxing spots, fine grain and darker edges behind the app, cards that sit like lighter sheets, serif type, dark brown ink with blue-ink accents. The texture stays under the text.</td></tr><tr><td>Yellow Paper</td><td>light</td><td>sheets of warm yellow paper on a warm ivory background: cards, rows and menus are a soft golden yellow, the page behind them is ivory with a barely visible unevenness, text and controls are near-black ink, highlights are amber, and your messages sit on a paler slip with an amber edge.</td></tr><tr><td>Mono</td><td>dark</td><td>terminal green, monospace type, sharp corners, scanlines</td></tr><tr><td>CRT</td><td>dark</td><td>a phosphor tube: glowing text, fine scanlines over the whole screen, a dark vignette, a faint flicker and a bright band rolling down the screen. Your messages are outlined in green rather than filled, so the scanlines don&#39;t hide them.</td></tr></tbody></table></div>
+<p>With reduced motion turned on, Aurora&#39;s drift and CRT&#39;s flicker and rolling band stop.</p>
+<p>The active theme is an app-wide setting, so every device signed in to the same mouaif uses it. Other open tabs in the same browser switch at once. Other devices pick it up on their next load.</p>
+<h2 id="usage">Usage</h2>
+<p>Open <strong>Settings → App defaults → Themes</strong> (<code>#/settings/themes</code>).</p>
+<ul><li><p>Tap a card to use that theme. The change applies and saves immediately.</p></li><li><p><strong>Customize</strong> on a built-in theme opens the editor on a copy of it.</p></li><li><p><strong>New theme</strong> starts from the default palette.</p></li><li><p><strong>Import file</strong> reads a <code>.mouaif-theme.json</code> file and opens it in the editor. It is not switched on, so you can read its script first.</p></li></ul>
+<h3 id="the-editor">The editor</h3>
+<p>The editor (<code>#/settings/themes/&lt;id&gt;</code>) has five parts:</p>
+<ul><li><p><strong>Theme</strong>: the name; the base (Dark or Light, which sets the browser&#39;s <code>color-scheme</code> for scrollbars and form controls); corners (Sharp, Default, Round); and type (System, Serif, Mono).</p></li><li><p><strong>Colours</strong>: the main design tokens, each with a colour picker and a text field that accepts any CSS colour. Leave a field empty to keep the default. Soft tints, press shades and hairlines follow the main colours automatically through <code>color-mix()</code>, unless you set them yourself.</p></li><li><p><strong>More tokens</strong>: any other token from <code>frontend/src/base.css</code>, one <code>--name: value;</code> per line. Examples are <code>--shadow-md</code>, <code>--accent-soft</code> and <code>--font-mono</code>.</p></li><li><p><strong>CSS</strong>: a stylesheet loaded after the app&#39;s own. Use it for backgrounds, keyframes and per-component tweaks.</p></li><li><p><strong>JavaScript</strong>: an optional ES module (see below). <strong>Start from</strong> inserts a template or one of the examples: Pointer glow, Starfield, Page transitions, and Time-of-day accent.</p>
+<p>While you edit, the app around the editor previews the theme&#39;s colours and CSS live. The script does not run in the preview. It runs once the theme is saved and in use. <strong>Save &amp; use</strong> does both. <strong>Export</strong> downloads the theme as a file, and <strong>Delete</strong> removes it. If you delete the theme in use, the app returns to Midnight.</p></li></ul>
+<h3 id="theme-scripts">Theme scripts</h3>
+<p>A theme script is an ES module whose default export receives a <code>ctx</code> object. It may return a cleanup function:</p>
+<pre><code class="language-js">export default function setup(ctx) {
+  ctx.addStyle(&#39;body::after { content: &quot;&quot;; position: fixed; inset: 0; pointer-events: none; }&#39;);
+  window.addEventListener(&#39;pointermove&#39;, (e) =&gt; {
+    ctx.setVar(&#39;--glow-x&#39;, e.clientX + &#39;px&#39;);
+  }, { signal: ctx.signal });
+  return () =&gt; { /* undo anything ctx does not track */ };
+}</code></pre>
+<div class="table-wrap"><table><thead><tr><th><code>ctx</code> member</th><th>What it does</th></tr></thead><tbody><tr><td><code>theme</code></td><td><code>{ id, name, base, vars }</code> of the running theme</td></tr><tr><td><code>root</code>, <code>app</code></td><td><code>document.documentElement</code> and the <code>#app</code> mount</td></tr><tr><td><code>signal</code></td><td>an <code>AbortSignal</code> aborted when the theme stops; pass it to <code>addEventListener</code></td></tr><tr><td><code>reducedMotion</code></td><td><code>true</code> while the user prefers reduced motion</td></tr><tr><td><code>route</code></td><td>the current route object (<code>{ name, ... }</code>)</td></tr><tr><td><code>addStyle(css)</code></td><td>adds a stylesheet that lives as long as the theme</td></tr><tr><td><code>setVar(name, value)</code></td><td>sets a CSS custom property on <code>&lt;html&gt;</code>; removed when the theme stops</td></tr><tr><td><code>onRoute(fn)</code></td><td>calls <code>fn(route)</code> now and on every navigation</td></tr><tr><td><code>onFrame(fn)</code></td><td>a <code>requestAnimationFrame</code> loop, <code>fn(timeMs, deltaMs)</code>; pauses while the tab is hidden; return <code>false</code> to stop</td></tr><tr><td><code>onMotionChange(fn)</code></td><td>called with <code>true</code>/<code>false</code> when reduced motion is toggled</td></tr></tbody></table></div>
+<p>Everything registered through <code>ctx</code> is undone when you switch themes, edit the theme, or the theme is deleted. No reload is needed. To draw behind the app, make <code>body</code>, <code>.app__shell</code> and <code>.app__main--flush</code> transparent, as the Starfield example does, and place the element at <code>z-index: -1</code>.</p>
+<p>A script runs inside mouaif with the same access as the app itself, including your chats, settings and the API. Only use code you wrote or have read.</p>
+<h3 id="when-a-script-breaks-something">When a script breaks something</h3>
+<ul><li><p>An error thrown by <code>setup()</code>, by the module itself, or later from the theme&#39;s code (timers, listeners) shows a <strong>Theme script failed</strong> notice on the Themes page, with a link to the script. Anything the failed <code>setup()</code> registered through <code>ctx</code> is removed.</p></li><li><p>If a script makes the app unusable, open the app with <code>?safe</code> before the <code>#</code>, for example <code>http://127.0.0.1:5732/?safe#/settings/themes</code>. Safe mode loads with the default look and runs no theme CSS or script, so you can fix or delete the theme. Remove <code>?safe</code> to leave it.</p></li></ul>
+<h3 id="theme-files">Theme files</h3>
+<p>A theme file is JSON:</p>
+<pre><code class="language-json">{
+  &quot;mouaifTheme&quot;: 1,
+  &quot;name&quot;: &quot;Neon&quot;,
+  &quot;base&quot;: &quot;dark&quot;,
+  &quot;vars&quot;: { &quot;--accent&quot;: &quot;#ff4fa3&quot; },
+  &quot;css&quot;: &quot;&quot;,
+  &quot;js&quot;: &quot;export default function setup(ctx) {}&quot;
+}</code></pre>
+<h2 id="storage">Storage</h2>
+<p>The theme list and the active theme id live in the app settings under <code>themes</code> (<code>{ active, custom }</code>) and are written in one write through the content write path (<code>src/content/service.js</code>). A write returns a change list in which a theme&#39;s CSS and script appear as sizes, never as text. Themes are app-only and are not written by <code>update_settings</code>.</p>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="settings-ui.html">Settings</a> — the Settings tab and what each section controls.</p></li><li><p><a href="pwa.html">Install as an app</a> — the theme sets the installed app&#39;s status-bar colour.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

@@ -80,10 +80,10 @@ mouaif serve --auth</code></pre>
 <p>The invitation works once and expires after 15 minutes. If it expired, stop the server and start it again with <code>--auth-setup</code> to get a new one.</p>
 <p>From now on, opening <code>http://127.0.0.1:5732/</code> shows the login screen.</p></li></ol>
 <h2 id="step-3-connect-an-ai-provider">Step 3 — Connect an AI provider</h2>
-<ol><li><p>Open the <strong>Settings</strong> tab, then <strong>Providers</strong>.</p></li><li><p>Tap <strong>+</strong> (Add provider) and choose a provider.</p></li><li><p>Paste its API key, or tap <strong>Sign in</strong> for Anthropic, OpenRouter, or GitHub Copilot.</p></li></ol>
-<ul><li><p><strong>Ollama</strong>: no key; make sure Ollama is running.</p></li><li><p><strong>llama.cpp / LM Studio</strong>: choose <strong>OpenAI-compatible</strong>, leave the key empty, and set the base URL (for example <code>http://127.0.0.1:8080/v1</code>). See <a href="local-openai-servers.html">Local OpenAI-compatible servers</a>.</p></li></ul>
-<ol><li><p>Tap <strong>Add provider</strong>.</p>
-<p>Providers are shared by all your projects. Keys stay on the computer running mouaif; the browser never receives them.</p></li></ol>
+<ol><li><p>Open the <strong>Settings</strong> tab, then <strong>Providers</strong>.</p></li><li><p>Tap <strong>+ Add provider</strong> and choose how to connect.</p></li><li><p>Follow the next screen:</p></li></ol>
+<ul><li><p><strong>Sign in with an account</strong>: tap the sign-in button. The provider is added when you finish.</p></li><li><p><strong>Paste an API key</strong>: paste the key and tap <strong>Add provider</strong>.</p></li><li><p><strong>Run on your own server</strong>: start the server, check its address, and tap <strong>Add provider</strong>. See <a href="local-openai-servers.html">Local OpenAI-compatible servers</a>.</p></li></ul>
+<p>mouaif tests the connection and tells you if something is wrong.</p>
+<p>Providers are shared by all your projects. Keys stay on the computer running mouaif; the browser never receives them.</p>
 <h2 id="step-4-add-a-project">Step 4 — Add a project</h2>
 <ol><li><p>Open the <strong>Chats</strong> tab.</p></li><li><p>Tap <strong>+</strong> (Add project).</p></li><li><p>Browse to your project folder and select it, or create a new folder.</p>
 <p>The project appears as a card on the Chats tab. Adding a project never deletes or moves anything; removing it later leaves the folder on disk.</p></li></ol>

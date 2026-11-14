@@ -23,22 +23,6 @@ There's nothing to turn on. Open a chat and half-fold the phone; flatten it to g
 
 Other screens (Chats, Settings, Dictation) keep their single-column layout in every posture. Their lists already fit both halves, and a list that scrolls across a seamless fold stays readable.
 
-## Implementation notes
-
-- The postures come from the browser's Viewport Segments API. The rules live in `frontend/src/fold.css` behind `@media (vertical-viewport-segments: 2)` (tabletop) and `@media (horizontal-viewport-segments: 2)` (book). They use the `env(viewport-segment-*)` values to find the hinge.
-- A flat phone, the cover screen and browsers without the API all report one segment, so none of these rules apply there.
-- The chat's bottom stack (web preview dock, agent network dock, run dock, composer, status line) is wrapped in `.chat-view__dock`. That wrapper is `display: contents` on a single screen, so it adds no box and the chat layout is unchanged.
-- Book posture removes the frame's `--shell-max` cap so the frame starts at the screen's left edge and the segment offsets line up with it.
-
-Check it with an emulated hinge (headless Chrome, no server needed):
-
-```bash
-node scripts/test-foldable-layout.mjs
-FOLD_SHOTS=/tmp/fold-shots node scripts/test-foldable-layout.mjs   # also save a PNG per posture
-```
-
-`scripts/test-responsive-layout.mjs` also covers the fold sizes: 320 and 344 px cover screens, and the inner screen at 690 × 830, 830 × 690 and 884 × 1104.
-
 ## Related
 
 - [Responsive layout](responsive-layout.md): how the phone layout grows on tablets and desktops.

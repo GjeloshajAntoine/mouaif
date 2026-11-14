@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Scheduled wake-ups and recurring tasks — let a chat come back to its own work — mouaif docs</title>
+  <meta name="description" content="`schedule_wake`, `schedule_list` and `schedule_cancel` let the assistant run a prompt in a chat later, once or on a repeat. Ask for something at a regular…" />
+  <meta property="og:site_name" content="mouaif docs" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Scheduled wake-ups and recurring tasks — let a chat come back to its own work — mouaif docs" />
+  <meta property="og:description" content="`schedule_wake`, `schedule_list` and `schedule_cancel` let the assistant run a prompt in a chat later, once or on a repeat. Ask for something at a regular…" />
+  <meta property="og:url" content="https://gjeloshajantoine.github.io/mouaif/features/scheduled-wakes.html" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/cli-commands.html">CLI</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+<a href="../features/draft-craft.html">Draft Craft</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/cli-commands.html">CLI commands</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="scheduled-wake-ups-and-recurring-tasks-let-a-chat-come-back-to-its-own-work">Scheduled wake-ups and recurring tasks — let a chat come back to its own work</h1>
+<h2 id="overview">Overview</h2>
+<p><code>schedule_wake</code>, <code>schedule_list</code> and <code>schedule_cancel</code> let the assistant run a prompt in a chat later, once or on a repeat. Ask for something at a regular time — &quot;every weekday at 9 summarise the overnight alerts&quot; — and the assistant saves the prompt and the time. Each time it is due, mouaif starts a new turn <strong>in the same chat</strong> with that prompt. Every run of a recurring task starts with a fresh context at its own prompt: the model does not see the earlier runs, but their messages stay in the chat for you, and the files they wrote are still in the project. A one-off wake continues the chat with its context as it is.</p>
+<p>A wake is a saved prompt plus a time, stored in the app database. It survives a restart: one that came due while mouaif was down fires once, promptly, when it starts again.</p>
+<h2 id="usage">Usage</h2>
+<pre><code class="language-json">{ &quot;message&quot;: &quot;Summarise the overnight alerts and save them to reports/today.md&quot;, &quot;time&quot;: &quot;09:00&quot;, &quot;days&quot;: [&quot;mon&quot;, &quot;tue&quot;, &quot;wed&quot;, &quot;thu&quot;, &quot;fri&quot;], &quot;timezone&quot;: &quot;Europe/Brussels&quot; }</code></pre>
+<pre><code class="language-json">{ &quot;message&quot;: &quot;Read the test log under .mouaif/logs/ and tell me which tests failed.&quot;, &quot;in&quot;: &quot;20m&quot;, &quot;every&quot;: &quot;20m&quot; }</code></pre>
+<div class="table-wrap"><table><thead><tr><th>Tool</th><th>Arguments</th><th>Result</th></tr></thead><tbody><tr><td><code>schedule_wake</code></td><td><code>message</code> (required, up to 4000 characters). First run: <code>in</code> (<code>&quot;90s&quot;</code>, <code>&quot;15m&quot;</code>, <code>&quot;2h&quot;</code>, <code>&quot;1h30m&quot;</code>, <code>&quot;1d&quot;</code>) or <code>at</code> (an ISO 8601 time). To repeat: <code>every</code> (an interval, at least 1 minute) <strong>or</strong> <code>time</code> (a 24-hour clock time) with optional <code>days</code> and <code>timezone</code>. Optional <code>maxRuns</code>, <code>until</code> and <code>maxCostUsd</code> for a repeat.</td><td><code>id</code>, the due time, <code>dueInSeconds</code>, <code>repeat</code>, <code>runsLeft</code>, and for a repeat its <a href="long-running-runs.html">run</a>.</td></tr><tr><td><code>schedule_list</code></td><td>none</td><td>This chat&#39;s pending schedules, soonest first.</td></tr><tr><td><code>schedule_cancel</code></td><td><code>id</code>, or nothing to cancel the recurring task</td><td><code>cancelled: true</code>, or the status it already had.</td></tr></tbody></table></div>
+<h3 id="two-ways-to-say-regularly">Two ways to say &quot;regularly&quot;</h3>
+<ul><li><p><strong>An interval</strong> — <code>every: &quot;30m&quot;</code>, <code>&quot;6h&quot;</code>, <code>&quot;1d&quot;</code>. The next run is counted from the <em>planned</em> time, not from when the last run finished, so it does not drift. Intervals ignore daylight saving.</p></li><li><p><strong>A clock time</strong> — <code>time: &quot;09:00&quot;</code>, optionally <code>days</code> (default every day) and <code>timezone</code> (an IANA name such as <code>Europe/Brussels</code>; default the machine&#39;s). It follows daylight saving, so &quot;09:00&quot; stays 09:00. Without <code>in</code> or <code>at</code> the first run is the next such time.</p></li></ul>
+<h3 id="how-it-ends">How it ends</h3>
+<p>A repeat goes on until it is cancelled. <code>maxRuns</code> and <code>until</code> (an ISO time) end it sooner, and <strong>Stop</strong> on the <a href="long-running-runs.html">run bar</a> cancels it at any time. When the last run is delivered, the task and its run bar finish and you get a notification. Each run&#39;s turn also notifies you when it completes, with the message the run wrote as the notification text (markdown removed, cut at 300 characters). Nobody&#39;s browser started it, so the notification goes to every subscribed device, as do a tool waiting for approval, a question for you and an error.</p>
+<h3 id="runs-with-nothing-to-report">Runs with nothing to report</h3>
+<p>A run that found nothing relevant can finish without notifying you. Each run of a recurring task is offered one more tool, <code>skip_notification</code>. When the run calls it, that run sends no completion notification. The run still stays in the chat, and the next run notifies as usual unless it skips too. A run that doesn&#39;t call it notifies, so a run can&#39;t hide a result by forgetting the tool. Errors, questions and tools waiting for approval always notify.</p>
+<p>The tool needs no approval, since an approval card would itself notify you. The chat&#39;s tool filter doesn&#39;t hide it, and it isn&#39;t offered in ordinary turns, one-off wakes or subagents. To decide what counts as relevant, say so in the task&#39;s prompt, for example &quot;…and skip the notification when there are no new P1 alerts&quot;.</p>
+<pre><code class="language-json">{ &quot;reason&quot;: &quot;no new alerts&quot; }</code></pre>
+<h3 id="one-recurring-task-per-chat">One recurring task per chat</h3>
+<p>A chat has one recurring task: setting a new one replaces the old one (the result says <code>replacedPrevious</code>). One-off wakes — &quot;check the build in 20 minutes&quot; — can sit beside it.</p>
+<h3 id="permissions">Permissions</h3>
+<p>The three tools follow the <strong>mouaif</strong> family gate in <strong>Settings → Project</strong> (Off / Ask / Allow). A woken turn uses the chat&#39;s normal tool permissions, so anything that needs approval waits for you as usual.</p>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p><strong>A run is an ordinary turn in the same chat.</strong> It uses the chat&#39;s selected model, prompt and tool settings. A recurring run starts with exactly the prompt you set, as a plain user message, and nothing else is added. The model&#39;s context begins at that prompt: earlier runs, and anything said before the task was set, are in the chat above it but are not sent to the model. Replying in the chat after a run keeps that run&#39;s context, until the next run starts a new one. A one-off wake arrives labelled <code>⏰ Scheduled wake-up</code>, so the assistant knows it came from its own schedule.</p></li><li><p><strong>Runs never overlap.</strong> If a run comes due while the previous turn (or you) is still streaming in the chat, it waits and starts when the chat is free. Slots missed in the meantime, or while mouaif was down, are skipped, not replayed: you get one run, then the next slot after it.</p></li><li><p><strong>Failures retry.</strong> A wake that cannot start (for example the provider is down) is retried with a growing delay and marked <code>failed</code> after three attempts. The last error is kept.</p></li><li><p><strong>Safety net.</strong> A recurring task opens a <a href="long-running-runs.html">run</a> with limits sized to it: your <code>maxRuns</code> and <code>until</code>, otherwise one year and a large turn allowance, plus <code>maxCostUsd</code> if given. You can Pause, Resume or Stop it from the bar above the composer.</p></li><li><p><strong>Limits.</strong> At most 20 pending schedules per chat, a first run between 10 seconds and 30 days away, an interval of at least a minute, and at most 10000 runs.</p></li><li><p><strong>Chats own their schedules.</strong> A chat sees and cancels only its own. Deleting a chat cancels them. A chat with no selected model cannot schedule one.</p></li><li><p><strong>Finished wakes are kept for a week</strong>, then removed.</p></li><li><p><strong>At least once.</strong> A wake is leased for five minutes while it is being delivered, so a crash mid-delivery repeats it instead of losing it.</p></li></ul>
+<h2 id="past-runs-stay-in-the-chat">Past runs stay in the chat</h2>
+<p>Nothing a recurring task did is ever removed. Every run&#39;s prompt, the assistant&#39;s replies, the tool calls and the files stay in the chat, and you can scroll back to any of them (older pages load as you scroll up, or in the background).</p>
+<ul><li><p><strong>Each run is marked.</strong> The prompt a recurring task starts shows <code>Scheduled · run N</code> next to its time, so scrolling back through many runs shows where each one begins.</p></li><li><p><strong>A list to jump.</strong> While the chat has scheduled runs, the bar above the composer has a <strong>Runs</strong> button (once the task has ended, a slim bar with the number of runs keeps it available). It opens a list, newest first, with each run&#39;s number and time; a divider marks where an earlier, replaced task begins. Tap a run to load older pages if needed, scroll to it and highlight it.</p></li><li><p><strong>The assistant starts clean.</strong> Each run&#39;s context begins at its own prompt, so a run does not grow with the number of runs before it. What one run needs to hand to the next has to be in the project (a file it writes and the next prompt tells it to read); image attachments from earlier messages are not carried over. The transcript itself still grows, which is why older pages load as you scroll up.</p></li></ul>
+<h2 id="change-the-prompt-from-the-chat">Change the prompt from the chat</h2>
+<p>You can change what a recurring task says without asking the assistant to schedule it again. While the task is running or paused, the bar above the composer has a <strong>Prompt</strong> button.</p>
+<ul><li><p><strong>See it in full.</strong> Tap <strong>Prompt</strong> to expand the whole text, line breaks included. The bar itself shows only the first line.</p></li><li><p><strong>Edit it.</strong> Tap <strong>Edit prompt</strong>, change the text (up to 4000 characters) and tap <strong>Save</strong>. Cancel drops the change.</p></li><li><p><strong>From the next run.</strong> The new text is sent at the start of every run that begins after you save. Runs already in the chat keep the prompt they were sent with, and the schedule, run count and limits do not change.</p></li></ul>
+<pre><code>PUT /api/chats/:id/recurring
+{ &quot;projectDir&quot;: &quot;/path/to/project&quot;, &quot;prompt&quot;: &quot;Summarise the overnight alerts and the open incidents&quot; }</code></pre>
+<p>It answers <code>{ prompt, run }</code>, <code>400</code> for an empty or over-long prompt, and <code>409</code> when the chat has no recurring task. <code>GET /api/chats/:id/run</code> carries the current prompt in <code>run.schedule.prompt</code>.</p>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="long-running-runs.html">Long-running runs</a> — the pause/stop bar and safety limits behind a recurring task.</p></li><li><p><a href="chat-model-tools.html">Chat model tools</a> — <code>start_chat</code>, the same background-turn path a wake uses.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

@@ -96,10 +96,6 @@ Two details are specific to a batch:
 
 Note that a `mouaif` family `allow` — including one earned by choosing **Always allow** on any mouaif call — also lets the assistant run a command batch without asking. Turn the batch tool off on its own with a `tools.group_cli` leaf override if you want the family open and command batches gated.
 
-## Implementation notes
-
-Both command tools use the same background runner, bounded log and process-group cleanup. Background processes stop on app shutdown. Scheduled wakes are time-only.
-
 ## Related
 
 - [Shell tool](shell-tool.md) — the single-command tool this batches.

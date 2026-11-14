@@ -47,6 +47,7 @@
 <pre><code class="language-bash">docker compose -f compose.test.yaml up --build --abort-on-container-exit --exit-code-from test</code></pre>
 <p>Remove the containers and isolated test volume afterward:</p>
 <pre><code class="language-bash">docker compose -f compose.test.yaml down --volumes</code></pre>
+<p>The run is capped at 0.5 CPU and 384 MiB for the app and 0.25 CPU and 128 MiB for the test client; set <code>MOUAIF_APP_CPUS</code>, <code>MOUAIF_APP_MEM</code>, <code>MOUAIF_TEST_CPUS</code> or <code>MOUAIF_TEST_MEM</code> to change them. The image build runs at low priority with a 1 GiB Node heap; pass <code>--build-arg BUILD_HEAP_MB=2048</code> to <code>docker build</code> if the UI bundle outgrows it.</p>
 <p>A successful run ends with <code>Docker smoke test passed.</code> and exits with status zero. The example fixture is available at <code>examples/docker-test-project/</code>. If the local Docker CLI cannot read its default Buildx state, use a writable temporary config for the run:</p>
 <pre><code class="language-bash">DOCKER_CONFIG=/tmp/mouaif-docker-config npm run test:docker</code></pre>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>

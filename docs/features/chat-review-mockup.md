@@ -16,8 +16,6 @@ Tap a direction to change the palette and visual mood. Tap the completed tool ro
 
 The mockup does not call a provider, execute a tool, write a chat, or change project settings. All content and responses are local to the page.
 
-## Implementation notes
+## Related
 
-The route is implemented in `frontend/src/components/ChatReviewMockup.jsx` with isolated styles in `frontend/src/chat-review-mockup.css`. It is intentionally separate from the production transcript state so design review can happen against a real production build without creating database fixtures. The layout is mobile-first at 360–430 CSS pixels and expands to a four-direction comparison row on wider screens.
-
-The Docker review stack is documented in [UI review in Docker](./ui-review-docker.md).
+- [UI review in Docker](ui-review-docker.md) — the Docker stack this mockup is reviewed in.

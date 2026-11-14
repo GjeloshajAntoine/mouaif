@@ -118,24 +118,13 @@ A reload starts the app over, so state kept only in the page is lost. To tell a 
 - An app's source stays limited to 512 KiB. With its linked data, an app can be at most 8 MiB.
 - Links are read from the current chat only.
 
-## Implementation notes
-
-- `src/artifactStores.js` holds the two stores behind one small interface, and `storeFor` picks one with `settings.isDbBacked`. `src/artifacts.js` holds everything that doesn't depend on which: names, limits, links and mentions.
-- The DB store is the `chat_artifact` table, keyed by project, chat and name. Listings never load the content. Its rows are deleted in the same transaction as their chat.
-- The file store treats the folder as the source of truth, with `.artifacts.json` adding the description, who made it and when. Only regular files count: a symlink in the folder is never listed or read, and a symlink taking the store out of the project is refused.
-- `moveStorage` runs before a switch takes effect, from `PUT /api/settings/project/storage` and from registering a project. It copies everything first and removes the old copies last.
-- `src/tools/mouaif.js` holds the `artifacts` area, and `src/tools/appToolNames.js` the tool definitions.
-- `src/instant-mcp-apps.js` `createApp` takes the chat as `context.chatId`. An app created from a chat is an artifact, addressed as `artifact:<name>` in either store. Without a chat (the Settings import route), apps are still files in `.mouaif/mcp-apps/`, and links stay unresolved until a chat mounts the app.
-- A copy made with `save_artifact` and `path` keeps the source file's hidden lines hidden, whichever store it lands in.
-- `src/tools/files.js` handles `artifact:` paths before any path checks, using the project's own path rather than the working folder. `FileEditor.jsx` does the same in its API helpers, so the rest of the editor treats an artifact as a path.
-
-### Links and reloads
+## Links and reloads
 
 Apps have no network, so links are inlined when the app mounts (`resolveLinks`), in `POST /api/mcp/apps/mount`. JSON and JavaScript escape `<` without changing their meaning. Other text containing `</script` or `<!--` is decoded into its element by an inline script, so it arrives unchanged.
 
 Every write gives an artifact a new `revision`: a random token in the DB, size and modified time for a file. The mount records the revisions of the app's own artifact and its linked artifacts. `POST /api/mcp/apps/:mountId/status`, polled every 5 seconds, returns the current ones, and `McpAppFrame.jsx` mounts again when they differ. This covers every writer, including a shell command or another device. A save made in this page dispatches `ARTIFACTS_CHANGED` so the check happens right away.
 
-### HTTP interface
+## HTTP interface
 
 All routes take `?projectDir=` and sit behind the normal origin and access checks.
 

@@ -52,6 +52,21 @@
   &quot;dbBacked&quot;: false
 }</code></pre>
 <p>Two fields are always removed: <code>__dbBacked</code> (internal storage bookkeeping, never part of the user&#39;s settings) and <code>apiKey</code> on any <code>providers</code> / <code>models</code> entry, which is replaced by a response-only <code>hasApiKey</code> boolean. Credentials belong in the app store only.</p>
+<h2 id="writes-put-api-settings-app-put-api-settings-project">Writes (<code>PUT /api/settings/app</code>, <code>PUT /api/settings/project</code>)</h2>
+<p>Both routes, and the model&#39;s <code>update_settings</code> tool, change the settings document through one function, <code>applyPatch()</code> in <code>src/content/service.js</code>, and follow one policy table (<code>src/content/policy.js</code>; see <a href="content-registry.html">Content registry</a>):</p>
+<ul><li><p><strong>App scope</strong> accepts only the client-visible keys, the ones <code>GET /api/settings</code> returns. Any other key (<code>themes</code>, <code>mcp</code>, an unknown key) is refused with <code>400</code> and the list of writable keys. Before, only the tool refused them; the route stored them where no page could show or reset them.</p></li><li><p><strong>Project scope</strong> accepts any key: <code>.mouaif.json</code> stays open-ended. <code>hooks</code> is refused on both scopes; hooks are saved through <code>/api/hooks</code> or the <code>hook_create</code> tool.</p></li><li><p><strong>Declared values are type-checked</strong> when they change: <code>promptSize</code> must be one of the four prompt styles, <code>toolOutput.size</code> one of its sizes, a notification switch a boolean. <code>null</code> clears a value. A stored value that fails the check but is re-sent unchanged (the raw editor sends every key) does not block the save.</p></li><li><p><strong>Secrets</strong>: an <code>apiKey</code> is written only from the local UI. A provider or model entry sent back with <code>hasApiKey</code> instead of its key keeps the stored key, unless its <code>baseUrl</code> changed. That rule holds for every caller, the settings routes included: changing a URL in the raw project editor without typing the key again saves the entry without a key, so a key is never sent to a host it was not entered for. Before, only <code>update_settings</code> dropped it.</p>
+<p>Both responses add a <code>changes</code> list describing what the write did:</p></li></ul>
+<pre><code class="language-json">// PUT /api/settings/project  { &quot;projectDir&quot;: &quot;/abs/path&quot;, &quot;toolOutput&quot;: { &quot;size&quot;: &quot;full&quot; } }
+{
+  &quot;project&quot;: { &quot;toolOutput&quot;: { &quot;size&quot;: &quot;full&quot; } },
+  &quot;path&quot;: &quot;/abs/path/.mouaif.json&quot;,
+  &quot;dbBacked&quot;: false,
+  &quot;changes&quot;: [
+    { &quot;type&quot;: &quot;toolOutput.size&quot;, &quot;scope&quot;: &quot;project&quot;, &quot;op&quot;: &quot;set&quot;, &quot;key&quot;: &quot;toolOutput.size&quot;,
+      &quot;label&quot;: &quot;Tool output size&quot;, &quot;page&quot;: &quot;settings/project/output&quot;, &quot;before&quot;: null, &quot;after&quot;: &quot;full&quot; }
+  ]
+}</code></pre>
+<p>Every write also sends a <code>content_changed</code> server event (<code>{ scope, projectDir, keys, types, actor }</code>) on <code>/events</code>.</p>
 <h2 id="where-the-app-store-lives">Where the app store lives</h2>
 <p>App-level settings are stored as one JSON object in the <code>app_kv</code> row of <code>~/.mouaif/store.sqlite</code> (key <code>settings</code>), next to the purpose-built tables for project settings, the MCP tool cache and recent models.</p>
 <p>Because every route reads that row, an unreadable value must not take the server down — but it must not destroy the user&#39;s data either. If the stored blob does not parse (or is not a JSON object), the server:</p>

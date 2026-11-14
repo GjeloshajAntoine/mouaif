@@ -31,6 +31,7 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Bounded wait foundation](bounded-wait-foundation.md) — internal finite waits; no public wait tool is enabled.
 - [Long-running runs](long-running-runs.md) — the budget, pause/stop bar and watchdog behind recurring tasks and long jobs.
 - [Scheduled wake-ups and recurring tasks](scheduled-wakes.md) — `schedule_wake`, `schedule_list` and `schedule_cancel` run a saved prompt in a chat later or at a regular time.
+- [Webhook turns](webhook-turns.md) — `webhook_create` gives a chat a secret `/hook/<uuid>` link (GET or POST) that starts a turn with the received data.
 
 ## Providers and models
 
@@ -63,6 +64,7 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [New-project folder picker](folder-picker.md) — browse to a folder or create one to add a project, and choose where its settings live.
 - [Projects in Settings](projects-in-settings.md) — the registered projects listed under Settings.
 - [App and project settings](app-and-project-settings.md) — defaults, app settings, and project overrides.
+- [Content registry](content-registry.md) — every setting and list declared once; defaults and allowlists generated from it.
 - [Project settings storage](project-settings-storage.md) — keep settings in `.mouaif.json` or in the app store.
 - [Settings](settings-ui.md) — the Settings tab and what each section controls.
 - [Themes](themes.md) — built-in and custom themes: colours, CSS, and JavaScript effects, with safe mode and theme files.
@@ -93,6 +95,9 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Chat error surfacing](chat-error-surfacing.md) — how a failed request shows up in the chat.
 - [Screen capture](screen-capture.md) — capture a screen, take timed snapshots, review the PNGs, and attach the ones you pick.
 - [Chat view mockup](chat-view-mockup.md) — a reproducible page that renders every tool card for review.
+- [Chat UI themes](chat-ui-themes.md) — the Apple shell, Material actions, Editorial answers, Neo tool actions, and feedback states.
+- [Interactive chat UI review mockup](chat-review-mockup.md) — a safe conversation with four design directions, for review in Docker.
+- [Theme mockup](theme-mockup.md) — an interactive chat prototype with Aurora, Paper, and Mono visual directions.
 - [Long-running agent mockup](long-running-agent-mockup.md) — an interactive proposal for a running agent's card, its live controls, and the run designer.
 - [Trace to file](trace.md) — save a chat's events to a file in the project.
 - [Dictation](dictation.md) — speech-to-text from a Settings page and from the composer microphone.
@@ -145,6 +150,7 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [MCP server error modal](mcp-error-modal.md) — read a server's full startup error in Settings.
 - [Chrome Debug MCP](chrome-debug-mcp.md) — let the model drive the debug browser.
 - [MCP Apps](mcp-apps.md) — interactive tool views in a chat, in an isolated sandbox with server-scoped approval.
+- [Chat artifacts](chat-artifacts.md) — files kept with a chat: manage them in a sheet, tag them with `@`, let the agent create and use them, and link them from an MCP App as its data.
 - [On-the-fly MCP Apps](on-the-fly-mcp-apps.md) — render a single HTML/browser-JS app in the current chat, with no server project.
 
 ## Inspector
@@ -183,6 +189,7 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Markdown renderer](markdown-renderer.md) — the safe renderer for chat messages.
 - [Lazy-loaded settings](frontend-lazy-settings.md) — settings pages load on demand for a faster first paint.
 - [Responsive layout](responsive-layout.md) — how the phone layout grows on tablet and desktop.
+- [Foldable phones](foldable-layout.md) — cover screen, inner screen, and the chat split around the hinge when half-folded.
 - [Routing](routing.md) — every hash the app answers and its parameters.
 - [Modal sheets](modal-sheets.md) — shared Escape, Tab, and focus behavior for full-screen sheets.
 - [Back closes the open sheet](sheet-back-gesture.md) — the phone's Back gesture closes a sheet or picker instead of leaving the page.

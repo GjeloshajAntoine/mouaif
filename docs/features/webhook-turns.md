@@ -87,22 +87,6 @@ The link is public on purpose: an outside service has no mouaif session. The ran
 
 mouaif listens on loopback unless you configure a remote host. To receive calls from the internet, mouaif must be reachable there (for example through the same reverse proxy or tunnel you use for the app). Set `MOUAIF_PUBLIC_ORIGIN` so the tools can return the full link. Otherwise the bar builds it from the address your browser uses.
 
-## Implementation notes
-
-- `src/webhooks.js` holds the store (`chat_webhook` and `webhook_event` tables in the app database), the `/hook/<uuid>` handler and the delivery ticker. The ticker runs every 3 s and is also kicked on each call. It starts turns through `startChatTurn`, the same runner recurring tasks and `start_chat` use.
-- `src/tools/webhook.js` holds the model-facing tools.
-- A run's user message carries `origin: { kind: 'webhook', hookId, eventId, run }`. `contextFromLastRun` starts the upstream context there, and the transcript uses it for the badge and the collapsed data block.
-- REST endpoints for the UI, behind the normal session and access gates:
-
-```
-GET    /api/chats/:id/webhook?projectDir=          -> { webhook, events }
-PUT    /api/chats/:id/webhook  { projectDir, prompt?, method?, status?: "active"|"paused", rotate?: true } -> { webhook, events }
-DELETE /api/chats/:id/webhook?projectDir=          -> { ok, removed }
-```
-
-  Each event carries `seq`, the position of the turn it started, for **Open turn**. `GET /api/chats` marks rows with `webhook: true` and accepts `filter=webhook`.
-- Tests: `node scripts/test-webhooks.js`.
-
 ## Related
 
 - [Scheduled wake-ups and recurring tasks](scheduled-wakes.md): the same kind of run, started by the clock.

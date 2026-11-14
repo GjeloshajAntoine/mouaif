@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Content registry — mouaif docs</title>
+  <meta name="description" content="Everything the user configures — single settings such as `promptSize` and lists such as agents, prompts, hooks, themes and MCP servers — is declared once in…" />
+  <meta property="og:site_name" content="mouaif docs" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Content registry — mouaif docs" />
+  <meta property="og:description" content="Everything the user configures — single settings such as `promptSize` and lists such as agents, prompts, hooks, themes and MCP servers — is declared once in…" />
+  <meta property="og:url" content="https://gjeloshajantoine.github.io/mouaif/features/content-registry.html" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/cli-commands.html">CLI</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+<a href="../features/draft-craft.html">Draft Craft</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/cli-commands.html">CLI commands</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="content-registry">Content registry</h1>
+<h2 id="overview">Overview</h2>
+<p>Everything the user configures — single settings such as <code>promptSize</code> and lists such as agents, prompts, hooks, themes and MCP servers — is declared once in <code>src/content/registry.js</code>. The lists that used to be written by hand in several files are generated from those declarations:</p>
+<div class="table-wrap"><table><thead><tr><th>Generated</th><th>Used by</th><th>Rule</th></tr></thead><tbody><tr><td><code>settings.DEFAULTS</code></td><td><code>src/settings.js</code> (the floor of <code>getResolved</code>)</td><td>every declared <code>default</code>, placed at its path</td></tr><tr><td><code>CLIENT_SETTINGS_KEYS</code></td><td><code>src/server-shared.js</code> (<code>settingsForClient</code>), <code>update_settings</code></td><td>app keys whose declaration sets <code>clientVisible</code></td></tr><tr><td><code>RESETTABLE_APP_KEYS</code></td><td><code>POST /api/settings/app/reset</code></td><td>app keys with a default, or that set <code>resettable</code></td></tr><tr><td><code>PERMISSION_KEYS</code></td><td><code>update_settings</code> approval (<code>src/ai-stream.js</code>)</td><td>keys whose declaration sets <code>approval</code>, except content written only by its own tool (hooks)</td></tr></tbody></table></div>
+<p>Before the registry, a new setting had to be added to up to six places, and forgetting the client allowlist made a toggle look as if it would not save.</p>
+<h2 id="usage">Usage</h2>
+<p>Content comes in two shapes:</p>
+<div class="table-wrap"><table><thead><tr><th>Shape</th><th>What it is</th><th>Examples</th></tr></thead><tbody><tr><td><code>value</code></td><td>one setting at a path in a document</td><td><code>promptSize</code>, <code>toolOutput.size</code>, <code>notifications.login</code></td></tr><tr><td><code>collection</code></td><td>items with an id and fields</td><td>agents, prompts, models, tags, themes, hooks, MCP servers</td></tr></tbody></table></div>
+<p>A value declaration:</p>
+<pre><code class="language-js">{ id: &#39;toolOutput.size&#39;, shape: &#39;value&#39;, scopes: [&#39;app&#39;, &#39;project&#39;],
+  doc: &#39;settings&#39;, path: &#39;toolOutput.size&#39;,
+  field: { type: &#39;enum&#39;, options: [&#39;very-small&#39;, &#39;average&#39;, &#39;full&#39;, &#39;extensive&#39;], default: &#39;average&#39; },
+  label: &#39;Tool output size&#39;, description: &#39;Byte cap on file and result text sent back to the model.&#39;,
+  keywords: [&#39;context&#39;, &#39;bytes&#39;], group: &#39;Tools&#39;, page: &#39;settings/project/output&#39;,
+  clientVisible: true, resettable: true, writers: { ui: true, tool: &#39;update_settings&#39;, share: true } }</code></pre>
+<p>A collection declaration adds <code>container</code> (<code>array</code> or <code>map</code>), <code>itemId</code>, <code>itemLabel</code>, <code>fields</code>, <code>merge</code> (<code>override</code>, <code>concat</code> or <code>replace</code> across app and project) and <code>searchFields</code>.</p>
+<p>To add a setting:</p>
+<ol><li><p>Add a declaration to <code>TYPES</code> in <code>src/content/registry.js</code>, next to its group.</p></li><li><p>Give it a <code>default</code> if it has one, and set <code>clientVisible: true</code> if the browser reads it at app scope.</p></li><li><p>Add its control to the settings page.</p>
+<p><code>node scripts/test-content-registry.js</code> checks that the generated lists still match the snapshot of the former constants, that declarations sharing a top-level key agree on <code>clientVisible</code> and <code>approval</code>, and that enum defaults are valid.</p></li></ol>
+<h2 id="storage">Storage</h2>
+<p>Each declaration names a document (<code>doc</code>) and a path in it. Where a document lives is decided by <code>storeFor(doc, scope, projectDir)</code> in <code>src/content/stores/index.js</code>, the only function that knows a project&#39;s storage mode:</p>
+<div class="table-wrap"><table><thead><tr><th>Document</th><th>App scope</th><th>Project, file mode</th><th>Project, DB mode</th></tr></thead><tbody><tr><td><code>settings</code></td><td><code>app_kv</code> row <code>settings</code></td><td><code>.mouaif.json</code> or <code>.mouaif/.mouaif.json</code></td><td><code>project_settings</code> row</td></tr><tr><td><code>mcp</code></td><td><code>mcp</code> inside the app <code>settings</code> row</td><td><code>.mcp.json</code></td><td><code>.mcp.json</code> when it exists, else a <code>project_documents</code> row</td></tr></tbody></table></div>
+<p>The <code>mcp</code> document holds MCP servers and their <code>authorization</code> block; <code>src/mcp.js</code> and <code>src/tools/authorization.js</code> both read and write it through <code>storeFor(&#39;mcp&#39;, …)</code> (<code>stores/project-mcp.js</code>). An existing <code>.mcp.json</code> is read and written in both modes, since it may be the user&#39;s own file shared with other MCP clients; a DB-mode project without one never gets one created. When neither the file nor the row exists, the legacy <code>mcp</code> block of the project&#39;s settings document is read. <code>.mcp.json</code> is written atomically and cached like <code>.mouaif.json</code>, and a corrupt one answers <code>MOUAIF_PROJECT_PARSE_ERROR</code> (422).</p>
+<p>Writes to that document go through the write path like any other content: the server lists as <code>mcpServers</code> (app, <code>mcp.servers</code> in the app settings) and <code>projectMcpServers</code> (project, <code>servers</code>), and the authorization block as <code>mcpAuthorization</code> (app, <code>mcp.authorization</code>) and <code>projectMcpAuthorization</code> (project, <code>authorization</code>). Each write replaces only its own key, so servers and rules never overwrite each other. A shared project&#39;s caller writes no server list and not the app gate (403 <code>ESHARE_ROUTE</code>), but may change the project&#39;s MCP rules, as the chat&#39;s Tools card always allowed. The server types&#39; <code>afterWrite</code> (<code>src/mcp.js</code>) stops the running session of every server the write changed or removed, in every project for an app server, so the next start reads the new entry.</p>
+<p>Every adapter has the same members: <code>{ kind, scope, location, read(), write(next) }</code>. Atomic file writes, the corrupt-blob quarantine and the test-process guard live in the adapters (<code>app-db.js</code>, <code>project-file.js</code>, <code>project-db.js</code>, <code>json-file.js</code>); the SQLite handle is in <code>src/content/db.js</code>. <code>setProjectMode()</code> moves a project&#39;s documents between file and DB: the settings document is copied, and for <code>mcp</code> only a DB row moves (to <code>.mcp.json</code>, when switching back to files and no such file exists yet).</p>
+<h3 id="read-cache">Read cache</h3>
+<p>A store keeps the last parsed document and hands out a copy while its version stamp is unchanged (<code>src/content/stores/cache.js</code>):</p>
+<div class="table-wrap"><table><thead><tr><th>Store</th><th>Stamp</th></tr></thead><tbody><tr><td>file</td><td>inode, size and mtime (ns). A file modified in the last 2 s is re-read and compared with the cached text, because mtimes are coarser than a write.</td></tr><tr><td>DB row</td><td>SQLite <code>data_version</code> (moves when another connection commits) and <code>total_changes()</code> (moves on any write through this process&#39;s connection).</td></tr></tbody></table></div>
+<p>So a hand edit of <code>.mouaif.json</code>, a write from another <code>mouaif</code> process and a direct SQL write are all seen on the next read. Measured on the dev host with a 60-key project document:</p>
+<div class="table-wrap"><table><thead><tr><th>Read</th><th>Before</th><th>Cached</th></tr></thead><tbody><tr><td>Project, file mode</td><td>133 µs</td><td>53 µs</td></tr><tr><td>Project, DB mode</td><td>105 µs</td><td>40 µs</td></tr><tr><td>Resolved, file mode</td><td>219 µs</td><td>106 µs</td></tr><tr><td>Resolved, DB mode</td><td>181 µs</td><td>85 µs</td></tr></tbody></table></div>
+<p>The remaining cost is mostly the copy (about 20 µs) and the merge in <code>getResolved()</code>.</p>
+<h2 id="writing">Writing</h2>
+<p><code>applyPatch({ scope, projectDir, patch, unset, actor, remote, dryRun })</code> in <code>src/content/service.js</code> is the one write path for the settings document. <code>PUT /api/settings/app</code>, <code>PUT /api/settings/project</code> and <code>update_settings</code> call it. It returns <code>{ changes, warnings, approval, document }</code>.</p>
+<p>Who may write what is one table in <code>src/content/policy.js</code>:</p>
+<div class="table-wrap"><table><thead><tr><th>Content</th><th><code>ui</code></th><th><code>tool</code></th><th><code>share</code></th></tr></thead><tbody><tr><td>App scope, <code>clientVisible</code></td><td>write</td><td>write</td><td>refuse</td></tr><tr><td>App scope, not <code>clientVisible</code> (or unregistered)</td><td>refuse</td><td>refuse</td><td>refuse</td></tr><tr><td>Project scope, registered or not</td><td>write</td><td>write</td><td>write, unless the type sets <code>writers.share: false</code></td></tr><tr><td>A <code>secret</code> field (<code>apiKey</code>)</td><td>write</td><td>refuse</td><td>refuse</td></tr><tr><td><code>approval: true</code> (<code>tools</code>, <code>mcp</code>, <code>authAccounts</code>)</td><td>write</td><td>write after the user approves</td><td>as its actor</td></tr><tr><td>Written by its own tool (<code>hooks</code> → <code>hook_create</code>)</td><td>refuse here</td><td>refuse here</td><td>refuse here</td></tr></tbody></table></div>
+<p><code>share</code> is a shared project&#39;s remote caller using the same routes; a share caller&#39;s model is <code>tool</code> with <code>remote: true</code>. The approval itself is still asked by the chat loop before <code>update_settings</code> runs (<code>PERMISSION_KEYS</code>); a remote caller&#39;s direct UI writes are bounded by the share gate&#39;s tool rules, as before.</p>
+<h3 id="collections">Collections</h3>
+<p><code>src/content/collection.js</code> gives every declared collection the same operations over its document and path, so the feature modules no longer each re-implement &quot;read the array, change it, write it back&quot;:</p>
+<pre><code class="language-js">read(type, scope, projectDir)                 list(type, scope, projectDir)
+get(type, scope, projectDir, id)              listMerged(type, projectDir)
+put(type, scope, projectDir, item, opts)      putAt(type, scope, projectDir, id, item, opts)
+remove(type, scope, projectDir, id, opts)     replace(type, scope, projectDir, items, opts)</code></pre>
+<ul><li><p><code>put</code> inserts an array item or replaces the one with the same <code>itemId</code> in place; <code>putAt</code> sets a map entry (tags by path, wording sets by id).</p></li><li><p><code>listMerged</code> follows the type&#39;s merge rule: <code>override</code> (a project item replaces the app item with the same id: prompts, models), <code>concat</code> (both lists, tagged with their scope: hooks, MCP servers) or <code>replace</code> (the project list wins when it has items).</p></li><li><p>Every write goes through <code>writeType()</code> in the service: the policy check, one document write, a change list and <code>content_changed</code>. <code>opts.unset</code> drops a legacy key in the same write (agents drop <code>agentPresets</code>). A write made while serving a shared project&#39;s caller is marked <code>remote</code> automatically.</p></li><li><p>Content written by its own tool (hooks) needs <code>opts.via</code> set to that tool or to <code>route</code>.</p>
+<p>Converted to it: <code>prompts.js</code>, <code>agents.js</code>, <code>custom-actions.js</code>, <code>tags.js</code>, <code>hideFileContent.js</code> (<code>setRules</code>), and the app provider and model routes. The modules keep their normalising, limits and runtime behaviour.</p></li></ul>
+<h3 id="several-types-in-one-write-and-write-hooks">Several types in one write, and write hooks</h3>
+<p><code>writeMany({ scope, projectDir, entries: [{ type, value }] })</code> writes several types of one document at once: the theme list with the active theme, the app hook list with its on/off switch.</p>
+<p>A type that must react to its own writes registers <code>service.onWrite(typeId, { beforeWrite, afterWrite })</code>. Project hooks use it for trust: <code>beforeWrite</code> records whether the current list is trusted, and <code>afterWrite</code> trusts the new list only if the old one was (or was empty). So no write path can trust a hook list the user has not reviewed.</p>
+<h3 id="change-lists">Change lists</h3>
+<p>Every write returns the same structure, whatever the content:</p>
+<pre><code class="language-js">// a value
+{ type: &#39;toolOutput.size&#39;, scope: &#39;project&#39;, op: &#39;set&#39;, key: &#39;toolOutput.size&#39;,
+  label: &#39;Tool output size&#39;, page: &#39;settings/project/output&#39;, before: &#39;average&#39;, after: &#39;full&#39; }
+
+// a collection item
+{ type: &#39;agents&#39;, scope: &#39;project&#39;, op: &#39;changed&#39;, id: &#39;reviewer&#39;, label: &#39;Agent &quot;reviewer&quot;&#39;,
+  page: &#39;settings/agents/reviewer&#39;,
+  fields: [
+    { key: &#39;modelId&#39;, label: &#39;Model&#39;, before: &#39;model-a&#39;, after: &#39;model-b&#39; },
+    { key: &#39;content&#39;, label: &#39;Instructions&#39;, large: true, beforeSize: 1204, afterSize: 1310 } ] }</code></pre>
+<ul><li><p>A whole-array write (the model replacing <code>agents</code>) is diffed by item id into <code>added</code>, <code>changed</code> and <code>removed</code>.</p></li><li><p><code>secret</code> fields show <code>set</code> or <code>not set</code>; <code>large</code> fields carry sizes only, so a transcript never stores a prompt body or theme script twice.</p></li><li><p>An unregistered project key appears with its key as the label and its raw JSON value (<code>raw: true</code>).</p></li><li><p>A <code>dryRun</code> stops before the write and returns the same list.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>
