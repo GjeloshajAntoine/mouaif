@@ -25,7 +25,7 @@ import {
 import {
 renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender, reconcileTranscript
 } from './transcript.js';
-import { buildToolsCard, toggleTool, toggleToolGroup, toggleAgentFiles, toggleSkills, toggleSkill } from './cards.js';
+import { buildToolsCard, toggleTool, toggleToolGroup, toggleAgentFiles, toggleAgentFile, toggleSkills, toggleSkill } from './cards.js';
 import { jumpToSeq as jumpToSeqRow, flashRow, findToolCard } from './jumpToRun.js';
 import { scrollTranscriptToBottom, scrollToAdjacentMessage, scrollToTranscriptRow, noteTranscriptScrollTop, noteTranscriptScroll, isNearBottom, updateJumpButton, syncNavScrollbarLane, afterTranscriptAppend, pinTranscriptAfterSettle, cancelTranscriptPin, isTranscriptPinScroll, trackUserScrollIntent } from './scroll.js';
 import { updateUsageSummary, refreshProviderCredit, updateProviderCredit, setChatStatus } from './usage.js';
@@ -73,8 +73,8 @@ import { saveChatToolAuthorization, saveChatMcpAuthorization } from '../settings
   * @property {{q: string, provider: string}} pickerFilter
   * @property {Object|null} systemPrompt
   * @property {{catalog: Array<Object>, filter: string[]|null}} tools
-  * @property {{files: string[], enabled: boolean, explicit: boolean,
-  *   projectLocked?: boolean}} agentFiles
+  * @property {{files: string[], disabled: string[], enabled: boolean,
+  *   explicit: boolean, projectLocked?: boolean}} agentFiles
   * @property {{items: Array<Object>, enabled: boolean, projectLocked: boolean}} skills
   * @property {Array<Object>} mcpServers
   * @property {Array<Object>} agents
@@ -142,6 +142,7 @@ import { saveChatToolAuthorization, saveChatMcpAuthorization } from '../settings
   * @property {(name: string, next: boolean) => void} _toggleTool
   * @property {(names: string[], next: boolean) => void} _toggleToolGroup
   * @property {(next: boolean) => void} _toggleAgentFiles
+  * @property {(name: string, next: boolean) => void} _toggleAgentFile
   * @property {(next: boolean) => void} _toggleSkills
   * @property {(id: string, next: boolean) => void} _toggleSkill
   * @property {() => void} _onSkillsChanged
@@ -311,7 +312,7 @@ const prompts = useRef([]);
 const pickerFilter = useRef({ q: '', provider: 'all' });
 const systemPrompt = useRef(null);
 const tools = useRef({ catalog: [], filter: null });
-const agentFiles = useRef({ files: [], enabled: true, explicit: false });
+const agentFiles = useRef({ files: [], disabled: [], enabled: true, explicit: false });
 const skills = useRef({ items: [], enabled: true, projectLocked: false });
 const mcpServers = useRef([]);
   // Project agents (subagent delegation personas). Feeds the @-mention
@@ -781,6 +782,13 @@ await sendTurn(state, refs, {
     // needs an explicit render stamp for the composer ToolPopup.
     setToolDataStamp((v) => v + 1);
   }, [updateChatBound]);
+  // One file row, one file: the group toggle above stays the all-on /
+  // all-off shortcut, but a row switch must never move its siblings.
+  const onToggleAgentFile = useCallback((name, next) => {
+    if (!name) return;
+    toggleAgentFile(name, next, state, refs, updateChatBound, () => refreshSystemPrompt(state, refs));
+    setToolDataStamp((v) => v + 1);
+  }, [updateChatBound]);
   const onToggleSkills = useCallback((next) => {
     toggleSkills(next, state, refs, updateChatBound, () => refreshSystemPrompt(state, refs));
   }, [updateChatBound]);
@@ -835,6 +843,7 @@ await sendTurn(state, refs, {
   state._toggleTool = onToggleTool;
   state._toggleToolGroup = onToggleToolGroup;
   state._toggleAgentFiles = onToggleAgentFiles;
+  state._toggleAgentFile = onToggleAgentFile;
   state._toggleSkills = onToggleSkills;
   state._toggleSkill = onToggleSkill;
   state._onSkillsChanged = () => setToolDataStamp((v) => v + 1);
@@ -1085,6 +1094,7 @@ models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [
           : (Array.isArray(rSys.body && rSys.body.agentFiles) ? rSys.body.agentFiles : []);
         agentFiles.current = {
           files: afAvailable.map(f => f.name),
+          disabled: afAvailable.filter(f => f.chatDisabled).map(f => f.name),
           enabled: afEnabled,
           explicit: typeof c.agentFiles === 'boolean',
           projectLocked: projectGate === false  // project has it off → toggle locked

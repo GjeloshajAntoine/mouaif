@@ -40,7 +40,7 @@ The tool bypasses the authorization gate — it is read-only metadata and never 
 
 ### Chat controls
 
-When discovered agent files are shown in the chat card, every file row has a checkbox next to the file name. Because agent-file injection is currently a chat-level on/off state, toggling any row controls whether all discovered files are injected on the next turn. The card lists discovered files even when the current chat has agent files disabled, so the chat card and Settings → Project remain consistent. The checkboxes are disabled and marked as locked when agent files are disabled in project settings.
+When discovered agent files are shown in the chat card, every file row has a checkbox next to the file name. Each row is that file's own switch for the chat: unchecking one file stops only that file from being injected on the next turn and leaves the others as they are. The choice is stored on the chat record as `disabledAgentFiles` (a list of file names; `PATCH /api/chats/:id` takes it, and `null` or an empty list clears it), next to the chat-level `agentFiles` on/off flag. Checking one file in a chat that had agent files off turns the flag on with only that file selected, and unchecking the last file turns the flag off. The card lists discovered files even when the current chat has agent files disabled, so the chat card and Settings → Project remain consistent. The checkboxes are disabled and marked as locked when agent files are disabled in project settings.
 
 ## Behavior
 

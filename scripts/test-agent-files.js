@@ -60,6 +60,23 @@ async function main() {
   check('project-off locks out chat true', agentFiles.resolveEnabled({ chat: Object.assign({}, chat, { agentFiles: true }), projectDir }) === false);
   check('discover still finds files while disabled', agentFiles.discover(projectDir).some((f) => f.name === 'AGENTS.md'));
 
+  // Per-file opt-outs: one chat can switch a single agent file off and
+  // keep the others. The list rides on the chat record.
+  fs.writeFileSync(path.join(projectDir, 'CLAUDE.md'), '# Claude instructions\n', 'utf8');
+  settings.setProject(projectDir, { agentFiles: true });
+  const picky = chats.updateChat(projectDir, chat.id, { disabledAgentFiles: ['CLAUDE.md', 'CLAUDE.md'] });
+  check('chat stores per-file opt-outs without duplicates', JSON.stringify(picky.disabledAgentFiles) === '["CLAUDE.md"]', JSON.stringify(picky.disabledAgentFiles));
+  check('per-file opt-outs survive a reload', JSON.stringify(chats.getChat(projectDir, chat.id).disabledAgentFiles) === '["CLAUDE.md"]');
+  const active = agentFiles.resolveActiveFileNames({ chat: picky, projectDir });
+  check('opted-out file is not in the active names', active.includes('AGENTS.md') && !active.includes('CLAUDE.md'), JSON.stringify(active));
+  check('the full name list still offers the opted-out file', agentFiles.resolveFileNames({ chat: picky, projectDir }).includes('CLAUDE.md'));
+  check('only the remaining file is loaded', JSON.stringify(agentFiles.load(projectDir, active).map((f) => f.name)) === '["AGENTS.md"]');
+  check('an empty active list loads nothing', agentFiles.load(projectDir, []).length === 0);
+  check('a malformed opt-out list is ignored', agentFiles.chatDisabledNames({ disabledAgentFiles: 'AGENTS.md' }).size === 0);
+  const cleared = chats.updateChat(projectDir, chat.id, { disabledAgentFiles: [] });
+  check('an empty opt-out list clears the field', cleared.disabledAgentFiles === undefined, JSON.stringify(cleared.disabledAgentFiles));
+  settings.setProject(projectDir, { agentFiles: false });
+
   const child = spawn(process.execPath, [path.join(__dirname, '..', 'bin', 'mouaif.js'), 'serve'], {
     cwd: path.join(__dirname, '..'),
     env: Object.assign({}, process.env, { MOUAIF_HOME: TMP_HOME }),

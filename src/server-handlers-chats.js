@@ -421,9 +421,12 @@ return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
       try {
         agentFilesEnabled = agentFiles.resolveEnabled({ chat, projectDir: dir });
         agentFileNames = agentFiles.resolveFileNames({ chat, projectDir: dir });
-        agentFilesAvailable = agentFiles.discover(dir, agentFileNames).map((f) => ({ name: f.name, size: f.size }));
+        // Every discovered file is listed; `chatDisabled` marks the ones
+        // this chat switched off, which the card can turn back on.
+        const agentFilesOff = agentFiles.chatDisabledNames(chat);
+        agentFilesAvailable = agentFiles.discover(dir, agentFileNames).map((f) => ({ name: f.name, size: f.size, chatDisabled: agentFilesOff.has(f.name) }));
         if (agentFilesEnabled) {
-          agentFilesList = agentFiles.load(dir, agentFileNames);
+          agentFilesList = agentFiles.load(dir, agentFiles.resolveActiveFileNames({ chat, projectDir: dir }));
           for (const af of agentFilesList) parts.push(af.content);
         }
       } catch { /* agent files stay null */ }
@@ -1102,7 +1105,7 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
   // as its own system message. A trace line records what was injected.
   try {
     if (agentFiles.resolveEnabled({ chat, projectDir })) {
-      const names = agentFiles.resolveFileNames({ chat, projectDir });
+      const names = agentFiles.resolveActiveFileNames({ chat, projectDir });
       const injected = agentFiles.load(projectDir, names);
       for (const m of injected) upstreamMessages.push({ role: m.role, content: m.content });
       if (traceStream && injected.length) {

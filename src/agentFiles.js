@@ -20,6 +20,8 @@
 //   isEnabledForChat(chat)           -> boolean
 //   resolveEnabled({chat, projectDir}) -> boolean
 //   resolveFileNames({chat, projectDir}) -> string[]
+//   chatDisabledNames(chat)          -> Set<string>
+//   resolveActiveFileNames({chat, projectDir}) -> string[]
 
 const fs = require('fs');
 const path = require('path');
@@ -43,19 +45,39 @@ const MAX_BYTES = 64 * 1024;
 // Return the list of basenames to look for. Resolution order:
 //   1. project.agentFileNames (array of strings) — explicit override
 //   2. DEFAULT_AGENT_FILE_NAMES
-// The chat record does not carry its own file list; the per-chat toggle
-// is a boolean on/off, not a per-file picker.
+// This is the full list a chat can pick from. The chat's own per-file
+// opt-outs (`disabledAgentFiles`) are applied by resolveActiveFileNames.
 function resolveFileNames({ chat, projectDir }) {
-  void chat; // reserved for future per-chat file lists
+  void chat;
   if (projectDir) {
     try {
       const project = settings.getProject(projectDir);
-      if (project && Array.isArray(project.agentFileNames) && project.agentFileNames.length) {
-        return project.agentFileNames.map(String).filter(Boolean);
+      if (project && Array.isArray(project.agentFileNames)) {
+        const names = project.agentFileNames.map(String).filter(Boolean);
+        if (names.length) return names;
       }
     } catch { /* fall through to default */ }
   }
   return DEFAULT_AGENT_FILE_NAMES.slice();
+}
+
+// chatDisabledNames(chat) -> Set<string>
+//
+// The agent files this chat switched off one by one (`disabledAgentFiles`
+// on the chat record). Anything that is not a list of names is ignored.
+function chatDisabledNames(chat) {
+  const list = chat && Array.isArray(chat.disabledAgentFiles) ? chat.disabledAgentFiles : [];
+  return new Set(list.map((n) => String(n)).filter(Boolean));
+}
+
+// resolveActiveFileNames({ chat, projectDir }) -> string[]
+//
+// The names to inject for this chat: the project/default list minus the
+// chat's per-file opt-outs. Whether anything is injected at all is still
+// resolveEnabled's call.
+function resolveActiveFileNames({ chat, projectDir }) {
+  const off = chatDisabledNames(chat);
+  return resolveFileNames({ chat, projectDir }).filter((name) => !off.has(name));
 }
 
 // discover(projectDir, names?) -> [{ name, absPath, size }]
@@ -66,7 +88,9 @@ function resolveFileNames({ chat, projectDir }) {
 // project-level/default list is used.
 function discover(projectDir, names) {
   if (!projectDir || typeof projectDir !== 'string') return [];
-  const list = Array.isArray(names) && names.length ? names : resolveFileNames({ projectDir });
+  // An explicit list is used as given, even when empty (a chat that
+  // switched every file off); only a missing list falls back.
+  const list = Array.isArray(names) ? names : resolveFileNames({ projectDir });
   const out = [];
   for (const name of list) {
     const absPath = path.join(projectDir, name);
@@ -160,5 +184,7 @@ module.exports = {
   load,
   isEnabledForChat,
   resolveEnabled,
-  resolveFileNames
+  resolveFileNames,
+  chatDisabledNames,
+  resolveActiveFileNames
 };

@@ -39,6 +39,7 @@ const CREATE_CHAT_TABLE = `
   agent_files   INTEGER,
   skills        INTEGER,
   disabled_skills TEXT,
+  disabled_agent_files TEXT,
   tool_auth     TEXT,
   auto_retry    INTEGER NOT NULL DEFAULT 1,
 total_cost    REAL NOT NULL DEFAULT 0,
@@ -118,6 +119,11 @@ d.exec('ALTER TABLE chat_store ADD COLUMN ' + column + ' TEXT');
 // column existed has.
 if (!chatColumns.some((column) => column.name === 'disabled_skills')) {
 d.exec('ALTER TABLE chat_store ADD COLUMN disabled_skills TEXT');
+}
+// Per-chat agent-file opt-outs (JSON array of file names, as listed by
+// agentFiles.resolveFileNames). NULL means "no per-file opt-outs".
+if (!chatColumns.some((column) => column.name === 'disabled_agent_files')) {
+d.exec('ALTER TABLE chat_store ADD COLUMN disabled_agent_files TEXT');
 }
 // Per-chat tool authorization overrides (decisions §17): the Off / Ask /
 // Allow choice made in the chat's own Tools card and composer tool popup.
@@ -239,6 +245,16 @@ if (row.tools !== null) {
       }
     } catch { /* keep undefined */ }
   }
+  // disabledAgentFiles: the agent files this chat switched off one by one,
+  // same NULL -> undefined rule as disabledSkills.
+  if (row.disabled_agent_files) {
+    try {
+      const parsed = JSON.parse(row.disabled_agent_files);
+      if (Array.isArray(parsed) && parsed.length) {
+        chat.disabledAgentFiles = parsed.map((n) => String(n)).filter(Boolean);
+      }
+    } catch { /* keep undefined */ }
+  }
   // toolAuth: this chat's own Off/Ask/Allow overrides, keyed by tool name
   // (`shell`, `file`, …) for native tools and by full composed name
   // (`mcp__<slug>__<tool>`) for MCP ones. NULL/{} -> undefined, meaning
@@ -330,6 +346,9 @@ skills: chat.skills === undefined ? null : (chat.skills ? 1 : 0),
 // single representation in the store instead of two.
 disabled_skills: (Array.isArray(chat.disabledSkills) && chat.disabledSkills.length)
   ? JSON.stringify(chat.disabledSkills.map((n) => String(n)).filter(Boolean))
+  : null,
+disabled_agent_files: (Array.isArray(chat.disabledAgentFiles) && chat.disabledAgentFiles.length)
+  ? JSON.stringify(chat.disabledAgentFiles.map((n) => String(n)).filter(Boolean))
   : null,
 // Same single-representation rule as disabled_skills: "no per-chat
 // overrides" is NULL, never "{}".
@@ -664,10 +683,10 @@ function createChat(projectDir, chat) {
   d.prepare(`
 INSERT INTO chat_store (project_dir, id, title, created_at, last_opened_at,
 trace, prompt_size, prompt_id, prompt_snapshot, provider_id, model_id, subagent_provider_id, subagent_model_id, working_dir, thinking_level, max_output_tokens, draft, draft_attachments, tools,
-agent_id, agent_files, skills, disabled_skills, tool_auth, auto_retry, total_cost, cost_known_count)
+agent_id, agent_files, disabled_agent_files, skills, disabled_skills, tool_auth, auto_retry, total_cost, cost_known_count)
 VALUES (@project_dir, @id, @title, @created_at, @last_opened_at,
 @trace, @prompt_size, @prompt_id, @prompt_snapshot, @provider_id, @model_id, @subagent_provider_id, @subagent_model_id, @working_dir, @thinking_level, @max_output_tokens, @draft, @draft_attachments, @tools,
-@agent_id, @agent_files, @skills, @disabled_skills, @tool_auth, @auto_retry, @total_cost, @cost_known_count)
+@agent_id, @agent_files, @disabled_agent_files, @skills, @disabled_skills, @tool_auth, @auto_retry, @total_cost, @cost_known_count)
 `).run(row);
   return rowToChat(d.prepare(
     'SELECT * FROM chat_store WHERE project_dir = ? AND id = ?'
@@ -695,6 +714,7 @@ subagent_model_id = @subagent_model_id, working_dir = @working_dir, thinking_lev
 max_output_tokens = @max_output_tokens,
 draft = @draft, draft_attachments = @draft_attachments, tools = @tools,
 agent_id = @agent_id, agent_files = @agent_files,
+disabled_agent_files = @disabled_agent_files,
 skills = @skills, disabled_skills = @disabled_skills,
 tool_auth = @tool_auth,
 auto_retry = @auto_retry, total_cost = @total_cost,

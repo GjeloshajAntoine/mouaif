@@ -3839,7 +3839,7 @@ function headerSignatures(state, empty) {
       (state.mcpServers || []).map((s) => (s && s.id) + ':' + (s && s.status)),
       Array.from(state.usedTools || [])
     ]),
-    agentFiles: stableJson([af.files || [], !!af.enabled, !!af.explicit, !!af.projectLocked]),
+    agentFiles: stableJson([af.files || [], af.disabled || [], !!af.enabled, !!af.explicit, !!af.projectLocked]),
     skills: stableJson([
       (sk.items || []).map((s) => [s && s.id, !!s.disabled, !!s.chatDisabled]),
       !!sk.enabled,

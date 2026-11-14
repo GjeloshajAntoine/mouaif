@@ -130,6 +130,9 @@ skills: opts && typeof opts.skills === 'boolean' ? opts.skills : seed.skills,
 disabledSkills: opts && Array.isArray(opts.disabledSkills) && opts.disabledSkills.length
   ? opts.disabledSkills.map((n) => String(n)).filter(Boolean)
   : undefined,
+disabledAgentFiles: opts && Array.isArray(opts.disabledAgentFiles) && opts.disabledAgentFiles.length
+  ? opts.disabledAgentFiles.map((n) => String(n)).filter(Boolean)
+  : undefined,
 autoRetry: opts && typeof opts.autoRetry === 'boolean' ? opts.autoRetry : undefined,
 // Per-chat tool authorization overrides — see updateChat below.
 toolAuth: (opts && opts.toolAuth && typeof opts.toolAuth === 'object' && !Array.isArray(opts.toolAuth) && Object.keys(opts.toolAuth).length)
@@ -238,6 +241,14 @@ const list = Array.isArray(patch.disabledSkills)
 ? Array.from(new Set(patch.disabledSkills.map((n) => String(n)).filter(Boolean)))
 : [];
 dbPatch.disabledSkills = list.length ? list : null;
+}
+// Per-file agent-file opt-outs for this one chat, same rules as
+// disabledSkills above.
+if (patch && Object.prototype.hasOwnProperty.call(patch, 'disabledAgentFiles')) {
+const list = Array.isArray(patch.disabledAgentFiles)
+? Array.from(new Set(patch.disabledAgentFiles.map((n) => String(n)).filter(Boolean)))
+: [];
+dbPatch.disabledAgentFiles = list.length ? list : null;
 }
 if (patch && Object.prototype.hasOwnProperty.call(patch, 'autoRetry')) {
 dbPatch.autoRetry = patch.autoRetry === true;

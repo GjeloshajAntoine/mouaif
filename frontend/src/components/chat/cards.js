@@ -314,13 +314,16 @@ export function mountToolsCard(refs, state) {
 //
 // A small card that shows which agent files (AGENTS.md, CLAUDE.md,
 // .github/copilot-instructions.md) were found at the project root
-// and whether they are being injected into the model context. One
-// toggle flips the per-chat `agentFiles` boolean; the default
-// (no explicit choice) is ON regardless of the prompt-size profile.
-// When `projectLocked` is true, the project has the master switch off
-// and the per-chat toggle is disabled.
+// and whether they are being injected into the model context. Each row
+// is that file's own switch for this chat: unchecking one leaves the
+// others alone and stores the name in the chat's `disabledAgentFiles`
+// list (see toggleAgentFile below). A chat whose family flag is off
+// shows every row unchecked. When `projectLocked` is true, the project
+// has the master switch off and the rows are disabled.
 function buildAgentFilesCard(state) {
-  const af = state.agentFiles || { files: [], enabled: true, explicit: false, projectLocked: false };
+  const af = state.agentFiles || { files: [], disabled: [], enabled: true, explicit: false, projectLocked: false };
+  const off = new Set(Array.isArray(af.disabled) ? af.disabled : []);
+  const onCount = af.enabled ? af.files.filter((name) => !off.has(name)).length : 0;
   const card = document.createElement('div');
   card.className = 'chat-view__agent-files-card';
   card.dataset.agentFilesCard = '1';
@@ -334,10 +337,12 @@ function buildAgentFilesCard(state) {
   note.className = 'chat-view__agent-files-note';
   if (af.projectLocked) {
     note.textContent = 'off (locked by project setting) — enable in Settings → Project';
-  } else if (af.explicit) {
-    note.textContent = af.enabled ? 'on — applies next turn' : 'off — applies next turn';
+  } else if (onCount && onCount < af.files.length) {
+    note.textContent = onCount + ' of ' + af.files.length + ' on — applies next turn';
+  } else if (af.explicit || off.size) {
+    note.textContent = onCount ? 'on — applies next turn' : 'off — applies next turn';
   } else {
-    note.textContent = af.enabled ? 'on (default) — tap to disable' : 'off (default) — tap to enable';
+    note.textContent = onCount ? 'on (default) — tap a file to disable' : 'off (default) — tap a file to enable';
   }
   head.appendChild(title); head.appendChild(note);
   card.appendChild(head);
@@ -360,10 +365,12 @@ function buildAgentFilesCard(state) {
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.className = 'checkbox checkbox--sm';
-    checkbox.checked = !!af.enabled;
+    checkbox.checked = !!af.enabled && !off.has(name);
     checkbox.disabled = !!af.projectLocked;
     checkbox.setAttribute('aria-label', 'Use agent file ' + name);
-    checkbox.addEventListener('change', () => state._toggleAgentFiles && state._toggleAgentFiles(checkbox.checked));
+    checkbox.addEventListener('change', () => {
+      if (state._toggleAgentFile) state._toggleAgentFile(name, checkbox.checked);
+    });
     const label = document.createElement('span');
     label.className = 'chat-view__agent-files-name';
     label.textContent = name;
@@ -516,19 +523,60 @@ function notifySkillSelection(state, refs) {
 
 // toggleAgentFiles(next, state, refs, updateChat, refreshSysPrompt)
 //
-// Flip the per-chat agent-files toggle and persist it. The first
-// time the user interacts we write an explicit boolean; after that
-// the chat carries the user's choice until they reset it (by
-// switching to the profile default, which we do not expose in the
-// UI — the toggle is sticky). After the PATCH lands we re-fetch the
-// resolved system prompt so the transcript card reflects the change
-// immediately (agent files are part of the injected system context).
+// Flip every agent file for this chat at once and persist it — the
+// all-on / all-off shortcut used by the composer popup's group row.
+// "On" clears the per-file opt-outs, because on here means every file;
+// single files go through toggleAgentFile below. After the PATCH lands
+// we re-fetch the resolved system prompt so the transcript card reflects
+// the change immediately (agent files are part of the injected system
+// context).
 export async function toggleAgentFiles(next, state, refs, updateChat, refreshSysPrompt) {
-  const cur = state.agentFiles || { files: [], enabled: true, explicit: false };
-  state.agentFiles = { files: cur.files, enabled: next, explicit: true, projectLocked: cur.projectLocked };
+  const cur = state.agentFiles || { files: [], disabled: [], enabled: true, explicit: false };
+  if (cur.projectLocked) return false;
+  const files = Array.isArray(cur.files) ? cur.files : [];
+  return saveAgentFileSelection(next, next ? [] : files.slice(), cur, state, refs, updateChat, refreshSysPrompt);
+}
+
+// toggleAgentFile(name, next, state, refs, updateChat, refreshSysPrompt)
+//
+// Flip ONE agent file for this chat and persist the resulting opt-out
+// list on the chat record (`disabledAgentFiles`). A chat that had agent
+// files off shows nothing checked, so turning one file on writes the
+// family flag on AND every other file into the opt-out list; without
+// that the first tap on one row would bring every file back. Nothing
+// left on is the same state as the family flag off.
+export async function toggleAgentFile(name, next, state, refs, updateChat, refreshSysPrompt) {
+  const cur = state.agentFiles || { files: [], disabled: [], enabled: true, explicit: false };
+  const files = Array.isArray(cur.files) ? cur.files : [];
+  if (cur.projectLocked || !files.includes(name)) return false;
+  const off = new Set(Array.isArray(cur.disabled) ? cur.disabled : []);
+  const on = new Set(cur.enabled ? files.filter((f) => !off.has(f)) : []);
+  if (next) on.add(name);
+  else on.delete(name);
+  return saveAgentFileSelection(on.size > 0, files.filter((f) => !on.has(f)), cur, state, refs, updateChat, refreshSysPrompt);
+}
+
+// Apply a selection to the card right away, then persist it (updateChat
+// keeps PATCHes in tap order). When every file is off the opt-out list is
+// still written, so a prompt preset that forces agent files on cannot bring
+// back files the user switched off. A failed save puts the card back.
+async function saveAgentFileSelection(enabled, disabled, cur, state, refs, updateChat, refreshSysPrompt) {
+  const selection = Object.assign({}, cur, { enabled, disabled, explicit: true });
+  state.agentFiles = selection;
   updateAgentFilesCard(refs, state);
-  await updateChat({ agentFiles: next });
+  let ok = false;
+  try {
+    ok = await updateChat({ agentFiles: enabled, disabledAgentFiles: disabled.length ? disabled : null }) !== false;
+  } catch { /* handled as a failed save below */ }
+  if (!ok) {
+    if (state.agentFiles === selection) {
+      state.agentFiles = cur;
+      updateAgentFilesCard(refs, state);
+    }
+    return false;
+  }
   if (typeof refreshSysPrompt === 'function') await refreshSysPrompt();
+  return true;
 }
 
 // toggleSkills(next, state, refs, updateChat, refreshSysPrompt)

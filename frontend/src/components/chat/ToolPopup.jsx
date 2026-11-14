@@ -51,6 +51,7 @@ export function ToolPopup(props) {
     onToggleTool,
     onToggleToolGroup,
     onToggleAgentFiles,
+    onToggleAgentFile,
     onToggleSkills,
     onToggleSkill,
     onSaveToolAuth,
@@ -233,7 +234,9 @@ export function ToolPopup(props) {
 
   function handleToggleTool(groupId, toolId, checked) {
     if (groupId === 'agent-files') {
-      if (onToggleAgentFiles) onToggleAgentFiles(checked);
+      // A file row switches that file only; the group checkbox above is
+      // the all-on / all-off shortcut (handleToggleGroup).
+      if (onToggleAgentFile) onToggleAgentFile(toolId, checked);
       return;
     }
     if (groupId === 'skills') {
@@ -248,13 +251,17 @@ export function ToolPopup(props) {
   }
 
   // If agent files are available, add a synthetic group for them
-  const af = agentFiles || { files: [], enabled: true, projectLocked: false };
+  const af = agentFiles || { files: [], disabled: [], enabled: true, projectLocked: false };
   if (af.files.length) {
+    // Same group-checkbox convention as skills below: `checked` means every
+    // file is on, so a partial selection shows the indeterminate dash.
+    const afOff = new Set(Array.isArray(af.disabled) ? af.disabled : []);
+    const afOn = af.enabled ? af.files.filter((f) => !afOff.has(f)).length : 0;
     groups.push({
       id: 'agent-files',
       name: 'Agent files',
-      description: af.enabled ? 'all selected' : 'off',
-      checked: af.enabled,
+      description: !afOn ? 'off' : (afOn === af.files.length ? 'all selected' : afOn + ' of ' + af.files.length + ' selected'),
+      checked: afOn === af.files.length,
       disabled: !!af.projectLocked,
       disabledReason: af.projectLocked ? 'Locked off by Settings → Project.' : '',
       alwaysExpanded: true,
@@ -262,7 +269,7 @@ export function ToolPopup(props) {
         id: f,
         name: f,
         description: '',
-        checked: af.enabled,
+        checked: !!af.enabled && !afOff.has(f),
         disabled: !!af.projectLocked
       }))
     });
