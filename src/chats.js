@@ -93,10 +93,23 @@ function resolvePromptSnapshot(projectDir, opts) {
   } catch { return undefined; }
 }
 
+// presetFields(snapshot) -> { tools?, agentFiles?, skills? }
+//
+// The chat settings a prompt's preset starts a chat with
+// (docs/features/custom-prompts.md). The preset is a seed: it is copied
+// onto the chat record once, so the Tools popup reads the truth and the
+// stream never merges anything per turn.
+function presetFields(snapshot) {
+return require('./prompts.js').presetSeed(snapshot && snapshot.preset);
+}
+
 function createChat(projectDir, opts) {
 ensureDir(projectDir);
 const resolved = settings.getResolved(projectDir);
 const defaults = defaultsForProject(resolved);
+const promptSnapshot = resolvePromptSnapshot(projectDir, opts);
+// Explicit create options win over the prompt's preset.
+const seed = presetFields(promptSnapshot);
 const chat = {
 id: newChatId(),
 title: (opts && typeof opts.title === 'string' && opts.title.trim()) ? opts.title.trim() : 'New chat',
@@ -111,8 +124,9 @@ promptId: opts && typeof opts.promptId === 'string' && opts.promptId ? opts.prom
 // Editing the prompt afterwards must not rewrite this chat, so the text
 // rides on the record from here on; `promptId` stays as provenance and as
 // the fallback for chats that have no snapshot.
-promptSnapshot: resolvePromptSnapshot(projectDir, opts),
-skills: opts && typeof opts.skills === 'boolean' ? opts.skills : undefined,
+promptSnapshot,
+agentFiles: opts && typeof opts.agentFiles === 'boolean' ? opts.agentFiles : seed.agentFiles,
+skills: opts && typeof opts.skills === 'boolean' ? opts.skills : seed.skills,
 disabledSkills: opts && Array.isArray(opts.disabledSkills) && opts.disabledSkills.length
   ? opts.disabledSkills.map((n) => String(n)).filter(Boolean)
   : undefined,
@@ -121,7 +135,7 @@ autoRetry: opts && typeof opts.autoRetry === 'boolean' ? opts.autoRetry : undefi
 toolAuth: (opts && opts.toolAuth && typeof opts.toolAuth === 'object' && !Array.isArray(opts.toolAuth) && Object.keys(opts.toolAuth).length)
 ? opts.toolAuth
 : undefined,
-tools: opts && Array.isArray(opts.tools) ? opts.tools : undefined
+tools: opts && Array.isArray(opts.tools) ? opts.tools : seed.tools
 };
 return getChatDb().createChat(projectDir, chat);
 }
@@ -158,6 +172,13 @@ dbPatch.promptSnapshot = patch.promptSnapshot && typeof patch.promptSnapshot ===
 dbPatch.promptSnapshot = dbPatch.promptId
   ? resolvePromptSnapshot(projectDir, { promptId: dbPatch.promptId })
   : null;
+// Attaching a prompt to a chat with no messages yet is the same as
+// creating the chat from it, so the preset seeds the chat's settings.
+// A chat that already has a conversation keeps its own settings, and
+// detaching changes nothing. Fields in this same patch win (below).
+if (dbPatch.promptSnapshot && dbPatch.promptSnapshot.preset && !messages.getMessageCount(projectDir, chatId)) {
+Object.assign(dbPatch, presetFields(dbPatch.promptSnapshot));
+}
 }
 if (patch && Object.prototype.hasOwnProperty.call(patch, 'providerId')) {
 dbPatch.providerId = (patch.providerId === null || patch.providerId === '') ? null : String(patch.providerId);

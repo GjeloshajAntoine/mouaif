@@ -45,12 +45,13 @@ BUILDERS,
 PARSERS,
 copilotCacheClear
 } = require('./ai-endpoints.js');
-const { streamChat, runSingleToolCall, parseSSEFrame, readSSE, readNDJSON } = require('./ai-stream.js');
+const { streamChat, collectToolSpecs, runSingleToolCall, parseSSEFrame, readSSE, readNDJSON } = require('./ai-stream.js');
 const { chat } = require('./ai-chat.js');
 
 module.exports = {
 // public
 streamChat,
+collectToolSpecs,
 chat,
 runSingleToolCall,
 ENDPOINTS,

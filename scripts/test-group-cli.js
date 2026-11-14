@@ -293,9 +293,7 @@ async function main() {
   assert.equal(JSON.stringify(mirror), JSON.stringify(JSON.parse(JSON.stringify(model.TOOL_GROUPS))),
     'run: node scripts/build-tool-groups.js');
   const preset = await import('../frontend/src/components/settings/presetTools.js');
-  assert.deepEqual([...preset.PRESET_DEFAULT_OFF_TOOLS], ['group_read', 'group_edit', 'group_cli']);
-  assert.deepEqual(preset.presetDefaultSelection(['shell', 'read_file', 'group_read', 'group_edit', 'group_cli']),
-    ['shell', 'read_file'], 'the baseline leaves the grouped tools off');
+  assert.equal(preset.presetToolSelection(null), null, 'a preset with no selection shows every tool, group_cli included');
 
   // ---- 11. The card: arguments, summary and per-entry preview ------------
   const cardContext = vm.createContext({ Set, console });

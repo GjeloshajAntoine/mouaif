@@ -26,8 +26,6 @@ agentFiles,
 agentSkills,
 agentFeatures,
 tags,
-mcp,
-shellTool,
 ai,
 liveChat,
 safeDecode
@@ -394,16 +392,11 @@ return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
         if (p) profile = { id: p.id, label: p.label, description: p.description, systemMessage: p.systemMessage };
       } catch { /* profile stays null; the stream would fall through too */ }
       let prompt = null;
-      // The prompt's optional `preset` (tools + agent-files) is part of
-      // the chat's effective config for this request — the same shape the
-      // stream uses (see resolveChatEffective). It only ADDS to the
-      // per-chat toggle (see prompts.effectivePresetConfig), never
-      // overrides the project's authorization gate.
-      //
-      // Both the text and the preset come from the chat's pinned snapshot
-      // (falling back to a live lookup for older chats), so this preview
-      // shows exactly what the stream would send.
-      let effectiveChat = chat;
+      // The text comes from the chat's pinned snapshot (falling back to a
+      // live lookup for older chats), so this preview shows exactly what
+      // the stream would send. A prompt's preset was copied onto the chat
+      // when it was created (chats.createChat), so the stored chat already
+      // carries it; nothing is merged here.
       try {
       const resolved = prompts.resolveChatPrompt(dir, chat);
       if (resolved) {
@@ -414,9 +407,6 @@ return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
         content: resolved.content,
         preset: resolved.preset || null
       };
-      if (resolved.preset) {
-        effectiveChat = Object.assign({}, chat, prompts.effectivePresetConfig(chat, resolved.preset));
-      }
       }
       } catch { /* custom prompt stays null */ }
       // The combined text mirrors the order handleChatStream uses:
@@ -429,8 +419,8 @@ return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
       let agentFilesAvailable = [];
       let agentFileNames = [];
       try {
-        agentFilesEnabled = agentFiles.resolveEnabled({ chat: effectiveChat, projectDir: dir });
-        agentFileNames = agentFiles.resolveFileNames({ chat: effectiveChat, projectDir: dir });
+        agentFilesEnabled = agentFiles.resolveEnabled({ chat, projectDir: dir });
+        agentFileNames = agentFiles.resolveFileNames({ chat, projectDir: dir });
         agentFilesAvailable = agentFiles.discover(dir, agentFileNames).map((f) => ({ name: f.name, size: f.size }));
         if (agentFilesEnabled) {
           agentFilesList = agentFiles.load(dir, agentFileNames);
@@ -439,20 +429,16 @@ return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
       } catch { /* agent files stay null */ }
       // Agents are subagent delegation targets only — never part of
       // the chat's system prompt. Skills are project instruction files.
-      // A prompt preset with `skills: true` rides on the chat for this
-      // turn (see prompts.effectivePresetConfig), so the catalog
-      // resolution reads `effectiveChat` — not the persisted record —
-      // to mirror the live stream's behavior.
-      const skillState = agentSkills.resolve({ chat: effectiveChat, projectDir: dir });
-      const skillCatalog = agentSkills.catalogMessage(dir, effectiveChat);
+      const skillState = agentSkills.resolve({ chat, projectDir: dir });
+      const skillCatalog = agentSkills.catalogMessage(dir, chat);
       if (skillCatalog) parts.push(skillCatalog);
       try {
       const project = require('./settings.js').getProject(dir);
       let authz = null;
-      try { authz = require('./tools/authorization.js').getAuthorization(dir, effectiveChat && effectiveChat.id); } catch { /* safe default */ }
+      try { authz = require('./tools/authorization.js').getAuthorization(dir, chat.id); } catch { /* safe default */ }
       let mcpServers = null;
       try { mcpServers = require('./mcp.js').listServers(dir); } catch { /* safe default */ }
-      const featureMsg = agentFeatures.buildFeatureSummary({ chat: effectiveChat, projectDir: dir, project, authz, mcpServers });
+      const featureMsg = agentFeatures.buildFeatureSummary({ chat, projectDir: dir, project, authz, mcpServers });
       if (featureMsg) parts.push(featureMsg);
       } catch { /* feature summary stays omitted */ }
       if (prompt && prompt.content) parts.push(prompt.content);
@@ -482,10 +468,9 @@ disabled: skillState.projectDisabled.has(s.id),
 chatDisabled: skillState.chatDisabled.has(s.id)
 })),
         projectSkills: skillState.projectEnabled,
-        // The family flag as the STREAM resolves it, which is not always the
-        // persisted `chat.skills`: a prompt preset with `skills: true` rides
-        // on the chat for the turn (see prompts.effectivePresetConfig). The
-        // transcript card must show what the model will actually get.
+        // The family flag as the stream resolves it (chat toggle, then the
+        // project lock and profile default), so the transcript card shows
+        // what the model will actually get.
         skillsEnabled: skillState.enabled,
         prompt,
         text: parts.join('\n\n')
@@ -503,9 +488,10 @@ chatDisabled: skillState.chatDisabled.has(s.id)
   // The chat UI shows this as a temporary preview while
   // the chat is still empty, so the user sees the concrete effect of
   // the S/M/L switch on the tool budget before the first message.
-  // The collection logic mirrors ai.streamChat (native shell + MCP),
-  // then promptProfiles.reduceToolSpecs applies the same reduction the
-  // stream will apply — so the preview is always what the model gets.
+  // The list comes from ai.collectToolSpecs, the same function the
+  // stream calls (off-gates, share gate, tool wording, the chat's tool
+  // filter), then promptProfiles.reduceToolSpecs applies the same
+  // reduction — so the preview is always what the model gets.
   const toolPreviewMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/tool-preview$/);
   if (toolPreviewMatch && method === 'GET') {
     const id = safeDecode(toolPreviewMatch[1]);
@@ -514,87 +500,23 @@ chatDisabled: skillState.chatDisabled.has(s.id)
     try {
       const chat = chats.getChat(dir, id);
       if (!chat) return sendJSON(res, 404, { error: 'chat not found' });
-      const resolvedPrompt = prompts.resolveChatPrompt(dir, chat);
-      const effectiveChat = resolvedPrompt?.preset ? Object.assign({}, chat, prompts.effectivePresetConfig(chat, resolvedPrompt.preset)) : chat;
       // Resolve the profile id (chat -> project -> app -> 'average').
       let profileId = promptProfiles.DEFAULT_PROFILE;
       try {
         const p = promptProfiles.resolveProfile({ chat, projectDir: dir });
         if (p && p.id) profileId = p.id;
       } catch { /* fall through to default */ }
-      // Collect the tool specs exactly as streamChat does: base shell,
-      // progress, subagent, ask_user, and file tools are always
-      // advertised, plus ready MCP servers.
-      const shellEnabled = true;
-      const fileToolsEnabled = true;
-      const toolSpecs = [];
-      if (shellEnabled) {
-        try { toolSpecs.push(shellTool.SPEC); } catch { /* skip */ }
-      }
-      try { toolSpecs.push(require('./tools/progress.js').SPEC); } catch { /* skip */ }
-      try { toolSpecs.push(require('./tools/subagent.js').SPEC); } catch { /* skip */ }
-      try { toolSpecs.push(require('./tools/ask.js').SPEC); } catch { /* skip */ }
-      try { toolSpecs.push(require('./agentFeatures.js').LIST_FEATURES_SPEC); } catch { /* skip */ }
-      try { toolSpecs.push(require('./tools/webpreview.js').SPEC); } catch { /* skip */ }
-try { toolSpecs.push(require('./tools/restart.js').SPEC); } catch { /* skip */ }
-try {
-  toolSpecs.push(...Object.values(require('./tools/mouaif.js').SPECS));
-} catch { /* skip */ }
-if (fileToolsEnabled) {
-
-        try {
-          const fileTools = require('./tools/files.js');
-          for (const n of fileTools.FILE_TOOL_NAMES) toolSpecs.push(fileTools.SPECS[n]);
-        } catch { /* skip */ }
-      }
-      try {
-        const specs = mcp.listComposedToolSpecs(dir);
-        if (specs && specs.length) {
-          for (const s of specs) {
-            toolSpecs.push({
-              type: 'function',
-              function: { name: s.name, description: s.description, parameters: s.parameters }
-            });
-          }
-        }
-      } catch { /* no MCP tools */ }
-      try {
-        const authz = require('./tools/authorization.js');
-        const authState = authz.getAuthorization(dir, id);
-        for (const family of authz.NATIVE_TOOLS) {
-        const cfg = authState.tools[family];
-        if (cfg && cfg.mode === 'off') {
-        const hidden = authz.familyTools(family);
-        for (let i = toolSpecs.length - 1; i >= 0; i--) {
-        const spec = toolSpecs[i];
-        if (spec && spec.function && hidden.has(spec.function.name)) toolSpecs.splice(i, 1);
-        }
-        }
-        }
-        // Per-leaf file overrides (e.g. tools.read_file.mode = "off"
-        // with the `file` family enabled) must drop just that operation,
-        // matching what streamChat advertises to the model.
-        for (let i = toolSpecs.length - 1; i >= 0; i--) {
-        const spec = toolSpecs[i];
-        if (!spec || !spec.function || !authz.FAMILY_TOOLS.has(spec.function.name)) continue;
-        const cfg = authz.effectiveConfig(dir, spec.function.name, id);
-        if (cfg && cfg.mode === 'off') toolSpecs.splice(i, 1);
-        }
-        for (let i = toolSpecs.length - 1; i >= 0; i--) {
-        const spec = toolSpecs[i];
-        if (!spec || !spec.function || !String(spec.function.name).startsWith('mcp__')) continue;
-        const cfg = authz.effectiveConfig(dir, spec.function.name, id);
-        if (cfg && cfg.mode === 'off') toolSpecs.splice(i, 1);
-        }
-      } catch { /* authorization state unreadable; keep every tool advertised */ }
-      // Apply the same per-profile reduction the stream applies. For
-      // very-small this is discover_tool plus one compact (name + description,
-      // schema-less) entry per tool — a FIXED list, identical on every
-      // tool-loop request, so the Anthropic cached prefix stays byte-stable.
-      const allow = Array.isArray(effectiveChat.tools) ? new Set(effectiveChat.tools) : null;
-      const selectedSpecs = allow ? toolSpecs.filter((s) => allow.has(s.function.name)) : toolSpecs;
-      let effective = selectedSpecs;
-      try { effective = promptProfiles.reduceToolSpecs(selectedSpecs, profileId); } catch { /* full specs */ }
+      const { visibleToolSpecs } = ai.collectToolSpecs({
+        projectDir: dir,
+        chatId: id,
+        chat,
+        enabledTools: Array.isArray(chat.tools) ? chat.tools : null
+      });
+      // For very-small this is discover_tool plus one compact (name +
+      // description, schema-less) entry per tool — a FIXED list, identical
+      // on every tool-loop request, so the cached prefix stays byte-stable.
+      let effective = visibleToolSpecs;
+      try { effective = promptProfiles.reduceToolSpecs(visibleToolSpecs, profileId); } catch { /* full specs */ }
       const reduced = profileId === 'very-small';
       const tools = (effective || []).map((s) => {
         const fn = (s && s.function) || {};
@@ -612,8 +534,6 @@ if (fileToolsEnabled) {
       return sendJSON(res, 200, {
         profile: profileId,
         reduced,
-        shellEnabled,
-        fileToolsEnabled,
         count: tools.length,
         tools
       });
@@ -916,23 +836,10 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
   }
   if (!chat) return sendJSON(res, 404, { error: 'Chat not found', id: chatId });
 
-  // The chat's effective per-chat config. A custom prompt with a `preset`
-  // (tools + agent-files) rides on the chat for THIS turn: it is merged
-  // into the per-chat tool filter and agent-files toggle (see
-  // prompts.effectivePresetConfig) without touching the persisted chat
-  // record or the project's authorization gate. Falls back to `chat`
-  // when the prompt has no preset.
-  //
-  // The preset comes from the chat's pinned snapshot, so re-attaching a
-  // prompt (or editing it) never retroactively changes a chat that
-  // already carried it.
-  let effectiveChat = chat;
-  try {
-    const resolved = prompts.resolveChatPrompt(projectDir, chat);
-    if (resolved && resolved.preset) {
-      effectiveChat = Object.assign({}, chat, prompts.effectivePresetConfig(chat, resolved.preset));
-    }
-  } catch { /* preset best-effort; fall back to plain chat */ }
+  // A custom prompt's preset is not applied here: it was copied onto the
+  // chat record when the chat was created from the prompt (see
+  // chats.createChat), so `chat.tools`, `chat.agentFiles` and `chat.skills`
+  // are already the settings the user sees in the Tools popup.
 
   // Reject a second concurrent stream on the same chat. Two in-flight
   // runs interleave appendMessage read-modify-writes and both append
@@ -1194,8 +1101,8 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
   // prompt, so they sit close to the identity block. Each file rides
   // as its own system message. A trace line records what was injected.
   try {
-    if (agentFiles.resolveEnabled({ chat: effectiveChat, projectDir })) {
-      const names = agentFiles.resolveFileNames({ chat: effectiveChat, projectDir });
+    if (agentFiles.resolveEnabled({ chat, projectDir })) {
+      const names = agentFiles.resolveFileNames({ chat, projectDir });
       const injected = agentFiles.load(projectDir, names);
       for (const m of injected) upstreamMessages.push({ role: m.role, content: m.content });
       if (traceStream && injected.length) {
@@ -1207,12 +1114,8 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
   } catch { /* non-fatal; stream proceeds without agent files */ }
   // Agents are delegation targets for the `subagent` tool only — they
   // are never injected into the main chat stream (docs/features/agents.md).
-  // A prompt preset with `skills: true` rides on the chat for this
-  // turn (see prompts.effectivePresetConfig), so the skills catalog
-  // resolves against `effectiveChat` — not the persisted record —
-  // to match the agent-files / agentFeatures paths above.
   try {
-    const catalog = agentSkills.catalogMessage(projectDir, effectiveChat);
+    const catalog = agentSkills.catalogMessage(projectDir, chat);
     if (catalog) upstreamMessages.push({ role: 'system', content: catalog });
   } catch { /* non-fatal; stream proceeds without skills */ }
 
@@ -1224,10 +1127,10 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
     // Collect what we need for the feature summary.
     const project = require('./settings.js').getProject(projectDir);
     let authz = null;
-    try { authz = require('./tools/authorization.js').getAuthorization(projectDir, effectiveChat && effectiveChat.id); } catch { /* safe default */ }
+    try { authz = require('./tools/authorization.js').getAuthorization(projectDir, chat.id); } catch { /* safe default */ }
     let mcpServers = null;
     try { mcpServers = require('./mcp.js').listServers(projectDir); } catch { /* safe default */ }
-    const featureMsg = agentFeatures.buildFeatureSummary({ chat: effectiveChat, projectDir, project, authz, mcpServers });
+    const featureMsg = agentFeatures.buildFeatureSummary({ chat, projectDir, project, authz, mcpServers });
     if (featureMsg) {
       upstreamMessages.push({ role: 'system', content: featureMsg });
     }
@@ -1614,12 +1517,10 @@ promptSize: resolvedProfileId,
     // empty one) means "restrict to exactly these tool names". The
     // legacy fields above stay so existing API clients keep working.
     // Chat tool filter wins; otherwise all project tools are offered.
-    // `effectiveChat` folds in the prompt's preset tools (if any) the
-    // same way it feeds agent-files above.
-    enabledTools: Array.isArray(effectiveChat.tools) ? effectiveChat.tools : null,
-    // Skill declarations and activation must use the same preset-resolved
-    // configuration as the metadata catalog above.
-    chat: effectiveChat,
+    enabledTools: Array.isArray(chat.tools) ? chat.tools : null,
+    // Skill declarations and activation read the same chat as the
+    // metadata catalog above.
+    chat,
     // Per-round usage snapshot (one per upstream API call, including
     // tool rounds). Stashed so `assistant_turn_end` can attach cost
     // to the intermediate segment it persists.

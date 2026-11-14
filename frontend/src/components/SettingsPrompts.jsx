@@ -11,8 +11,9 @@
 //   - App-wide: stored globally in SQLite database.
 //   - Project: stored in <projectDir>/.mouaif.json.
 //
-// The prompt's optional **chat preset** (tools + agent files + skills)
-// uses the SAME controls as the rest of the settings: the standard
+// The prompt's optional **chat preset** (tools + agent files + skills) is
+// the starting settings of a chat created from the prompt. It uses the
+// SAME controls as the rest of the settings: the standard
 // `ToolTree` (the same one the chat Tools card and Settings → Project
 // use) and synthetic `agent-files` / `skills` groups that mirror
 // the chat's ToolPopup.
@@ -482,16 +483,16 @@ content: c
 
     if (presetActive()) {
     const p = preset;
-    // `tools: null` is the all-on baseline — it grants nothing specific, so
-    // it must not be persisted as a tool list. The preset still survives on
-    // the strength of agentFiles / skills; if none of the three is set,
-    // `normalizePreset()` collapses it to "no preset", which is correct:
-    // a chat already has every tool.
+    // `tools: null` is the all-on baseline, which a chat with no allowlist
+    // already has, so it is not persisted as a tool list; an empty Set is
+    // "start with no tools" and is. Agent files and skills are sent only
+    // when checked: unchecked means "keep the chat default", and sending
+    // `false` would turn them off in every chat made from this prompt.
     const hasAny = (p.tools instanceof Set) || p.agentFiles || p.skills;
     body.preset = hasAny ? {
       tools: p.tools instanceof Set ? Array.from(p.tools) : undefined,
-      agentFiles: p.agentFiles === true,
-      skills: p.skills === true
+      agentFiles: p.agentFiles === true ? true : undefined,
+      skills: p.skills === true ? true : undefined
     } : null;
     } else {
     body.preset = null;
@@ -623,7 +624,7 @@ scope: effectiveScope
 
   // buildPresetGroups() -> ToolTree groups
   //
-  // The selection rule (empty set = all on) lives in settings/presetTools.js
+  // The selection rule (null = all on) lives in settings/presetTools.js
   // so it is unit-tested; see scripts/test-preset-tools.js.
   //
   // allToolIds() -> string[] — every tool id currently rendered, used to
@@ -645,21 +646,9 @@ scope: effectiveScope
   }
 
   function buildPresetGroups() {
-    // The tree starts from the preset baseline — every tool except the
-    // default-off family (group_read / group_edit), which render unchecked.
-    // The row SET is independent of the checked state, so enumerate ids with
-    // an all-on pass first (buildToolGroups still returns every row), then
-    // rebuild with the preset's real selection. `presetToolSelection` owns
-    // the default-off rule.
-    const allIds = [];
-    for (const g of buildToolGroups(toolsCatalog, mcpServers, null, new Set())) {
-      if (g.tools && g.tools.length) {
-        for (const t of g.tools) { if (t && t.id) allIds.push(t.id); }
-      } else if (g.id.startsWith('mcp-')) {
-        allIds.push('mcp__' + g.id.slice(4) + '__*');
-      }
-    }
-    const selected = presetToolSelection(preset && preset.tools, allIds);
+    // `null` (no tool selection) renders every row checked: a chat created
+    // from the prompt gets every tool, the same as a chat with no allowlist.
+    const selected = presetToolSelection(preset && preset.tools);
     const rawGroups = buildToolGroups(toolsCatalog, mcpServers, selected, new Set());
     if (Array.isArray(selected)) {
       const selSet = new Set(selected);
@@ -1017,6 +1006,8 @@ h('label', { class: 'label', for: 'spe-content' }, 'Prompt content'),
       // which saves as "no preset", so there is no separate on/off switch.
       isBuiltin ? null : h('div', { class: 'row prompts__preset' },
         h('span', { class: 'label prompt-label' }, 'Chat preset'),
+        h('p', { class: 'hint hint--compact' },
+          'New chats started from this prompt begin with these tools. Unchecked agent files or skills keep the chat default.'),
         dataLoaded
           ? h(ToolTree, {
               groups,

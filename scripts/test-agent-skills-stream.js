@@ -92,14 +92,16 @@ async function main() {
       return { requests: seen.slice(), preview: JSON.parse(preview.body), out };
     }
 
-    const on = await run({ skills: false, promptSnapshot: { content: 'Prompt', preset: { skills: true } } }, [activation, null]);
+    // A prompt preset seeds the chat's skills toggle at creation; the
+    // stream then reads the stored chat, and so does the preview.
+    const on = await run({ promptSnapshot: { content: 'Prompt', preset: { skills: true } } }, [activation, null]);
     assert.equal(on.preview.skillsEnabled, true);
     assert.deepEqual(projectSkillNames(on.requests[0]), ['other', 'testing']);
     // The catalog bundled with the app rides along with the project's own.
     assert.ok(skillNames(on.requests[0]).includes('mouaif-config'));
     assert.match(activationFeedback(on.requests[1]), /INSTRUCTIONS_testing/);
 
-    const off = await run({ skills: true, promptSnapshot: { content: 'Prompt', preset: { skills: false } } }, [activation, null]);
+    const off = await run({ promptSnapshot: { content: 'Prompt', preset: { skills: false } } }, [activation, null]);
     assert.equal(off.preview.skillsEnabled, false);
     assert.deepEqual(projectSkillNames(off.requests[0]), []);
     // The family toggle is off, so the bundled catalog is gone too.

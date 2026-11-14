@@ -216,7 +216,7 @@ async function runSingleToolCall(c, cx) {
   // (which is governed by the Skills switches rather than the tool allowlist)
   // bypass the tool filter.
   if (!opts?.singleToolCall && c.name !== 'activate_skill') {
-    if (opts?.nestedSubagent && ((Array.isArray(opts.enabledTools) && !opts.enabledTools.includes(c.name)) || opts.inheritedPermissions?.[c.name]?.mode === 'off')) {
+    if (opts?.nestedSubagent && ((Array.isArray(opts.enabledTools) && !toolListed(opts.enabledTools, c.name)) || opts.inheritedPermissions?.[c.name]?.mode === 'off')) {
       const result = { error: { code: 'ETOOL_DISABLED', message: 'tool is outside the inherited child surface' } };
       onEvent('tool_call', { id: c.id || null, name: c.name, args });
       onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result });
@@ -225,7 +225,7 @@ async function runSingleToolCall(c, cx) {
     }
     if (!opts?.nestedSubagent && Array.isArray(opts?.enabledTools)
       && !(promptProfilesMod && c.name === promptProfilesMod.DISCOVER_TOOL_NAME)
-      && !opts.enabledTools.includes(c.name)) {
+      && !toolListed(opts.enabledTools, c.name)) {
       const result = { ok: false, code: 'ETOOL_DISABLED', reason: 'tool is disabled for this chat' };
       onEvent('tool_call', { id: c.id || null, name: c.name, args });
       onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result });
@@ -814,77 +814,55 @@ async function streamChat(opts) {
   }
 }
 
-async function streamChatInScope(opts) {
-  const { messages, signal, onEvent, onRoundUsage, onRoundCommit, thinkingLevel, maxOutputTokens } = opts || {};
-  // The request builders read per-run fields (thinkingLevel,
-  // maxOutputTokens) off the model record, so each run works on its own
-  // shallow copy: the caller's object is shared with the chat, with
-  // subagents that inherit it and with the shell reviewer, and writing onto
-  // it leaked one run's thinking level into the next.
-  const model = opts && opts.model && typeof opts.model === 'object' ? Object.assign({}, opts.model) : (opts && opts.model);
+// toolListed(list, name) -> boolean
+//
+// Whether a per-chat tool allowlist (`chat.tools`, a subagent's inherited
+// list) covers a tool. Names match exactly; `mcp__<slug>__*` covers every
+// tool of that MCP server, which is what the Tools card and a prompt preset
+// store for a server whose tools are not cached yet.
+function toolListed(list, name) {
+  if (!Array.isArray(list) || typeof name !== 'string') return false;
+  if (list.includes(name)) return true;
+  if (!name.startsWith('mcp__')) return false;
+  const cut = name.indexOf('__', 5);
+  return cut > 5 && list.includes(name.slice(0, cut + 2) + '*');
+}
+
+// ---- Tool specs advertised to the model ------------------------------
+// Three sources feed the `tools` field of the outgoing request:
+//   1. The native `shell` tool (src/tools/shell.js), always present.
+//   2. The native `report_progress` tool (src/tools/progress.js), always present.
+//   3. The native `subagent` tool (src/tools/subagent.js), always present.
+//   4. The native `ask_user` tool (src/tools/ask.js), always present.
+//      Lets the model pause and ask the user a structured question
+//      with a list of options (2+, no cap). The user always has a
+//      free-form "extra" textbox alongside their pick, so the answer
+//      is never constrained to the offered options. See
+//      docs/features/ask-user-tool.md.
+//   5. The native file tools (read_file / list_files / search_files /
+//      write_file, src/tools/files.js), always present. Authorization
+//      decides whether a call prompts, runs, or is rejected. These cover
+//      "read this file / find where X is used / patch a small file"
+//      loop without requiring an MCP server.
+//   6. MCP-discovered tools (decision §18), which use the
+//      mcp__<serverSlug>__<toolName> name convention.
+// Tool calling and the multi-turn loop are wired for the OpenAI-
+// compatible tool shape (openai-compatible + github-copilot + openrouter)
+// and for Anthropic's native tool_use shape (buildAnthropicRequest
+// converts the specs and the parser emits tool_call_delta for tool_use
+// blocks). Other providers stream normally and never see a `tools`
+// field, so their happy path is unchanged.
+//
+// collectToolSpecs(opts) -> { toolSpecs, visibleToolSpecs, toolOverrides }
+//
+// `toolSpecs` is every spec the turn may run (after the off-gates, the share
+// gate and the project tool wording); `visibleToolSpecs` is what the model is
+// advertised after the per-chat filter (`opts.enabledTools`). The chat tool
+// preview (GET /api/chats/:id/tool-preview) calls this too, so it lists
+// exactly what the stream sends.
+function collectToolSpecs(opts) {
   const orchestration = require('./tools/subagent-orchestration.js');
   const scope = opts.orchestrationScope;
-  if (!model || !model.provider) {
-    return { ok: false, error: { code: 'EBADMODEL', message: 'Missing model.provider' } };
-  }
-  if (!Array.isArray(messages) || !messages.length) {
-    return { ok: false, error: { code: 'EBADINPUT', message: 'messages must be a non-empty array' } };
-  }
-  if (typeof onEvent !== 'function') {
-    return { ok: false, error: { code: 'EBADINPUT', message: 'onEvent must be a function' } };
-  }
-  // Pass thinking level and max output tokens down to the request builders
-  // so they can inject provider-specific fields (reasoning_effort, thinking
-  // budget, max_completion_tokens, max_tokens, etc.).
-  if (typeof thinkingLevel === 'string' && thinkingLevel) {
-    model.thinkingLevel = thinkingLevel;
-  }
-  if (typeof maxOutputTokens === 'string' && maxOutputTokens) {
-    model.maxOutputTokens = maxOutputTokens;
-  }
-
-  let def, build, parse;
-  try {
-    def = endpointFor(model);
-    // requireApiKey is async on the OAuth path (proactive refresh);
-    // sync-fast on the API-key path. We always `await` it here.
-    // A borrowed model (a shared project used through the mouaif it was
-    // added on) has no credential here: the adding mouaif resolves its own
-    // when it builds the request (src/share.js → serveBorrow).
-    if (!model.borrowed) await requireApiKey(model, def);
-    build = BUILDERS[model.provider];
-    parse = PARSERS[model.provider];
-  } catch (e) {
-    return { ok: false, error: { code: e.code || 'EBADMODEL', message: e.message } };
-  }
-  if (!build || !parse) {
-    return { ok: false, error: { code: 'EUNKNOWN_PROVIDER', message: 'No builder/parser for ' + model.provider } };
-  }
-
-  // ---- Tool specs advertised to the model ----------------------------
-  // Three sources feed the `tools` field of the outgoing request:
-  //   1. The native `shell` tool (src/tools/shell.js), always present.
-  //   2. The native `report_progress` tool (src/tools/progress.js), always present.
-  //   3. The native `subagent` tool (src/tools/subagent.js), always present.
-  //   4. The native `ask_user` tool (src/tools/ask.js), always present.
-  //      Lets the model pause and ask the user a structured question
-  //      with a list of options (2+, no cap). The user always has a
-  //      free-form "extra" textbox alongside their pick, so the answer
-  //      is never constrained to the offered options. See
-  //      docs/features/ask-user-tool.md.
-  //   5. The native file tools (read_file / list_files / search_files /
-  //      write_file, src/tools/files.js), always present. Authorization
-  //      decides whether a call prompts, runs, or is rejected. These cover
-  //      "read this file / find where X is used / patch a small file"
-  //      loop without requiring an MCP server.
-  //   6. MCP-discovered tools (decision §18), which use the
-  //      mcp__<serverSlug>__<toolName> name convention.
-  // Tool calling and the multi-turn loop are wired for the OpenAI-
-  // compatible tool shape (openai-compatible + github-copilot + openrouter)
-  // and for Anthropic's native tool_use shape (buildAnthropicRequest
-  // converts the specs and the parser emits tool_call_delta for tool_use
-  // blocks). Other providers stream normally and never see a `tools`
-  // field, so their happy path is unchanged.
   const toolSpecs = [];
   try { toolSpecs.push(require('./tools/shell.js').SPEC); }
   catch { /* shell tool module unavailable; skip */ }
@@ -1051,9 +1029,9 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   }
   let visibleToolSpecs = toolSpecs;
   if (opts && Array.isArray(opts.enabledTools)) {
-    const allow = new Set(opts.enabledTools.map((n) => String(n)));
+    const allow = opts.enabledTools.map((n) => String(n));
     visibleToolSpecs = toolSpecs.filter((s) => s && s.function
-    && (allow.has(s.function.name) || (!opts.nestedSubagent && s.function.name === 'activate_skill')));
+    && (toolListed(allow, s.function.name) || (!opts.nestedSubagent && s.function.name === 'activate_skill')));
   }
   // A recurring task's run may finish without a notification. The tool is
   // the turn's own, so it is added after the chat's filter and never inherited
@@ -1061,6 +1039,58 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   if (opts && opts.scheduledRun && !opts.nestedSubagent && !opts.noTools && !opts.singleToolCall) {
     visibleToolSpecs = [...visibleToolSpecs, skipNotification.SPEC];
   }
+  return { toolSpecs, visibleToolSpecs, toolOverrides };
+}
+
+async function streamChatInScope(opts) {
+  const { messages, signal, onEvent, onRoundUsage, onRoundCommit, thinkingLevel, maxOutputTokens } = opts || {};
+  // The request builders read per-run fields (thinkingLevel,
+  // maxOutputTokens) off the model record, so each run works on its own
+  // shallow copy: the caller's object is shared with the chat, with
+  // subagents that inherit it and with the shell reviewer, and writing onto
+  // it leaked one run's thinking level into the next.
+  const model = opts && opts.model && typeof opts.model === 'object' ? Object.assign({}, opts.model) : (opts && opts.model);
+  const orchestration = require('./tools/subagent-orchestration.js');
+  const scope = opts.orchestrationScope;
+  if (!model || !model.provider) {
+    return { ok: false, error: { code: 'EBADMODEL', message: 'Missing model.provider' } };
+  }
+  if (!Array.isArray(messages) || !messages.length) {
+    return { ok: false, error: { code: 'EBADINPUT', message: 'messages must be a non-empty array' } };
+  }
+  if (typeof onEvent !== 'function') {
+    return { ok: false, error: { code: 'EBADINPUT', message: 'onEvent must be a function' } };
+  }
+  // Pass thinking level and max output tokens down to the request builders
+  // so they can inject provider-specific fields (reasoning_effort, thinking
+  // budget, max_completion_tokens, max_tokens, etc.).
+  if (typeof thinkingLevel === 'string' && thinkingLevel) {
+    model.thinkingLevel = thinkingLevel;
+  }
+  if (typeof maxOutputTokens === 'string' && maxOutputTokens) {
+    model.maxOutputTokens = maxOutputTokens;
+  }
+
+  let def, build, parse;
+  try {
+    def = endpointFor(model);
+    // requireApiKey is async on the OAuth path (proactive refresh);
+    // sync-fast on the API-key path. We always `await` it here.
+    // A borrowed model (a shared project used through the mouaif it was
+    // added on) has no credential here: the adding mouaif resolves its own
+    // when it builds the request (src/share.js → serveBorrow).
+    if (!model.borrowed) await requireApiKey(model, def);
+    build = BUILDERS[model.provider];
+    parse = PARSERS[model.provider];
+  } catch (e) {
+    return { ok: false, error: { code: e.code || 'EBADMODEL', message: e.message } };
+  }
+  if (!build || !parse) {
+    return { ok: false, error: { code: 'EUNKNOWN_PROVIDER', message: 'No builder/parser for ' + model.provider } };
+  }
+
+  // ---- Tool specs advertised to the model (see collectToolSpecs) ----
+  const { toolSpecs, visibleToolSpecs, toolOverrides } = collectToolSpecs(opts);
 
   // Shrink the tool declaration according to the active prompt-size
   // profile (decisions §4). For very-small, the list is compact (name +
@@ -2978,6 +3008,10 @@ return { ok: !!out.ok, content: JSON.stringify(result), result };
 
 module.exports = {
   streamChat,
+  // the advertised tool list; also read by the chat tool preview
+  collectToolSpecs,
+  // the per-chat allowlist matcher, exported for tests
+  toolListed,
   runSingleToolCall,
   // The read-only tools the loop answers without an approval card, so
   // scripts/test-tool-groups.mjs can assert no other tool skips the gate.
