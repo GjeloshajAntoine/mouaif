@@ -376,19 +376,10 @@ async function handleSettings(req, res, parsed) {
       if (body.dbBacked !== settings.isDbBacked(projectDir)) {
         require('./artifacts.js').moveStorage(projectDir, body.dbBacked);
       }
-      if (body.dbBacked) {
-        // Seed from the existing file (if any), then flag as DB-backed.
-        settings.setDbProject(projectDir, { ...settings.getProjectRaw(projectDir), __dbBacked: true });
-      } else {
-        const current = settings.getDbProjectRaw(projectDir);
-        delete current.__dbBacked;
-        settings.writeProjectJson(settings.getProjectPath(projectDir), current);
-        // Delete through settings so the key is canonicalized: a raw
-        // `DELETE ... WHERE project_dir = ?` on the request path would miss
-        // the row when the client sent a trailing slash or `..` segment,
-        // leaving isDbBacked() true and the project reading stale DB settings.
-        settings.deleteDbProject(projectDir);
-      }
+      // On: seed the DB from the existing file (if any); the file stays.
+      // Off: write the DB copy back to the file and clear the row (keyed by
+      // the canonical directory, so a trailing slash or `..` still finds it).
+      settings.setDbBacked(projectDir, body.dbBacked);
       const dbBacked = settings.isDbBacked(projectDir);
       return sendJSON(res, 200, {
       dbBacked,

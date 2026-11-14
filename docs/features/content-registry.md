@@ -43,6 +43,16 @@ To add a setting:
 
 `node scripts/test-content-registry.js` checks that the generated lists still match the snapshot of the former constants, that declarations sharing a top-level key agree on `clientVisible` and `approval`, and that enum defaults are valid.
 
+## Storage
+
+Each declaration names a document (`doc`) and a path in it. Where a document lives is decided by `storeFor(doc, scope, projectDir)` in `src/content/stores/index.js`, the only function that knows a project's storage mode:
+
+| Document | App scope | Project, file mode | Project, DB mode |
+| --- | --- | --- | --- |
+| `settings` | `app_kv` row `settings` | `.mouaif.json` or `.mouaif/.mouaif.json` | `project_settings` row |
+
+Every adapter has the same members: `{ kind, scope, location, read(), write(next) }`. Atomic file writes, the corrupt-blob quarantine and the test-process guard live in the adapters (`app-db.js`, `project-file.js`, `project-db.js`, `json-file.js`); the SQLite handle is in `src/content/db.js`. `setProjectMode()` moves a project's documents between file and DB.
+
 ## Implementation notes
 
 - The registry is plain data with no imports, so `src/settings.js` can require it without a cycle.

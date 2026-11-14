@@ -21,83 +21,25 @@
 // need transactions beyond what a single prepared statement gives us. The
 // in-process write queue is the caller's problem (Node single-thread).
 
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const crypto = require('crypto');
-const Database = require('better-sqlite3');
+const contentDb = require('./content/db.js');
+const stores = require('./content/stores/index.js');
+const appDbStore = require('./content/stores/app-db.js');
+const projectFile = require('./content/stores/project-file.js');
+const projectDb = require('./content/stores/project-db.js');
+const jsonFile = require('./content/stores/json-file.js');
 
-const DEFAULT_HOME = path.join(os.homedir(), '.mouaif');
-const MOUAIF_HOME = process.env.MOUAIF_HOME || DEFAULT_HOME;
-// A test process must never open the real app store. Test/probe scripts run
-// in-process against src/ modules, and a missing — or too-late — MOUAIF_HOME
-// used to let them write to ~/.mouaif/store.sqlite: every
-// `settings.setApp({ providers: [...] })` then replaced the whole provider
-// array and dropped real connections (see the 2026-08-06 incident, fixed for
-// the checked-in tests in commit "isolate test app stores"). Refuse the
-// default home from a test process so the mistake fails loudly instead of
-// corrupting the running instance. The server and CLI are not test processes
-// and keep the default home; MOUAIF_ALLOW_REAL_HOME=1 is the deliberate
-// override for a one-off run against the real store.
-const REPO_SCRIPTS_DIR = path.join(__dirname, '..', 'scripts');
-function isTestProcess() {
-  if (process.env.NODE_TEST_CONTEXT) return true; // node --test
-  if (process.env.MOUAIF_TEST === '1') return true;
-  const entry = process.argv[1];
-  if (typeof entry !== 'string' || !entry) return false;
-  const resolved = path.resolve(entry);
-  if (!resolved.startsWith(REPO_SCRIPTS_DIR + path.sep)) return false;
-  return /^(test|probe)[-_.]/.test(path.basename(resolved));
-}
-// A test may spawn a child (`bin/mouaif.js serve`, a pty shell). The child has
-// its own argv and would look like the running server, so carry the marker in
-// the environment; the child's settings.js then refuses the real home too.
-if (isTestProcess()) process.env.MOUAIF_TEST = '1';
-// Resolve symlink aliases without creating directories. A fresh test home (or
-// the default home) may not exist yet; resolve its nearest existing parent
-// and append the missing path components instead.
-function canonicalStoreHome(home) {
-  const resolved = path.resolve(home);
-  try { return fs.realpathSync(resolved); }
-  catch (err) {
-    if (err.code !== 'ENOENT') throw err;
-    const parent = path.dirname(resolved);
-    if (parent === resolved) throw err;
-    return path.join(canonicalStoreHome(parent), path.basename(resolved));
-  }
-}
-function assertStoreHomeSafe(home) {
-  if (process.env.MOUAIF_ALLOW_REAL_HOME === '1') return;
-  if (!isTestProcess()) return;
-  if (canonicalStoreHome(home) !== canonicalStoreHome(DEFAULT_HOME)) return;
-  const err = new Error('Refusing to open the real app store (' + DEFAULT_HOME
-    + ') from a test process. Set MOUAIF_HOME to a temp directory before requiring src/settings.js: '
-    + 'a test must never read or write the running instance. Use MOUAIF_ALLOW_REAL_HOME=1 only for a '
-    + 'deliberate run against the real store.');
-  err.code = 'MOUAIF_REAL_HOME_IN_TEST';
-  throw err;
-}
-const PROJECT_FILE = '.mouaif.json';
-// Optional per-project folder holding the config file for complex projects:
-// <projectDir>/.mouaif/.mouaif.json. See getProjectPath().
-const PROJECT_DIR = '.mouaif';
-const APP_DB = 'store.sqlite';
-const APP_KV_TABLE = 'app_kv';
+const {
+  MOUAIF_HOME,
+  MCP_TOOL_CACHE_TABLE,
+  MIGRATIONS_TABLE,
+  PROJECT_SETTINGS_TABLE,
+  canonicalProjectDir,
+  requireCanonicalProjectDir,
+  tableExists,
+  db
+} = contentDb;
+const { PROJECT_FILE, PROJECT_DIR } = projectFile;
 const APP_KEY = 'settings';
-// Row key prefix for an unreadable app-settings blob that was moved aside
-// instead of being silently replaced by defaults. See getAppRaw().
-const APP_QUARANTINE_PREFIX = 'settings.corrupt-';
-// Per-project MCP tool caches. Keyed by `${projectDir}::${serverId}` so the
-// bulky last-known tool schemas live in the app store instead of the
-// hand-editable, project-committed <projectDir>/.mcp.json.
-const MCP_TOOL_CACHE_TABLE = 'mcp_tool_cache';
-const MIGRATIONS_TABLE = '_migrations';
-// Per-project settings stored in the app DB instead of <projectDir>/.mouaif.json.
-// Keyed by canonical project directory so a project can opt out of writing the
-// JSON file (keeps the working tree untouched). The row shape mirrors the
-// project file: the value is the full raw project object.
-const PROJECT_SETTINGS_TABLE = 'project_settings';
-const PROJECT_SETTINGS_KEY = '__project_settings__';
 
 // Built-in defaults. These are the floor: anything not set in app or project
 // falls back to these. Generated from the content registry
@@ -106,109 +48,6 @@ const PROJECT_SETTINGS_KEY = '__project_settings__';
 // what it merges, so nothing downstream may mutate the floor.
 const registry = require('./content/registry.js');
 const DEFAULTS = registry.deepFreeze(registry.buildDefaults());
-
-function ensureDir(dir) {
-  fs.mkdirSync(dir, { recursive: true });
-}
-
-// ---- Project-dir canonicalization --------------------------------------
-//
-// Every project-scoped table in the app store (project_settings,
-// mcp_tool_cache, model_recent) is keyed by the project directory. Callers
-// hand us whatever the client sent — `/home/me/app`, `/home/me/app/` or
-// `/home/me/app/../app` are three spellings of one directory, and used to be
-// three rows. The damage was not only duplicated data: a project could be
-// opted into DB-backed settings under a key that no other code path ever
-// looked up, so it kept reading `.mouaif.json` and the opt-in appeared to do
-// nothing. Keys are therefore normalized to an absolute path at every
-// boundary in this module, reads included (a read under a non-canonical key
-// must not find a row the write would not have created).
-function canonicalProjectDir(projectDir) {
-  if (!projectDir || typeof projectDir !== 'string') return null;
-  if (!path.isAbsolute(projectDir)) return null;
-  return path.resolve(projectDir);
-}
-
-// Same as canonicalProjectDir(), but for write paths: an unusable directory
-// is a programming error there, not a miss.
-function requireCanonicalProjectDir(projectDir) {
-  const canonical = canonicalProjectDir(projectDir);
-  if (!canonical) {
-    const e = new TypeError('projectDir must be an absolute path');
-    e.code = 'EBADPROJECTDIR';
-    throw e;
-  }
-  return canonical;
-}
-
-function openDb(home) {
-  ensureDir(home);
-  const dbPath = path.join(home, APP_DB);
-  // The app DB includes credentials. Restrict the DB before creating WAL/SHM
-  // sidecars, whose permissions SQLite derives from the database file.
-  const db = new Database(dbPath);
-  if (process.platform !== 'win32') fs.chmodSync(dbPath, 0o600);
-  db.pragma('journal_mode = WAL');
-  if (process.platform !== 'win32') {
-    for (const suffix of ['-wal', '-shm']) {
-      try { fs.chmodSync(dbPath + suffix, 0o600); }
-      catch (e) { if (e.code !== 'ENOENT') throw e; }
-    }
-  }
-  db.exec(`CREATE TABLE IF NOT EXISTS credentials (
-    service TEXT NOT NULL,
-    account TEXT NOT NULL,
-    value TEXT,
-    PRIMARY KEY (service, account)
-  )`);
-  db.exec(
-    `CREATE TABLE IF NOT EXISTS ${APP_KV_TABLE} (
-       key   TEXT PRIMARY KEY,
-       value TEXT NOT NULL
-     );`
-  );
-  db.exec(
-    `CREATE TABLE IF NOT EXISTS ${MCP_TOOL_CACHE_TABLE} (
-       project_dir TEXT NOT NULL,
-       server_id   TEXT NOT NULL,
-       tools       TEXT NOT NULL,
-       updated_at  TEXT NOT NULL,
-       PRIMARY KEY (project_dir, server_id)
-     );`
-  );
-  db.exec(
-    `CREATE TABLE IF NOT EXISTS ${PROJECT_SETTINGS_TABLE} (
-       project_dir TEXT PRIMARY KEY,
-       value       TEXT NOT NULL
-     );`
-  );
-  db.exec(
-    `CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} (
-       name       TEXT PRIMARY KEY,
-       run_at     TEXT NOT NULL
-     );`
-  );
-  db.exec(
-    `CREATE TABLE IF NOT EXISTS push_subscriptions (
-       id         TEXT PRIMARY KEY,
-       session_id TEXT NOT NULL,
-       endpoint   TEXT NOT NULL UNIQUE,
-       p256dh     TEXT NOT NULL,
-       auth       TEXT NOT NULL,
-       origin     TEXT,
-       created_at TEXT NOT NULL,
-       updated_at TEXT NOT NULL
-     );`
-  );
-  db.exec(
-    `CREATE TABLE IF NOT EXISTS push_vapid (
-       key        TEXT PRIMARY KEY,
-       value      TEXT NOT NULL,
-       created_at TEXT NOT NULL
-     );`
-  );
-  return db;
-}
 
 // ---- Model recent store (app DB) -----------------------------------------
 //
@@ -635,135 +474,31 @@ function runMigrations() {  const d = db();
   }
 }
 
-function readJsonFile(filePath) {
-  const raw = fs.readFileSync(filePath, 'utf8');
-  return JSON.parse(raw);
-}
-
-function writeJsonFile(filePath, obj) {
-  ensureDir(path.dirname(filePath));
-  // 2-space indent so the file is hand-editable and diff-friendly.
-  const body = JSON.stringify(obj, null, 2) + '\n';
-  // Stage next to the target, fsync, then rename over it. A bare
-  // writeFileSync that dies mid-write (crash, full disk, killed process)
-  // leaves a truncated `.mouaif.json` behind, and a truncated project file is
-  // not a small failure: readProjectJson() reports
-  // MOUAIF_PROJECT_PARSE_ERROR, so settings AND every chat route for that
-  // project answer 422 until the user repairs the file by hand. rename(2) is
-  // atomic within a directory, so a reader sees either the old file or the
-  // complete new one. The staging name is unique per write so two processes
-  // cannot clobber each other's, and it is removed on failure.
-  const tmpPath = filePath + '.tmp-' + process.pid + '-' + crypto.randomBytes(4).toString('hex');
-  let fd = null;
-  try {
-    fd = fs.openSync(tmpPath, 'w');
-    fs.writeFileSync(fd, body, 'utf8');
-    fs.fsyncSync(fd);
-    fs.closeSync(fd);
-    fd = null;
-    fs.renameSync(tmpPath, filePath);
-  } catch (e) {
-    if (fd !== null) { try { fs.closeSync(fd); } catch { /* already closed */ } }
-    try { fs.unlinkSync(tmpPath); } catch { /* nothing to clean up */ }
-    throw e;
-  }
-}
-
 // ---- Shared project-file I/O -------------------------------------------
 //
-// Single source of truth for the on-disk project-file contract (see
-// docs/features/app-and-project-settings.md): 2-space indented JSON,
-// trailing LF, missing file treated as {}, corrupt file surfaced as a
-// MOUAIF_PROJECT_PARSE_ERROR. Both src/chats.js and src/messages.js
-// read/write JSON files next to the project (`.mouaif.json` and the
-// per-chat `.mouaif.messages.<id>.json`); they go through these helpers
-// so the format and error contract live in one place.
-
-// Read and JSON-parse an arbitrary project-relative JSON file. Missing
-// file returns `fallback` (default {}). A corrupt file throws with
-// code 'MOUAIF_PROJECT_PARSE_ERROR' so the HTTP layer can map it to 422.
-function readProjectJson(filePath, fallback) {
-  if (!filePath || typeof filePath !== 'string') {
-    throw new TypeError('filePath must be a non-empty string');
-  }
-  if (!fs.existsSync(filePath)) return fallback === undefined ? {} : fallback;
-  try { return readJsonFile(filePath); }
-  catch (e) {
-    const err = new Error('Failed to parse ' + filePath + ': ' + e.message);
-    err.code = 'MOUAIF_PROJECT_PARSE_ERROR';
-    err.cause = e;
-    throw err;
-  }
-}
-
-// Write an object to a project-relative JSON file in the canonical
-// format (2-space indent, trailing LF), creating parent dirs as needed.
-function writeProjectJson(filePath, obj) {
-  if (!filePath || typeof filePath !== 'string') {
-    throw new TypeError('filePath must be a non-empty string');
-  }
-  writeJsonFile(filePath, obj);
-}
+// src/chats.js and src/messages.js read and write JSON files next to the
+// project (`.mouaif.json` and the per-chat `.mouaif.messages.<id>.json`);
+// they go through these helpers so the format and error contract live in
+// one place (src/content/stores/json-file.js).
+const { readProjectJson, writeProjectJson } = jsonFile;
 
 // ---- App-level store ----------------------------------------------------
 
-// tableExists(d, name) — does this store carry the table yet? Migrations run
-// before any chat or project access, so a table created lazily on first use
-// (chat_store, project_settings) may legitimately be absent on a fresh store.
-function tableExists(d, name) {
-  return !!d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
-}
-
-let _appDb = null;
-function db() {
-  if (!_appDb) {
-    assertStoreHomeSafe(MOUAIF_HOME);
-    _appDb = openDb(MOUAIF_HOME);
-  }
-  return _appDb;
-}
-
 // Expose the shared DB handle so chatdb.js can reuse the same connection.
 // Tables are created lazily by both modules; the IF NOT EXISTS clause
-// makes the second CREATE a no-op. The chat/message tables are created
-// in chatdb.js so this module doesn't need to know about them.
+// makes the second CREATE a no-op.
 function getDb() {
   return db();
 }
 
+function appStore() {
+  return stores.storeFor('settings', 'app');
+}
+
 function getAppRaw() {
-  const d = db();
-  const row = d.prepare(`SELECT value FROM ${APP_KV_TABLE} WHERE key = ?`).get(APP_KEY);
-  if (!row) return {};
-  try {
-    const parsed = JSON.parse(row.value);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error('app settings must be a JSON object');
-    }
-    return parsed;
-  } catch (e) {
-    // A corrupt app-settings blob used to resolve to {}: every provider,
-    // registered project, prompt and pricing entry vanished from the UI, and
-    // the next write persisted that emptiness over the only copy. Move the
-    // unreadable value aside instead — it stays in the store under a
-    // quarantine key, the live row is reset, and the failure is reported.
-    const quarantineKey = APP_QUARANTINE_PREFIX + new Date().toISOString().replace(/[:.]/g, '-')
-      + '-' + crypto.randomBytes(3).toString('hex');
-    try {
-      d.transaction(() => {
-        d.prepare(`INSERT OR REPLACE INTO ${APP_KV_TABLE} (key, value) VALUES (?, ?)`)
-          .run(quarantineKey, row.value);
-        d.prepare(`DELETE FROM ${APP_KV_TABLE} WHERE key = ?`).run(APP_KEY);
-      })();
-      console.error('[settings] app settings were unreadable (' + e.message
-        + '); the stored value was preserved as ' + quarantineKey
-        + ' and settings start from defaults. See listQuarantinedAppSettings().');
-    } catch (quarantineError) {
-      console.error('[settings] app settings were unreadable (' + e.message
-        + ') and could not be quarantined: ' + quarantineError.message);
-    }
-    return {};
-  }
+  // A corrupt blob is moved aside rather than silently replaced; see
+  // src/content/stores/app-db.js.
+  return appStore().read();
 }
 
 // Every unreadable app-settings value the store has moved aside, oldest key
@@ -771,9 +506,7 @@ function getAppRaw() {
 // hand (`sqlite3 ~/.mouaif/store.sqlite "SELECT value FROM app_kv WHERE key='...'"`)
 // instead of losing them to a silent reset.
 function listQuarantinedAppSettings() {
-  return db()
-    .prepare(`SELECT key, value FROM ${APP_KV_TABLE} WHERE key LIKE ? ORDER BY key`)
-    .all(APP_QUARANTINE_PREFIX + '%');
+  return appDbStore.listQuarantined(APP_KEY);
 }
 
 function getApp() {
@@ -786,16 +519,8 @@ function setApp(patch) {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
     throw new TypeError('setApp() expects an object patch');
   }
-  const current = getAppRaw();
-  const next = { ...current, ...patch };
-  const json = JSON.stringify(next);
-  db()
-    .prepare(
-      `INSERT INTO ${APP_KV_TABLE} (key, value) VALUES (?, ?)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value`
-    )
-    .run(APP_KEY, json);
-  return next;
+  const store = appStore();
+  return store.write({ ...store.read(), ...patch });
 }
 
 // Replace the whole app-level settings object (no merge). Used by
@@ -806,161 +531,69 @@ function setAppReplace(next) {
   if (!next || typeof next !== 'object' || Array.isArray(next)) {
     throw new TypeError('setAppReplace() expects an object');
   }
-  const json = JSON.stringify(next);
-  db()
-    .prepare(
-      `INSERT INTO ${APP_KV_TABLE} (key, value) VALUES (?, ?)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value`
-    )
-    .run(APP_KEY, json);
-  return next;
+  return appStore().write(next);
 }
 
 // ---- Project-level store ------------------------------------------------
+//
+// Where a project's document lives — `.mouaif.json`, `.mouaif/.mouaif.json`
+// or a `project_settings` row — is decided by storeFor() alone
+// (src/content/stores/index.js). These accessors keep their names for the
+// callers that predate it.
 
-// Two on-disk layouts for the same file name:
-//   - root:   <projectDir>/.mouaif.json          (the default, simple projects)
-//   - folder: <projectDir>/.mouaif/.mouaif.json  (complex projects that keep
-//             every mouaif file — config, traces — under one `.mouaif/` dir)
-// The layout is discovered, not stored: when the folder file exists it is the
-// project's settings file, otherwise the root file is. So a project switches
-// layout by moving the file, and nothing else has to know which one it uses.
-function getProjectRootPath(projectDir) {
-  if (!projectDir || typeof projectDir !== 'string') {
-    throw new TypeError('projectDir must be a non-empty string');
-  }
-  return path.join(projectDir, PROJECT_FILE);
-}
+const {
+  getProjectRootPath,
+  getProjectFolderPath,
+  getProjectLayout,
+  getProjectPath
+} = projectFile;
 
-function getProjectFolderPath(projectDir) {
-  if (!projectDir || typeof projectDir !== 'string') {
-    throw new TypeError('projectDir must be a non-empty string');
-  }
-  return path.join(projectDir, PROJECT_DIR, PROJECT_FILE);
-}
-
-// 'folder' when <projectDir>/.mouaif/.mouaif.json is a file, else 'root'.
-function getProjectLayout(projectDir) {
-  try {
-    if (fs.statSync(getProjectFolderPath(projectDir)).isFile()) return 'folder';
-  } catch { /* no folder file */ }
-  return 'root';
-}
-
-function getProjectPath(projectDir) {
-  return getProjectLayout(projectDir) === 'folder'
-    ? getProjectFolderPath(projectDir)
-    : getProjectRootPath(projectDir);
-}
-
+// The project FILE, whatever the project's mode (seeding a mode switch and the
+// raw editor read it directly).
 function getProjectRaw(projectDir) {
-  // A corrupt project file is a user error. readProjectJson surfaces it as
-  // MOUAIF_PROJECT_PARSE_ERROR; a missing file resolves to {}.
-  return readProjectJson(getProjectPath(projectDir));
+  return stores.storeFor('settings', 'project', projectDir, 'file').read();
 }
 
-// ---- DB-backed project settings ----------------------------------------
-// When a project opts out of the JSON file, its settings live here instead
-// of <projectDir>/.mouaif.json so the working tree is never touched. The
-// value is the same raw project object the file would have carried.
-// Prepared once per handle: tool authorization and hooks read this on every
-// tool call.
-let projectRowStatement = null;
-let projectRowStatementDb = null;
-function projectSettingsRow(projectDir) {
-  const dir = canonicalProjectDir(projectDir);
-  if (!dir) return null;
-  const d = db();
-  if (projectRowStatementDb !== d) {
-    projectRowStatement = d.prepare(`SELECT value FROM ${PROJECT_SETTINGS_TABLE} WHERE project_dir = ?`);
-    projectRowStatementDb = d;
-  }
-  return projectRowStatement.get(dir) || null;
-}
-function getDbProjectRaw(projectDir) {
-  const row = projectSettingsRow(projectDir);
-  if (!row) return {};
-  try { return JSON.parse(row.value); } catch { return {}; }
-}
-function isDbBacked(projectDir) {
-  const row = projectSettingsRow(projectDir);
-  if (!row) return false;
-  try { return JSON.parse(row.value).__dbBacked === true; } catch { return false; }
-}
-function setDbProject(projectDir, next) {
-  if (!next || typeof next !== 'object' || Array.isArray(next)) {
-    throw new TypeError('setDbProject() expects an object');
-  }
-  const dir = requireCanonicalProjectDir(projectDir);
-  db()
-    .prepare(
-      `INSERT INTO ${PROJECT_SETTINGS_TABLE} (project_dir, value) VALUES (?, ?)
-ON CONFLICT(project_dir) DO UPDATE SET value = excluded.value`
-    )
-    .run(dir, JSON.stringify(next));
-  return next;
-}
-// Remove a project's DB-backed settings row entirely. Canonicalizes the key
-// like every other project-scoped write so a non-canonical spelling (trailing
-// slash, `..` segment) still targets the row the opt-in created. Toggling a
-// project back to file-backed storage deletes the row through here; a bare
-// `DELETE ... WHERE project_dir = ?` on the raw request path would miss it and
-// leave the project reading stale DB settings.
-function deleteDbProject(projectDir) {
-  const dir = canonicalProjectDir(projectDir);
-  if (!dir) return;
-  db()
-    .prepare(`DELETE FROM ${PROJECT_SETTINGS_TABLE} WHERE project_dir = ?`)
-    .run(dir);
-}
+const getDbProjectRaw = projectDb.readRow;
+const isDbBacked = projectDb.isDbBacked;
+const deleteDbProject = projectDb.deleteRow;
+// Write a project's DB row verbatim (the caller sets `__dbBacked`).
+const setDbProject = projectDb.writeRow;
+
+// Opt a project into (or out of) DB-backed settings, moving its documents.
+// Opting in copies the project's existing `.mouaif.json` so no hand-written
+// setting is silently ignored; opting out writes the DB copy back to the file.
 function setDbBacked(projectDir, dbBacked) {
-  // Opting in seeds from the project's existing `.mouaif.json` (when there is
-  // no DB row yet) so no hand-written setting is silently ignored. This is the
-  // same guarantee the storage toggle documents; the register-time opt-in used
-  // to write a bare `{ __dbBacked: true }` and leave every project setting
-  // behind in the file it had just stopped reading.
-  const hasRow = !!projectSettingsRow(projectDir);
-  const next = dbBacked
-    ? { ...(hasRow ? getDbProjectRaw(projectDir) : getProjectRaw(projectDir)), __dbBacked: true }
-    : { ...getDbProjectRaw(projectDir) };
-  if (!dbBacked) delete next.__dbBacked;
-  setDbProject(projectDir, next);
-  return next;
+  stores.setProjectMode(projectDir, !!dbBacked);
+  return getProject(projectDir);
+}
+
+function projectStore(projectDir) {
+  return stores.storeFor('settings', 'project', projectDir);
 }
 
 function getProject(projectDir) {
   // Raw project object (no defaults, no app merge). A DB-backed project
   // returns its store row verbatim; otherwise the .mouaif.json file.
-  if (isDbBacked(projectDir)) return getDbProjectRaw(projectDir);
-  return getProjectRaw(projectDir);
+  return projectStore(projectDir).read();
 }
 
 function setProject(projectDir, patch) {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
     throw new TypeError('setProject() expects an object patch');
   }
-  if (isDbBacked(projectDir)) {
-    return setDbProject(projectDir, { ...getDbProjectRaw(projectDir), ...patch });
-  }
-  const current = getProjectRaw(projectDir);
-  const next = { ...current, ...patch };
-  writeProjectJson(getProjectPath(projectDir), next);
-  return next;
+  const store = projectStore(projectDir);
+  return store.write({ ...store.read(), ...patch });
 }
 
 function unsetProjectKeys(projectDir, keys) {
   if (!Array.isArray(keys) || keys.some((key) => typeof key !== 'string' || !key)) {
     throw new TypeError('unsetProjectKeys() expects an array of key names');
   }
-  if (isDbBacked(projectDir)) {
-    const next = getDbProjectRaw(projectDir);
-    for (const key of keys) delete next[key];
-    return setDbProject(projectDir, next);
-  }
-  const next = getProjectRaw(projectDir);
+  const store = projectStore(projectDir);
+  const next = store.read();
   for (const key of keys) delete next[key];
-  writeProjectJson(getProjectPath(projectDir), next);
-  return next;
+  return store.write(next);
 }
 
 // ---- Resolution ---------------------------------------------------------
@@ -1048,10 +681,7 @@ function deleteMcpToolCache(projectDir, serverId) {
 }
 
 function close() {
-  if (_appDb) {
-    _appDb.close();
-    _appDb = null;
-  }
+  contentDb.close();
 }
 
 module.exports = {

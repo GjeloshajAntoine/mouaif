@@ -57,7 +57,7 @@
     "test:hooks": "node scripts/test-hooks.js",
     "test:share": "node scripts/test-share-unit.js && node scripts/test-share-project-count.js && node scripts/test-share-e2e.js",
     "test:themes": "node scripts/test-themes.js && node scripts/test-routes.js",
-    "test:content": "node scripts/test-content-registry.js",
+    "test:content": "node scripts/test-content-registry.js && node scripts/test-content-stores.js",
     "test:group-cli": "node scripts/test-background-jobs.js && node scripts/test-job-store.js && node scripts/test-group-cli.js",
     "test:waits": "node scripts/test-waits.js && node scripts/test-schedules.js && node scripts/test-skip-notification.js && node scripts/test-runs.js && node scripts/test-run-context.js && node scripts/test-long-run-e2e.js && node scripts/test-run-dock.mjs && node scripts/test-jump-to-run.mjs",
     "test:chat-working-folder": "node scripts/test-chat-working-folder.js && node scripts/test-mouaif-tool-sync.mjs && node scripts/test-mouaif-tool-categories.mjs && node scripts/test-mouaif-tool-toggle.mjs && node scripts/test-chat-model-tools-ui.mjs",
