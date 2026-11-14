@@ -7,38 +7,51 @@
 // opt-in itself.
 
 const contentDb = require('../db.js');
+const cache = require('./cache.js');
 
 const { PROJECT_SETTINGS_TABLE } = contentDb;
 
 // Prepared once per handle: tool authorization and hooks read this on every
-// tool call.
+// tool call, and the parsed row is cached until the store changes.
 let rowStatement = null;
 let rowStatementGeneration = -1;
-function settingsRow(projectDir) {
-  const dir = contentDb.canonicalProjectDir(projectDir);
-  if (!dir) return null;
+function loadRow(dir) {
   const d = contentDb.db();
   if (rowStatementGeneration !== contentDb.generation()) {
     rowStatement = d.prepare(`SELECT value FROM ${PROJECT_SETTINGS_TABLE} WHERE project_dir = ?`);
     rowStatementGeneration = contentDb.generation();
   }
-  return rowStatement.get(dir) || null;
+  const row = rowStatement.get(dir);
+  if (!row) return { exists: false, value: {} };
+  try {
+    const value = JSON.parse(row.value);
+    return { exists: true, value: value && typeof value === 'object' && !Array.isArray(value) ? value : {} };
+  } catch { return { exists: true, value: {} }; }
+}
+
+function entry(projectDir) {
+  const dir = contentDb.canonicalProjectDir(projectDir);
+  if (!dir) return { exists: false, value: {} };
+  return cache.readRow('project:' + dir, () => loadRow(dir));
+}
+
+// Read-only look at the cached row, without the copy readRow() makes.
+function peek(projectDir) {
+  const dir = contentDb.canonicalProjectDir(projectDir);
+  if (!dir) return { exists: false, value: {} };
+  return cache.peekRow('project:' + dir, () => loadRow(dir));
 }
 
 function hasRow(projectDir) {
-  return !!settingsRow(projectDir);
+  return peek(projectDir).exists;
 }
 
 function readRow(projectDir) {
-  const row = settingsRow(projectDir);
-  if (!row) return {};
-  try { return JSON.parse(row.value); } catch { return {}; }
+  return entry(projectDir).value;
 }
 
 function isDbBacked(projectDir) {
-  const row = settingsRow(projectDir);
-  if (!row) return false;
-  try { return JSON.parse(row.value).__dbBacked === true; } catch { return false; }
+  return peek(projectDir).value.__dbBacked === true;
 }
 
 function writeRow(projectDir, next) {
@@ -52,6 +65,7 @@ function writeRow(projectDir, next) {
        ON CONFLICT(project_dir) DO UPDATE SET value = excluded.value`
     )
     .run(dir, JSON.stringify(next));
+  cache.wroteRow('project:' + dir, next);
   return next;
 }
 
@@ -64,6 +78,7 @@ function deleteRow(projectDir) {
   contentDb.db()
     .prepare(`DELETE FROM ${PROJECT_SETTINGS_TABLE} WHERE project_dir = ?`)
     .run(dir);
+  cache.wroteRow('project:' + dir, {}, false);
 }
 
 function createProjectDbStore(projectDir) {
@@ -74,7 +89,8 @@ function createProjectDbStore(projectDir) {
     read: () => readRow(projectDir),
     // The opt-in marker lives in the row: a write never drops it.
     write: (next) => writeRow(projectDir, { ...next, __dbBacked: true }),
-    clear: () => deleteRow(projectDir)
+    clear: () => deleteRow(projectDir),
+    version: () => cache.dbStamp()
   };
 }
 

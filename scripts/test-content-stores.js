@@ -101,5 +101,106 @@ check('an unknown document or scope is refused', () => {
   assert.throws(() => stores.storeFor('settings', 'project', ''), /projectDir/);
 });
 
+// ---- Read cache (src/content/stores/cache.js) ----------------------------
+
+const { execFileSync } = require('node:child_process');
+const cache = require(path.join(ROOT, 'src/content/stores/cache.js'));
+
+check('a read hands out a copy, never the cached object', () => {
+  settings.setProject(proj, { agents: [{ name: 'a' }] });
+  const first = settings.getProject(proj);
+  first.agents.push({ name: 'mutated' });
+  first.promptSize = 'mutated';
+  assert.deepStrictEqual(settings.getProject(proj).agents, [{ name: 'a' }]);
+  assert.notEqual(settings.getProject(proj).promptSize, 'mutated');
+  const app = settings.getApp();
+  app.promptSize = 'mutated';
+  assert.notEqual(settings.getApp().promptSize, 'mutated');
+});
+
+check('a hand edit of the same size is seen on the next read', () => {
+  fs.writeFileSync(file, JSON.stringify({ promptSize: 'aaaa' }));
+  assert.equal(settings.getProject(proj).promptSize, 'aaaa');
+  fs.writeFileSync(file, JSON.stringify({ promptSize: 'bbbb' }));
+  assert.equal(settings.getProject(proj).promptSize, 'bbbb', 'same size, same clock tick');
+});
+
+check('an old file is trusted on its stamp and re-read when it changes', () => {
+  fs.writeFileSync(file, JSON.stringify({ promptSize: 'old' }));
+  const past = new Date(Date.now() - 60_000);
+  fs.utimesSync(file, past, past);
+  assert.equal(settings.getProject(proj).promptSize, 'old');
+  // A same-size in-place edit that keeps the old mtime would be invisible;
+  // any real edit moves the mtime, which is what the stamp checks.
+  fs.writeFileSync(file, JSON.stringify({ promptSize: 'new' }));
+  assert.equal(settings.getProject(proj).promptSize, 'new');
+});
+
+check('a corrupt hand edit is reported, not served from the cache', () => {
+  fs.writeFileSync(file, '{ not json');
+  assert.throws(() => settings.getProject(proj), (e) => e.code === 'MOUAIF_PROJECT_PARSE_ERROR');
+  fs.writeFileSync(file, '{}\n');
+  assert.deepStrictEqual(settings.getProject(proj), {});
+});
+
+const child = (code) => execFileSync(process.execPath, ['-e', code], {
+  env: { ...process.env, MOUAIF_HOME: process.env.MOUAIF_HOME }, stdio: 'pipe'
+});
+
+check('a write from a second process is seen: DB row', () => {
+  settings.setApp({ promptSize: 'chat' });
+  assert.equal(settings.getApp().promptSize, 'chat');
+  child(`const D=require(${JSON.stringify(require.resolve('better-sqlite3', { paths: [ROOT] }))});
+    const d=new D(${JSON.stringify(path.join(process.env.MOUAIF_HOME, 'store.sqlite'))});
+    const v=JSON.parse(d.prepare("SELECT value FROM app_kv WHERE key='settings'").get().value);
+    v.promptSize='extensive';
+    d.prepare("UPDATE app_kv SET value=? WHERE key='settings'").run(JSON.stringify(v));`);
+  assert.equal(settings.getApp().promptSize, 'extensive');
+});
+
+check('a write from a second process is seen: project file', () => {
+  settings.setProject(proj, { promptSize: 'chat' });
+  assert.equal(settings.getProject(proj).promptSize, 'chat');
+  child(`const s=require(${JSON.stringify(path.join(ROOT, 'src/settings.js'))});
+    s.setProject(${JSON.stringify(proj)}, { promptSize: 'full' });`);
+  assert.equal(settings.getProject(proj).promptSize, 'full');
+});
+
+check('a direct SQL write on the shared handle is seen', () => {
+  settings.setDbBacked(proj, true);
+  assert.equal(settings.getProject(proj).promptSize, 'full');
+  settings.getDb().prepare('UPDATE project_settings SET value = ? WHERE project_dir = ?')
+    .run(JSON.stringify({ promptSize: 'sql', __dbBacked: true }), proj);
+  assert.equal(settings.getProject(proj).promptSize, 'sql');
+  settings.setDbBacked(proj, false);
+});
+
+check('cached reads are faster than parsing (timing, informative)', () => {
+  const big = {};
+  for (let i = 0; i < 60; i++) big['key' + i] = { value: 'x'.repeat(40), list: [1, 2, 3] };
+  settings.setProject(proj, big);
+  const past = new Date(Date.now() - 60_000);
+  fs.utimesSync(file, past, past);
+  settings.getProject(proj);
+  const n = 2000;
+  let t = process.hrtime.bigint();
+  for (let i = 0; i < n; i++) settings.getProject(proj);
+  const cached = Number(process.hrtime.bigint() - t) / n / 1000;
+  t = process.hrtime.bigint();
+  for (let i = 0; i < n; i++) { cache.clear(); settings.getProject(proj); }
+  const uncached = Number(process.hrtime.bigint() - t) / n / 1000;
+  console.log('       project file read: cached ' + cached.toFixed(1) + ' µs, uncached ' + uncached.toFixed(1) + ' µs');
+  settings.setDbBacked(proj, true);
+  settings.getProject(proj);
+  t = process.hrtime.bigint();
+  for (let i = 0; i < n; i++) settings.getProject(proj);
+  const dbCached = Number(process.hrtime.bigint() - t) / n / 1000;
+  t = process.hrtime.bigint();
+  for (let i = 0; i < n; i++) { cache.clear(); settings.getProject(proj); }
+  const dbUncached = Number(process.hrtime.bigint() - t) / n / 1000;
+  console.log('       project DB read:   cached ' + dbCached.toFixed(1) + ' µs, uncached ' + dbUncached.toFixed(1) + ' µs');
+  settings.setDbBacked(proj, false);
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

@@ -17,10 +17,15 @@ function readJsonFile(filePath) {
   return JSON.parse(raw);
 }
 
+// 2-space indent so the file is hand-editable and diff-friendly.
+function serialize(obj) {
+  return JSON.stringify(obj, null, 2) + '\n';
+}
+
+// Returns the body it wrote.
 function writeJsonFile(filePath, obj) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  // 2-space indent so the file is hand-editable and diff-friendly.
-  const body = JSON.stringify(obj, null, 2) + '\n';
+  const body = serialize(obj);
   // Stage next to the target, fsync, then rename over it. A bare
   // writeFileSync that dies mid-write (crash, full disk, killed process)
   // leaves a truncated `.mouaif.json` behind, and a truncated project file is
@@ -39,10 +44,23 @@ function writeJsonFile(filePath, obj) {
     fs.closeSync(fd);
     fd = null;
     fs.renameSync(tmpPath, filePath);
+    return body;
   } catch (e) {
     if (fd !== null) { try { fs.closeSync(fd); } catch { /* already closed */ } }
     try { fs.unlinkSync(tmpPath); } catch { /* nothing to clean up */ }
     throw e;
+  }
+}
+
+// Parse a project file's text, mapping a syntax error to
+// MOUAIF_PROJECT_PARSE_ERROR so the HTTP layer can answer 422.
+function parseProjectJson(filePath, text) {
+  try { return JSON.parse(text); }
+  catch (e) {
+    const err = new Error('Failed to parse ' + filePath + ': ' + e.message);
+    err.code = 'MOUAIF_PROJECT_PARSE_ERROR';
+    err.cause = e;
+    throw err;
   }
 }
 
@@ -54,13 +72,7 @@ function readProjectJson(filePath, fallback) {
     throw new TypeError('filePath must be a non-empty string');
   }
   if (!fs.existsSync(filePath)) return fallback === undefined ? {} : fallback;
-  try { return readJsonFile(filePath); }
-  catch (e) {
-    const err = new Error('Failed to parse ' + filePath + ': ' + e.message);
-    err.code = 'MOUAIF_PROJECT_PARSE_ERROR';
-    err.cause = e;
-    throw err;
-  }
+  return parseProjectJson(filePath, fs.readFileSync(filePath, 'utf8'));
 }
 
 // Write an object to a project-relative JSON file in the canonical
@@ -69,7 +81,7 @@ function writeProjectJson(filePath, obj) {
   if (!filePath || typeof filePath !== 'string') {
     throw new TypeError('filePath must be a non-empty string');
   }
-  writeJsonFile(filePath, obj);
+  return writeJsonFile(filePath, obj);
 }
 
-module.exports = { readJsonFile, writeJsonFile, readProjectJson, writeProjectJson };
+module.exports = { serialize, readJsonFile, writeJsonFile, parseProjectJson, readProjectJson, writeProjectJson };

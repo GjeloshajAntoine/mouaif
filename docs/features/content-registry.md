@@ -53,6 +53,26 @@ Each declaration names a document (`doc`) and a path in it. Where a document liv
 
 Every adapter has the same members: `{ kind, scope, location, read(), write(next) }`. Atomic file writes, the corrupt-blob quarantine and the test-process guard live in the adapters (`app-db.js`, `project-file.js`, `project-db.js`, `json-file.js`); the SQLite handle is in `src/content/db.js`. `setProjectMode()` moves a project's documents between file and DB.
 
+### Read cache
+
+A store keeps the last parsed document and hands out a copy while its version stamp is unchanged (`src/content/stores/cache.js`):
+
+| Store | Stamp |
+| --- | --- |
+| file | inode, size and mtime (ns). A file modified in the last 2 s is re-read and compared with the cached text, because mtimes are coarser than a write. |
+| DB row | SQLite `data_version` (moves when another connection commits) and `total_changes()` (moves on any write through this process's connection). |
+
+So a hand edit of `.mouaif.json`, a write from another `mouaif` process and a direct SQL write are all seen on the next read. Measured on the dev host with a 60-key project document:
+
+| Read | Before | Cached |
+| --- | --- | --- |
+| Project, file mode | 133 µs | 53 µs |
+| Project, DB mode | 105 µs | 40 µs |
+| Resolved, file mode | 219 µs | 106 µs |
+| Resolved, DB mode | 181 µs | 85 µs |
+
+The remaining cost is mostly the copy (about 20 µs) and the merge in `getResolved()`.
+
 ## Implementation notes
 
 - The registry is plain data with no imports, so `src/settings.js` can require it without a cycle.

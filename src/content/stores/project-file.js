@@ -14,7 +14,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { readProjectJson, writeProjectJson } = require('./json-file.js');
+const { parseProjectJson, writeProjectJson } = require('./json-file.js');
+const cache = require('./cache.js');
 
 const PROJECT_FILE = '.mouaif.json';
 // Optional per-project folder holding the config file for complex projects:
@@ -36,11 +37,11 @@ function getProjectFolderPath(projectDir) {
 }
 
 // 'folder' when <projectDir>/.mouaif/.mouaif.json is a file, else 'root'.
+// Called on every project read: `throwIfNoEntry: false` avoids building an
+// exception for the usual case, a project with no folder file.
 function getProjectLayout(projectDir) {
-  try {
-    if (fs.statSync(getProjectFolderPath(projectDir)).isFile()) return 'folder';
-  } catch { /* no folder file */ }
-  return 'root';
+  const st = fs.statSync(getProjectFolderPath(projectDir), { throwIfNoEntry: false });
+  return st && st.isFile() ? 'folder' : 'root';
 }
 
 function getProjectPath(projectDir) {
@@ -50,22 +51,30 @@ function getProjectPath(projectDir) {
 }
 
 // A JSON document at a fixed path. `locate()` is called on every operation so
-// a layout change on disk (the file moved into `.mouaif/`) is followed.
+// a layout change on disk (the file moved into `.mouaif/`) is followed. Reads
+// are cached on the file's stamp (see cache.js), so a hand edit is seen on the
+// next read.
 function createJsonFileStore(kind, locate) {
   return {
     kind,
     scope: 'project',
     get location() { return locate(); },
-    // A corrupt file is a user error: readProjectJson surfaces it as
+    // A corrupt file is a user error: it surfaces as
     // MOUAIF_PROJECT_PARSE_ERROR; a missing file resolves to {}.
-    read: () => readProjectJson(locate()),
+    read: () => {
+      const filePath = locate();
+      return cache.readFile(filePath, (text) => parseProjectJson(filePath, text), () => ({}));
+    },
     write: (next) => {
       if (!next || typeof next !== 'object' || Array.isArray(next)) {
         throw new TypeError('a project document must be an object');
       }
-      writeProjectJson(locate(), next);
+      const filePath = locate();
+      const text = writeProjectJson(filePath, next);
+      cache.wroteFile(filePath, next, text);
       return next;
-    }
+    },
+    version: () => cache.fileStamp(locate()) || 'missing'
   };
 }
 

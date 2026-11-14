@@ -181,8 +181,10 @@ const cache = new Map();
 function fingerprint(projectDir, value) {
   const settings = require('./settings.js');
   const parts = [];
-  try { parts.push(settings.isDbBacked(projectDir) ? 'db:' + JSON.stringify(settings.getProject(projectDir).hooks || null) : 'file'); } catch { parts.push('?'); }
-  try { parts.push(String(fs.statSync(settings.getProjectPath(projectDir)).mtimeMs)); } catch { parts.push('-'); }
+  // The hooks as the settings document holds them now, in either storage
+  // mode. Reading the document is a cache hit unless it changed (the store
+  // checks its file stamp or DB change counter, src/content/stores/cache.js).
+  try { parts.push(JSON.stringify(settings.getProject(projectDir).hooks || null)); } catch { parts.push('?'); }
   for (const rel of [...value.files.map((f) => f.path), ...value.watch]) {
     try { parts.push(rel + ':' + statPart(path.join(projectDir, rel))); } catch { parts.push(rel + ':?'); }
   }

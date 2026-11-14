@@ -8,6 +8,7 @@
 
 const crypto = require('crypto');
 const contentDb = require('../db.js');
+const cache = require('./cache.js');
 
 const { APP_KV_TABLE } = contentDb;
 // Row key prefix for an unreadable app-settings blob that was moved aside
@@ -15,15 +16,19 @@ const { APP_KV_TABLE } = contentDb;
 const QUARANTINE_SUFFIX = '.corrupt-';
 
 function readRow(key) {
+  return cache.readRow('app:' + key, () => loadRow(key)).value;
+}
+
+function loadRow(key) {
   const d = contentDb.db();
   const row = d.prepare(`SELECT value FROM ${APP_KV_TABLE} WHERE key = ?`).get(key);
-  if (!row) return {};
+  if (!row) return { exists: false, value: {} };
   try {
     const parsed = JSON.parse(row.value);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       throw new Error('app settings must be a JSON object');
     }
-    return parsed;
+    return { exists: true, value: parsed };
   } catch (e) {
     // A corrupt app-settings blob used to resolve to {}: every provider,
     // registered project, prompt and pricing entry vanished from the UI, and
@@ -45,7 +50,7 @@ function readRow(key) {
       console.error('[settings] app settings were unreadable (' + e.message
         + ') and could not be quarantined: ' + quarantineError.message);
     }
-    return {};
+    return { exists: false, value: {} };
   }
 }
 
@@ -59,6 +64,7 @@ function writeRow(key, next) {
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`
     )
     .run(key, JSON.stringify(next));
+  cache.wroteRow('app:' + key, next);
   return next;
 }
 
@@ -75,7 +81,8 @@ function createAppDbStore(key) {
     scope: 'app',
     location: APP_KV_TABLE + ':' + key,
     read: () => readRow(key),
-    write: (next) => writeRow(key, next)
+    write: (next) => writeRow(key, next),
+    version: () => cache.dbStamp()
   };
 }
 
