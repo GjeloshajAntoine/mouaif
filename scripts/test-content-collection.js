@@ -159,5 +159,24 @@ check('themes: one write, script and CSS shown as sizes', () => {
   assert.deepStrictEqual(settings.getApp().themes, { custom: [{ id: 'mine', name: 'Mine', base: 'dark', vars: {}, css: 'a{}', js: 'console.log(1)' }], active: 'mine' });
 });
 
+check('themes: the first save reports no active theme change', () => {
+  service.writeMany({ scope: 'app', entries: [{ type: 'themes', value: undefined }, { type: 'themes.active', value: undefined }] });
+  const themes = require(path.join(ROOT, 'src/themes.js'));
+  const writeMany = service.writeMany;
+  const seen = [];
+  service.writeMany = (opts) => { const r = writeMany(opts); seen.push(r.changes); return r; };
+  try {
+    const theme = themes.create({ name: 'First', base: 'dark' });
+    assert.deepStrictEqual(seen[0].map((c) => c.type), ['themes']);
+    assert.equal(Object.prototype.hasOwnProperty.call(settings.getApp().themes, 'active'), false);
+    themes.setActive(theme.id);
+    themes.remove(theme.id);
+    assert.deepStrictEqual(seen[2].find((c) => c.type === 'themes.active').after, '');
+    assert.equal(settings.getApp().themes.active, '');
+  } finally {
+    service.writeMany = writeMany;
+  }
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

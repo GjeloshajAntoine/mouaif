@@ -47,10 +47,16 @@ function readStore() {
 
 // One write of the theme list and the active id through the content write
 // path (src/content/service.js), so it gets a change list and content_changed.
+// No active theme is stored as '' once one was ever set; before that the key
+// stays absent, so the first theme save does not report an "Active theme"
+// change.
 function writeStore(store) {
+  const raw = settings.getApp()[STORE_KEY];
+  const stored = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw.active : undefined;
+  const active = store.active || (stored === undefined ? undefined : '');
   return require('./content/service.js').writeMany({
     scope: 'app',
-    entries: [{ type: 'themes', value: store.custom }, { type: 'themes.active', value: store.active || '' }]
+    entries: [{ type: 'themes', value: store.custom }, { type: 'themes.active', value: active }]
   });
 }
 
