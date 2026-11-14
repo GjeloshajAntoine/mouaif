@@ -29,7 +29,7 @@ Both routes, and the model's `update_settings` tool, change the settings documen
 - **App scope** accepts only the client-visible keys, the ones `GET /api/settings` returns. Any other key (`themes`, `mcp`, an unknown key) is refused with `400` and the list of writable keys. Before, only the tool refused them; the route stored them where no page could show or reset them.
 - **Project scope** accepts any key: `.mouaif.json` stays open-ended. `hooks` is refused on both scopes; hooks are saved through `/api/hooks` or the `hook_create` tool.
 - **Declared values are type-checked** when they change: `promptSize` must be one of the four prompt styles, `toolOutput.size` one of its sizes, a notification switch a boolean. `null` clears a value. A stored value that fails the check but is re-sent unchanged (the raw editor sends every key) does not block the save.
-- **Secrets**: an `apiKey` is written only from the local UI. A provider or model entry sent back with `hasApiKey` instead of its key keeps the stored key, unless its `baseUrl` changed.
+- **Secrets**: an `apiKey` is written only from the local UI. A provider or model entry sent back with `hasApiKey` instead of its key keeps the stored key, unless its `baseUrl` changed. That rule holds for every caller, the settings routes included: changing a URL in the raw project editor without typing the key again saves the entry without a key, so a key is never sent to a host it was not entered for. Before, only `update_settings` dropped it.
 
 Both responses add a `changes` list describing what the write did:
 

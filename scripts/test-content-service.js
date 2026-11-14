@@ -101,6 +101,17 @@ check('the key is dropped when the URL it is sent to changed', () => {
   app({ providers: [{ id: 'openai-compatible', type: 'openai-compatible', baseUrl: 'http://evil', hasApiKey: true }] }, 'tool');
   assert.equal(settings.getApp().providers[0].apiKey, undefined);
 });
+check('the UI loses the stored key too when the URL changed, and keeps it otherwise', () => {
+  app({ providers: [{ id: 'openai-compatible', type: 'openai-compatible', baseUrl: 'http://a', apiKey: 'sk-ui' }] }, 'ui');
+  app({ providers: [{ id: 'openai-compatible', type: 'openai-compatible', baseUrl: ' http://a ', name: 'Same', hasApiKey: true }] }, 'ui');
+  assert.equal(settings.getApp().providers[0].apiKey, 'sk-ui', 'same URL (trimmed): kept');
+  app({ providers: [{ id: 'openai-compatible', type: 'openai-compatible', baseUrl: 'http://b', hasApiKey: true }] }, 'ui');
+  assert.equal(settings.getApp().providers[0].apiKey, undefined, 'new URL: dropped');
+  // The raw project editor re-sending a model with a new baseUrl.
+  project({ models: [{ id: 'm', provider: 'p', baseUrl: 'http://a', apiKey: 'sk-m' }] }, 'ui');
+  project({ models: [{ id: 'm', provider: 'p', baseUrl: 'http://b', hasApiKey: true }] }, 'ui');
+  assert.equal(settings.getProject(proj).models[0].apiKey, undefined);
+});
 
 // ---- Field checks --------------------------------------------------------
 
