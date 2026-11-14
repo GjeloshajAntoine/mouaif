@@ -3,7 +3,7 @@
 // Hook REST handlers (docs/features/hooks.md).
 //
 //   GET  /api/hooks                          -> { enabled, list, events, shells, disabledByEnv }
-//   PUT  /api/hooks   { enabled, list }      -> the saved config (validated)
+//   PUT  /api/hooks   { enabled, list }      -> the saved config (validated) + changes
 //   POST /api/hooks/test { hook, payload?, projectDir? }
 //                                            -> { parsed, code, ms, timedOut, stdout, stderr }
 //
@@ -38,7 +38,8 @@ async function handleHooks(req, res, parsed) {
     if (urlPath === '/api/hooks' && method === 'PUT') {
       const body = await readJsonOr400(req, res);
       if (!body) return;
-      return sendJSON(res, 200, view(hooks.setConfig(body)));
+      const r = hooks.writeConfig(body);
+      return sendJSON(res, 200, { ...view(r.config), changes: r.changes });
     }
     // Project hooks and their trust (src/projectHooks.js):
     //   GET    /api/hooks/project?projectDir=        -> status + referenced files (first 8 KB each)

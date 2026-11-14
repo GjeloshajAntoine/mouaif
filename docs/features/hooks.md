@@ -198,7 +198,7 @@ A project hook always runs in the project folder, even when the chat's working f
 
 Project hooks are not written through the settings screens or `update_settings`. Edit the file, or add one through the model's `hook_create` or the chat hooks panel's **Project** button. A hook added that way is trusted along with the others only if the project's hooks were already trusted. Otherwise all of them wait for your review.
 
-Every write of hooks goes through the content write path (`src/content/service.js`). The trust rule above is the project hook type's `afterWrite` step, so it applies to any write of the list, not only to `hook_create`. The policy table refuses `hooks` in every settings patch, and a hook list write must name `hook_create` or the hooks route. `hook_create` returns a `changes` list (see [Content registry](./content-registry.md)).
+Every write of hooks goes through the content write path (`src/content/service.js`). The trust rule above is the project hook type's `afterWrite` step, so it applies to any write of the list, not only to `hook_create`. The policy table refuses `hooks` in every settings patch, and a hook list write must name `hook_create` or the hooks route. `hook_create` and `PUT /api/hooks` return a `changes` list (see [Content registry](./content-registry.md)).
 
 ### Hooks for one chat
 
