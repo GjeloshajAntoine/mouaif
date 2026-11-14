@@ -258,8 +258,8 @@ async function main() {
   for (const profile of ['very-small', 'average', 'extensive', 'chat']) {
     const specs = pp.reduceToolSpecs([workspaceSpec], profile);
     const description = specs.find((spec) => spec.function.name === 'change_working_folder').function.description;
-    check(profile + ' tool description says folders are never created', /never creates a folder/.test(description));
-    check(profile + ' tool description requires an existing directory', /directory` is required: a project-relative or absolute path to a directory that already exists/.test(description));
+    check(profile + ' tool description says folders are never created', /never creates one/.test(description));
+    check(profile + ' tool description requires an existing directory', /The folder must already exist/.test(description));
     check(profile + ' tool description points new workspaces at .mouaif/workspaces/<name>', /\.mouaif\/workspaces\/<name>/.test(description));
   }
   check('reduceToolSpecs invalid profile falls through to full',

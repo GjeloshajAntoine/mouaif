@@ -225,11 +225,11 @@ async function main() {
     }
     };
     r = await get('codex');
-    check('codex: reports the plan window as a formatted value',
-    r.status === 200 && r.body.supported === true && r.body.value === '62%'
+    check('codex: reports both plan windows as a formatted value',
+    r.status === 200 && r.body.supported === true && r.body.value === 'Plus 5h 62% · 7d 12%'
     && r.body.remaining === undefined, r.status + ' ' + JSON.stringify(r.body));
-    check('codex: labelled with the plan, not Balance',
-    r.body.label === 'Plan plus', JSON.stringify(r.body));
+    check('codex: labelled with the provider, not Balance',
+    r.body.label === 'Codex', JSON.stringify(r.body));
     check('codex: asked /backend-api/wham/usage on the origin',
     calls.length === 1 && calls[0].url === 'https://chatgpt.com/backend-api/wham/usage',
     calls.map((c) => c.url).join(', '));

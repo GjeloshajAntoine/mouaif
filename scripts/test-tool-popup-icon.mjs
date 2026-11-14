@@ -10,7 +10,7 @@ const context = vm.createContext({
   h: (tag, props, ...children) => ({ tag, props: props || {}, children: children.flat().filter(Boolean) }),
   useState: (initial) => typeof initial === 'boolean' ? [open, (value) => { open = value; }] : [initial, () => {}],
   useRef: () => ({ current: null }), useCallback: (fn) => fn, useEffect() {},
-  useClickOutside() {}, useVisualViewport() {}, buildToolGroups: () => [], ToolTree: 'tree'
+  useClickOutside() {}, useVisualViewport() {}, useBackClose() {}, buildToolGroups: () => [], ToolTree: 'tree'
 });
 vm.runInContext(source, context);
 const find = (node, predicate) => predicate(node) ? node : node.children?.map((child) => find(child, predicate)).find(Boolean);

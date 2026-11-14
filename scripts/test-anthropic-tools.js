@@ -15,6 +15,13 @@
 'use strict';
 
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
+
+// streamChat reads the app settings, so give it a throwaway store.
+const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-anthropic-tools-'));
+process.env.MOUAIF_HOME = tmpHome;
+process.on('exit', () => fs.rmSync(tmpHome, { recursive: true, force: true }));
 const { BUILDERS, PARSERS } = require(path.resolve(__dirname, '..', 'src', 'ai-endpoints.js'));
 const { streamChat } = require(path.resolve(__dirname, '..', 'src', 'ai-stream.js'));
 

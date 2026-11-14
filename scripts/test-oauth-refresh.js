@@ -9,6 +9,14 @@
 
 const assert = require('assert');
 const Module = require('module');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+// streamChat reads the app settings, so give it a throwaway store.
+const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-oauth-refresh-'));
+process.env.MOUAIF_HOME = tmpHome;
+process.on('exit', () => fs.rmSync(tmpHome, { recursive: true, force: true }));
 
 const authRealPath = require.resolve('../src/auth.js');
 delete require.cache[authRealPath];

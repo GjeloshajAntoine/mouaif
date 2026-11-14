@@ -174,7 +174,7 @@ function harness(globals) {
   const h = harness({
     activeProject: { value: { dir: '' } }, nav() {},
     Fragment: 'fragment', AgentFilePicker: 'picker', HiddenContentEditor: 'editor',
-    AbortController,
+    AbortController, sectionIcon: () => null,
     fetchJson: async () => ({ status: 200, body: { rules: [] } })
   });
   h.evalFile('components/settings/projectNavigation.js');
@@ -240,6 +240,7 @@ function harness(globals) {
     nav() {}, Fragment: 'fragment', ToolTree: 'tree',
     activeProject: { value: { dir: '' } },
     AgentFilePicker: 'picker', ModelPickerField: 'model', ThinkingSelectField: 'thinking',
+    loadPinned: () => [], loadRecent: () => [], loadRecentFromServer: async () => [], touchRecent() {}, togglePin() {},
     fetchJson: async () => ({ status: 200, body: { agents: [], servers: [], tools: [], prompts: [] } })
   });
   h.evalFile('components/settings/projectNavigation.js');

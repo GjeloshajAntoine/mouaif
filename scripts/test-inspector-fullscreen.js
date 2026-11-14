@@ -79,6 +79,7 @@ function createHarness() {
     useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
     useEffect: (fn) => { effects.push(fn); },
     useModal: () => ({ current: null }),
+    useBackClose() {},
     h: (type, attrs, ...children) => {
     // Invoke function components the way Preact would, so a child's own hooks
     // (EscapeToExit's keydown listener) run in this harness too. A `type` of

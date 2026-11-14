@@ -116,6 +116,16 @@ function createElement(tag) {
       node.childElementCount = node.children.length;
       return child;
     },
+    replaceChild(fresh, old) {
+      const i = node.children.indexOf(old);
+      if (i < 0) return old;
+      if (fresh.parentNode) fresh.parentNode.removeChild(fresh);
+      const at = node.children.indexOf(old);
+      node.children[at] = fresh;
+      fresh.parentNode = node;
+      old.parentNode = null;
+      return old;
+    },
     remove() { if (node.parentNode) node.parentNode.removeChild(node); },
     querySelector(sel) { return descendants(node).find((n) => matches(n, sel)) || null; },
     querySelectorAll(sel) { return descendants(node).filter((n) => matches(n, sel)); },
