@@ -228,6 +228,17 @@ function onWrite(typeId, hooks) {
   writeHooks.set(typeId, hooks);
 }
 
+// checkWrite({ type, scope, actor, remote, via }) -> { approval } or throws.
+// The policy check writeType runs, on its own: a feature module with side
+// effects outside the document (stopping a process, storing a credential)
+// calls it before them, so a refused write leaves nothing behind.
+function checkWrite({ type, scope, actor = 'ui', remote, via = null }) {
+  if (remote === undefined) remote = isRemoteCall();
+  const resolved = typeof type === 'string' ? registry.getType(type) : type;
+  if (!resolved) throw policy.refusal('unknown content type: ' + type);
+  return policy.checkType({ type: resolved, scope, actor, remote, via });
+}
+
 // writeType({ type, scope, projectDir, value, unset, actor, remote, via, dryRun })
 //   -> { changes, value, approval }
 // Writes one declared type's whole value (a collection's items) in one
@@ -297,4 +308,4 @@ function writeMany({ scope, projectDir, entries, unset = [], actor = 'ui', remot
   return { changes, approval };
 }
 
-module.exports = { applyPatch, writeType, writeMany, onWrite, readType, warningsFor, validateKey, events, carrySecrets };
+module.exports = { applyPatch, writeType, writeMany, checkWrite, onWrite, readType, warningsFor, validateKey, events, carrySecrets };

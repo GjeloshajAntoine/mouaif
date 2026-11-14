@@ -224,19 +224,6 @@ function withoutToolCache(servers) {
   });
 }
 
-// Merge `mcp` into the stored document instead of replacing it: the document
-// also carries the authorization block written by tools/authorization.js
-// (setAuthorization), and a blanket overwrite would silently drop the user's
-// MCP allow/allowlist policy on every server CRUD. A corrupt document falls
-// back to the incoming object.
-function mergeInto(store, mcp) {
-  let base = {};
-  try { base = store.read() || {}; } catch { /* replace corrupt file */ }
-  const out = Object.assign({}, base, mcp || { servers: [] });
-  if (Array.isArray(out.servers)) out.servers = withoutToolCache(out.servers);
-  store.write(out);
-}
-
 function readProjectConfig(projectDir) {
   const store = contentStores.storeFor('mcp', PROJECT_SCOPE, projectDir);
   const mcp = store.read();
@@ -244,9 +231,6 @@ function readProjectConfig(projectDir) {
   return { mcp, list, source: store.source() };
 }
 
-function writeProjectConfig(projectDir, mcp) {
-  mergeInto(contentStores.storeFor('mcp', PROJECT_SCOPE, projectDir), mcp);
-}
 
 // ---- App-level registry ---------------------------------------------------
 // App-scoped servers live in the app SQLite store under `mcp.servers` — same
@@ -263,10 +247,6 @@ function readAppConfig() {
   return { mcp, list, source: APP_SCOPE };
 }
 
-function writeAppConfig(mcp) {
-  // The app block also carries the app-level authorization fallback.
-  mergeInto(contentStores.storeFor('mcp', APP_SCOPE), mcp);
-}
 
 // readAllConfigs(projectDir) -> { entries: [{ scope, raw }], byId: Map }
 //
@@ -293,13 +273,59 @@ function readAllConfigs(projectDir) {
   return { entries };
 }
 
+// ---- Writes ----------------------------------------------------------------
+//
+// Server lists are written through the content write path
+// (src/content/service.js) as the `mcpServers` (app: `mcp.servers` in the app
+// settings) and `projectMcpServers` (project: `servers` in the `mcp`
+// document) types. That applies their writers policy (a shared project's
+// caller writes neither), returns a change list, publishes content_changed,
+// and keeps every other key of the document (the authorization block, a
+// user's own `.mcp.json` keys) as it is.
+
+function serversType(scope) {
+  return scope === APP_SCOPE ? 'mcpServers' : 'projectMcpServers';
+}
+
+// Throws when this caller may not write the scope's servers. Called before
+// any side effect (stopping a session, storing an OAuth secret).
+function checkServersWrite(scope) {
+  require('./content/service.js').checkWrite({ type: serversType(scope), scope, via: 'route' });
+}
+
 // Write back the full server list for one scope. `scope` is APP_SCOPE or
-// PROJECT_SCOPE; `servers` is the normalized entry list to persist.
+// PROJECT_SCOPE; `servers` is the entry list to persist.
+// -> { changes }
 function writeConfigForScope(projectDir, scope, servers) {
-  if (scope === APP_SCOPE) {
-    writeAppConfig({ servers });
-  } else {
-    writeProjectConfig(projectDir, { servers });
+  const r = require('./content/service.js').writeType({
+    type: serversType(scope),
+    scope,
+    projectDir: scope === APP_SCOPE ? undefined : projectDir,
+    value: withoutToolCache(servers),
+    via: 'route'
+  });
+  return { changes: r.changes };
+}
+
+// A write that changed or removed a server stops its running sessions, so
+// the next start reads the new entry. App servers run once per project, so
+// every context's session goes; a project server runs only in its project.
+// Registered as the types' afterWrite: it applies to every write of the list,
+// not only to updateServer / removeServer.
+function stopChangedSessions(ctx) {
+  const after = new Map(normalizeAll(Array.isArray(ctx.after) ? ctx.after : []).map((s) => [s.id, s]));
+  const changed = normalizeAll(Array.isArray(ctx.before) ? ctx.before : [])
+    .filter((s) => JSON.stringify(s) !== JSON.stringify(after.get(s.id)))
+    .map((s) => s.id);
+  if (!changed.length) return;
+  const only = ctx.scope === APP_SCOPE ? null : scopeKey(ctx.projectDir);
+  for (const [key, session] of [..._sessions]) {
+    const split = key.lastIndexOf('::');
+    const context = key.slice(0, split);
+    const id = key.slice(split + 2);
+    if (!changed.includes(id) || (only && context !== only)) continue;
+    untrackSession(context === 'app' ? null : context, id);
+    Promise.resolve(session.shutdown()).catch(() => {});
   }
 }
 
@@ -814,6 +840,7 @@ function addServer(projectDir, opts) {
   const usedSlugs = new Set(normalizeAll(scopeList).map(s => s.slug));
   const entry = normalizeServerEntry(Object.assign({}, opts, { id }), usedSlugs);
   if (!entry) throw err('EBADINPUT', 'invalid server entry');
+  checkServersWrite(scope);
   validateOAuthEntry(entry, scope, projectDir, opts.oauth);
   applyOAuthSecret(entry, scope, projectDir, opts.oauth);
   const next = scopeList.concat([entry]);
@@ -868,18 +895,11 @@ function updateServer(projectDir, serverId, patch) {
   const scope = found.scope;
   const normalized = found.normalized;
   const idx = found.idx;
-  // Stop the running session synchronously (don't await — the caller
-  // wants a fast PATCH) so the next start reflects the new config.
-  // untrackSession runs inside stopServer, so the entry is removed
-  // from the in-memory map by the time this function returns even
-  // though the child is still being torn down. The untrack is
-  // synchronous; the shutdown is async.
-  const session = getSession(projectDir, serverId);
-  if (session) {
-    // Fire-and-forget the actual shutdown; the bookkeeping is sync.
-    Promise.resolve(session.shutdown()).catch(() => {});
-    untrackSession(projectDir, serverId);
-  }
+  checkServersWrite(scope);
+  // The running session stops once the new entry is written
+  // (stopChangedSessions): untracked synchronously, shut down in the
+  // background, so the PATCH stays fast and the next start reads the new
+  // config.
   const cleanPatch = Object.assign({}, patch || {});
   delete cleanPatch.scope; // scope is fixed at creation; use delete+add to move
   delete cleanPatch.projectDir; // transport detail, never persisted
@@ -918,9 +938,12 @@ function updateServer(projectDir, serverId, patch) {
 
 function removeServer(projectDir, serverId) {
   if (!serverId) return false;
-  stopServer(projectDir, serverId).catch(() => {});
   const found = findServerAnyScope(projectDir, serverId);
-  if (!found) return false;
+  if (!found) {
+    stopServer(projectDir, serverId).catch(() => {});
+    return false;
+  }
+  checkServersWrite(found.scope);
   const context = { entry: found.normalized[found.idx], scope: found.scope, projectDir };
   if (context.entry.oauth?.enabled) {
     mcpOAuth.clear(context, { secret: true });
@@ -1673,6 +1696,11 @@ function installShutdown() {
   process.once('exit', handler);
   process.once('SIGINT', () => { handler(); process.exit(0); });
   process.once('SIGTERM', () => { handler(); process.exit(0); });
+}
+
+// Session stops follow every write of a server list (see stopChangedSessions).
+for (const type of ['mcpServers', 'projectMcpServers']) {
+  require('./content/service.js').onWrite(type, { afterWrite: stopChangedSessions });
 }
 
 module.exports = {

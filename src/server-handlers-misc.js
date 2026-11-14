@@ -58,6 +58,9 @@ function mcpErrorStatus(err) {
     case 'EABORTED':           return 499;
     case 'EMODULE':            return 500;
     case 'MOUAIF_PROJECT_PARSE_ERROR': return 422;
+    // A write-path refusal (src/content/policy.js): a shared project's
+    // caller writing servers is 403 ESHARE_ROUTE.
+    case 'ESHARE_ROUTE':       return 403;
     default:                   return 500;
   }
 }

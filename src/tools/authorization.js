@@ -399,8 +399,13 @@ function getMcpConfig(projectDir) {
   catch { return {}; }
 }
 
-function writeMcpConfig(projectDir, config) {
-  contentStores.storeFor('mcp', 'project', projectDir).write(config || {});
+// The project's MCP authorization block, through the content write path
+// (the `projectMcpAuthorization` type): the servers and any other key of the
+// `mcp` document stay as they are.
+function writeMcpAuthorization(projectDir, auth) {
+  return require('../content/service.js').writeType({
+    type: 'projectMcpAuthorization', scope: 'project', projectDir, value: auth, via: 'route'
+  });
 }
 
 // A family leaf (a file operation, a chat or app function) shares its
@@ -633,8 +638,7 @@ function setAppMcpAuthorization(patch) {
   auth.mode = shaped.mode;
   if (Object.prototype.hasOwnProperty.call(shaped, 'allowlist')) auth.allowlist = shaped.allowlist;
   else delete auth.allowlist;
-  const mcp = Object.assign({}, app && app.mcp, { authorization: auth });
-  settings.setApp({ mcp });
+  require('../content/service.js').writeType({ type: 'mcpAuthorization', scope: 'app', value: auth, via: 'route' });
   return getAppMcpAuthorization();
 }
 
@@ -825,7 +829,7 @@ function setAuthorization(projectDir, patch) {
       // Drop empty maps so .mcp.json stays small and honest.
       if (!Object.keys(auth[key]).length) delete auth[key];
     }
-    writeMcpConfig(projectDir, Object.assign({}, mcpConfig, { authorization: auth }));
+    writeMcpAuthorization(projectDir, auth);
   }
   if (!Object.keys(next).length && !patch.mcp) throw typedError('EBADINPUT', 'tools.shell, tools.file, or mcp authorization is required');
   if (Object.keys(next).length) settings.setProject(projectDir, next);

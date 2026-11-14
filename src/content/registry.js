@@ -481,6 +481,28 @@ const TYPES = [
     searchFields: ['name', 'command', 'url'],
     approval: true, writers: { ui: true, tool: false, share: false }
   },
+  {
+    // The app-wide MCP gate (src/tools/authorization.js setAppMcpAuthorization).
+    id: 'mcpAuthorization', shape: 'value', scopes: ['app'], doc: 'settings', path: 'mcp.authorization',
+    field: { type: 'object' },
+    label: 'MCP tool permissions', description: 'Off, ask or allow for MCP tools, in every project.',
+    keywords: ['mcp', 'permission', 'authorization', 'allow', 'ask', 'allowlist'],
+    group: 'Tools', page: 'settings/mcp',
+    approval: true, writers: { ui: true, tool: false, share: false }
+  },
+  {
+    // The project's MCP gate and per-server / per-tool overrides, beside the
+    // servers in the `mcp` document (src/tools/authorization.js
+    // setAuthorization). A shared project's caller may change it: the chat's
+    // Tools card writes it, and the share gate still decides which MCP tools
+    // that caller can run.
+    id: 'projectMcpAuthorization', shape: 'value', scopes: ['project'], doc: 'mcp', path: 'authorization',
+    field: { type: 'object' },
+    label: 'MCP tool permissions', description: 'Off, ask or allow for MCP servers and tools in this project.',
+    keywords: ['mcp', 'permission', 'authorization', 'allow', 'ask', 'allowlist', '.mcp.json'],
+    group: 'Tools', page: 'settings/mcp',
+    approval: true, writers: { ui: true, tool: false, share: true }
+  },
 
   // ---- Project-only content ----------------------------------------------
   {

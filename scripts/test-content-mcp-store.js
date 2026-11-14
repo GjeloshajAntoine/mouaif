@@ -213,5 +213,64 @@ check('a .mcp.json that is not an object reads as an empty document', () => {
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(proj, '.mcp.json'), 'utf8')).servers.map((s) => s.name), ['After']);
 });
 
+// ---- Through the write path ------------------------------------------------
+
+const service = require(path.join(ROOT, 'src/content/service.js'));
+const gate = require(path.join(ROOT, 'src/share-gate.js'));
+const asCaller = (fn) => gate.runAsCaller({ id: 'remote', access: 'full' }, fn);
+const refusedShare = (fn) => assert.throws(fn, (e) => e.status === 403 && e.code === 'ESHARE_ROUTE');
+function events(fn) {
+  const seen = [];
+  const on = (e) => seen.push(e);
+  service.events.on('content_changed', on);
+  try { fn(); } finally { service.events.off('content_changed', on); }
+  return seen;
+}
+
+check('server writes publish content_changed for their type', () => {
+  const proj = newProject('events');
+  let added;
+  assert.deepStrictEqual(events(() => { added = mcp.addServer(proj, server('Ev')); }).map((e) => e.types), [['projectMcpServers']]);
+  assert.deepStrictEqual(events(() => mcp.updateServer(proj, added.id, { name: 'Ev2' })).map((e) => [e.scope, e.types]), [['project', ['projectMcpServers']]]);
+  assert.deepStrictEqual(events(() => mcp.removeServer(proj, added.id)).map((e) => e.types), [['projectMcpServers']]);
+  let app;
+  assert.deepStrictEqual(events(() => { app = mcp.addServer(null, Object.assign(server('AppEv'), { scope: 'app' })); }).map((e) => [e.scope, e.types]), [['app', ['mcpServers']]]);
+  mcp.removeServer(null, app.id);
+});
+
+check('a shared project\'s caller writes no server, in either scope', () => {
+  const proj = newProject('share');
+  const own = mcp.addServer(proj, server('Own'));
+  const app = mcp.addServer(null, Object.assign(server('AppOwn'), { scope: 'app' }));
+  const before = JSON.stringify(mcp.listServers(proj));
+  refusedShare(() => asCaller(() => mcp.addServer(proj, server('Remote'))));
+  refusedShare(() => asCaller(() => mcp.updateServer(proj, own.id, { command: 'evil' })));
+  refusedShare(() => asCaller(() => mcp.updateServer(proj, app.id, { command: 'evil' })));
+  refusedShare(() => asCaller(() => mcp.removeServer(proj, own.id)));
+  refusedShare(() => asCaller(() => mcp.removeServer(proj, app.id)));
+  assert.equal(JSON.stringify(mcp.listServers(proj)), before);
+  mcp.removeServer(null, app.id);
+});
+
+check('the authorization block goes through the write path and keeps the servers', () => {
+  const proj = newProject('authpath');
+  const srv = mcp.addServer(proj, server('Kept'));
+  const seen = events(() => authorization.setAuthorization(proj, { mcp: { mode: 'allow' } }));
+  assert.deepStrictEqual(seen.map((e) => e.types), [['projectMcpAuthorization']]);
+  const doc = readJson(mcpFile(proj));
+  assert.equal(doc.authorization.mode, 'allow');
+  assert.deepStrictEqual(doc.servers.map((s) => s.id), [srv.id]);
+  // The chat's Tools card is open to a shared project's caller.
+  asCaller(() => authorization.setAuthorization(proj, { mcp: { mode: 'ask' } }));
+  assert.equal(readJson(mcpFile(proj)).authorization.mode, 'ask');
+  // The app gate is not.
+  authorization.setAppMcpAuthorization({ mode: 'off' });
+  refusedShare(() => asCaller(() => authorization.setAppMcpAuthorization({ mode: 'allow' })));
+  assert.equal(settings.getApp().mcp.authorization.mode, 'off');
+  const appSeen = events(() => authorization.setAppMcpAuthorization({ mode: 'ask' }));
+  assert.deepStrictEqual(appSeen.map((e) => [e.scope, e.types]), [['app', ['mcpAuthorization']]]);
+  assert.equal(settings.getApp().mcp.authorization.mode, 'ask');
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
