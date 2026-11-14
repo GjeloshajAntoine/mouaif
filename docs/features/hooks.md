@@ -212,6 +212,8 @@ While a chat has hooks, a **Hooks · N in this chat** bar sits above the compose
 - **Project** (tap twice), which moves it into the project's settings (see [Project hooks](#project-hooks)),
 - **Delete** (tap twice).
 
+In a project shared from another mouaif, **All chats** and **Project** are refused (403, `Hooks cannot be changed through a shared project` or `App settings are not available through a shared project`) and the hook stays in the chat: a remote caller cannot add hooks that run on the sharing machine, whatever the share's access. Both hook types set `writers.share: false` in the content registry, and the write path refuses any hook write made while serving a shared project's caller.
+
 **New hook for this chat** adds another one. The panel also lists the latest hook runs in this chat.
 
 Deleting the chat deletes its hooks. Forking or duplicating a chat does not copy them.

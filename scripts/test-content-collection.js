@@ -140,6 +140,21 @@ check('update_settings and the settings routes still cannot write hooks', () => 
   assert.throws(() => service.applyPatch({ scope: 'project', projectDir: hookProj, patch: { hooks: [] }, actor: 'ui' }), /Hooks/);
 });
 
+check('a shared project\'s caller cannot promote a chat hook; the chat keeps it', () => {
+  const chatHooks = require(path.join(ROOT, 'src/chatHooks.js'));
+  const gate = require(path.join(ROOT, 'src/share-gate.js'));
+  const added = chatHooks.add(hookProj, 'share-chat', hook('mine'), 'user');
+  const appBefore = hooks.getConfig().list.length;
+  const projectBefore = projectHooks.status(hookProj).hooks.length;
+  for (const scope of ['app', 'project']) {
+    assert.throws(() => gate.runAsCaller({ id: 'remote', access: 'full' }, () => chatHooks.promote(hookProj, 'share-chat', added.hook.id, scope)),
+      (e) => e.status === 403 && e.code === 'ESHARE_ROUTE', scope);
+    assert.ok(chatHooks.get(hookProj, 'share-chat', added.hook.id), scope + ': the chat hook is still there');
+  }
+  assert.equal(hooks.getConfig().list.length, appBefore, 'no app hook added');
+  assert.equal(projectHooks.status(hookProj).hooks.length, projectBefore, 'no project hook added');
+});
+
 check('app hooks: list and switch in one write, with changes', () => {
   const r = hooks.writeConfig({ enabled: false, list: [hook('app-one')] });
   assert.deepStrictEqual(r.changes.map((c) => [c.type, c.op, c.id || c.key]), [['appHooks', 'added', 'app-one'], ['hooks.enabled', 'set', 'hooks.enabled']]);

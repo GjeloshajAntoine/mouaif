@@ -92,7 +92,9 @@ async function handleHooks(req, res, parsed) {
     }
     return sendJSON(res, 404, { error: 'not found' });
   } catch (e) {
-    const status = e instanceof hooks.HookError ? e.status : 500;
+    // A HookError, or a write-path refusal (a shared project's caller writing
+    // hooks gets 403 ESHARE_ROUTE, src/content/policy.js).
+    const status = e instanceof hooks.HookError || Number.isInteger(e.status) ? e.status : 500;
     return sendJSON(res, status, { error: e.message });
   }
 }
@@ -159,8 +161,10 @@ async function handleChatHooks(req, res, parsed) {
     }
     return sendJSON(res, 405, { error: 'method not allowed' });
   } catch (e) {
-    const status = e instanceof hooks.HookError ? e.status : 500;
-    return sendJSON(res, status, { error: e.message });
+    // A HookError, or a write-path refusal (a shared project's caller writing
+    // hooks gets 403 ESHARE_ROUTE, src/content/policy.js).
+    const status = e instanceof hooks.HookError || Number.isInteger(e.status) ? e.status : 500;
+    return sendJSON(res, status, e.code ? { error: e.message, code: e.code } : { error: e.message });
   }
 }
 

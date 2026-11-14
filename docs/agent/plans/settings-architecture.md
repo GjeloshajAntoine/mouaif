@@ -312,7 +312,7 @@ One commit per step; each leaves the app working.
 | 3 | Adapter cache. | Reads faster | Test: a hand edit is seen on the next read; a write from a second process is seen; re-run timings. |
 | 4 | `service.apply` and the policy table for values; settings routes and `update_settings` call it; `changes` returned. | `PUT /api/settings/app` refuses unregistered app keys | One test per policy cell; `test:mouaif-tool`, `test:share`. |
 | 5 | `collection.js`; register and convert agents, prompts, custom actions, tags, hide rules, wording sets, models. | None | Each module's existing tests. |
-| 6 | Themes and hooks through the registry and `apply`; hooks trust as `afterWrite`; `hook_create` returns `changes`. | None intended | `test:themes`, `test:hooks`; project hook stays inert until trusted. |
+| 6 | Themes and hooks through the registry and `apply`; hooks trust as `afterWrite`; `hook_create` returns `changes`. | A shared project's caller can no longer write hooks: promoting a chat hook to app or project scope is refused with 403 (kept, see `docs/features/hooks.md`) | `test:themes`, `test:hooks`; project hook stays inert until trusted. |
 | 7 | `mcp` document: adapters for `.mcp.json`, DB-mode row, atomic write; `mcp.js` and `tools/authorization.js` share it. | DB-mode projects no longer get a new `.mcp.json` | MCP tests; DB-mode project add-server leaves the tree clean; existing file still read. |
 | 8 | `FieldRow`, `ItemRow`, `ChangeCard`; dry-run approval card. | New card content | UI test in the Docker app at 390 px. |
 | 9 | Schema and search routes; search field; `focus` highlight; warnings. | New feature | UI test; a shared project returns project content only; no secret in any result. |
