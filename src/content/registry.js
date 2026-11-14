@@ -245,7 +245,7 @@ const TYPES = [
   },
   {
     id: 'toolFeedbackMaxBytes', shape: 'value', scopes: ['app', 'project'], doc: 'settings', path: 'toolFeedbackMaxBytes',
-    field: { type: 'number', default: 64 * 1024, min: 1024 },
+    field: { type: 'number', default: 64 * 1024 },
     label: 'Tool result context cap', description: 'Maximum bytes of one tool result copied into the model context.',
     keywords: ['context', 'bytes', 'truncate', 'tool result'],
     group: 'Tools', page: 'settings/project/output',
@@ -534,8 +534,7 @@ const TYPES = [
     field: { type: 'object' },
     label: 'Extensions in this project', description: 'Which extensions are on in this project.',
     keywords: ['extension', 'plugin'],
-    group: 'Automation', page: 'settings/extensions',
-    writers: { ui: true, tool: false, share: false }
+    group: 'Automation', page: 'settings/extensions', writers: ALL_WRITERS
   }
 ];
 

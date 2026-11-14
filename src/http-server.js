@@ -532,6 +532,13 @@ function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '',
   sendJSON(res, 404, { error: 'Not found' });
 }
 
+// A change made through the content write path (a settings page, the model's
+// update_settings, a shared project's caller) reaches every open page, so a
+// settings view the model just changed can refresh itself.
+require('./content/service.js').events.on('content_changed', (change) => {
+  broadcast('content_changed', change);
+});
+
 function createServer(port = DEFAULT_PORT, options = {}) {
   const requestedPublicOrigin = options && typeof options === 'object'
     ? (options.publicOrigin || process.env.MOUAIF_PUBLIC_ORIGIN || '')

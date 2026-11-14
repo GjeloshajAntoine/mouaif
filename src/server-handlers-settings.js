@@ -3,7 +3,8 @@
 // Settings REST handlers. Extracted from the original single-file
 // http-server.js so no file stays above ~2 000 lines. See
 // src/server-shared.js for the shared helpers (sendJSON, readJsonBody,
-// settingsForClient, sanitizeClientEntries, ...).
+// settingsForClient, ...). Writes to the settings document go through the
+// content write path, src/content/service.js.
 
 const {
   sendJSON,
@@ -11,7 +12,6 @@ const {
   readJsonOr400,
   settingsForClient,
   projectForClient,
-  sanitizeClientEntries,
   connectionForClient,
   modelForClient,
   RESETTABLE_APP_KEYS,
@@ -19,6 +19,13 @@ const {
   ai
 } = require('./server-shared.js');
 const { connectionType, nextConnectionId } = require('./providerConnections.js');
+const content = require('./content/service.js');
+
+// `share` when a shared project's remote caller made this request
+// (src/share-gate.js runs it inside the caller's context), else `ui`.
+function actorOf() {
+  return require('./share-gate.js').currentCaller() ? 'share' : 'ui';
+}
 
 async function handleSettings(req, res, parsed) {
   const urlPath = parsed.pathname;
@@ -66,24 +73,21 @@ async function handleSettings(req, res, parsed) {
   }
 
   // PUT /api/settings/app  body: { ...patch }   (shallow merge into app store)
+  // Goes through the content write path (src/content/service.js): only
+  // client-visible app keys are writable, the same rule update_settings has
+  // always applied. The response adds the change list.
   if (urlPath === '/api/settings/app' && method === 'PUT') {
     const patch = await readJsonOr400(req, res);
     if (!patch) return;
-    if (Object.prototype.hasOwnProperty.call(patch, 'hooks')) {
-      return sendJSON(res, 400, { error: 'hooks are saved through PUT /api/hooks' });
-    }
     try {
-      for (const key of ['providers', 'models']) {
-        sanitizeClientEntries(patch, key, settings.getApp()[key]);
-      }
-      const next = settings.setApp(patch);
-      return sendJSON(res, 200, { app: settingsForClient(next) });
+      const r = content.applyPatch({ scope: 'app', patch, actor: actorOf() });
+      return sendJSON(res, 200, { app: settingsForClient(r.document), changes: r.changes });
     } catch (e) {
-      return sendJSON(res, 400, { error: e.message });
+      return sendJSON(res, e.status || 400, { error: e.message, code: e.code || undefined });
     }
   }
 
-  // PUT /api/settings/project  body: { projectDir, ...patch }
+  // PUT /api/settings/project  body: { projectDir, unset?, ...patch }
   if (urlPath === '/api/settings/project' && method === 'PUT') {
     const body = await readJsonOr400(req, res);
     if (!body) return;
@@ -91,29 +95,21 @@ async function handleSettings(req, res, parsed) {
     if (!projectDir || typeof projectDir !== 'string') {
       return sendJSON(res, 400, { error: 'projectDir is required' });
     }
-    // Project hooks run only after a trust review (src/projectHooks.js); they
-    // are edited in the file itself or added through /api/hooks routes.
-    if (Object.prototype.hasOwnProperty.call(patch, 'hooks') || (Array.isArray(unset) && unset.includes('hooks'))) {
-      return sendJSON(res, 400, { error: 'project hooks are not written through settings; edit .mouaif.json or use Settings → Hooks' });
-    }
     try {
-      // Same redaction contract as the app store: a round-tripped project
-      // snapshot must not persist the response-only `hasApiKey` marker,
-      // and an entry re-submitted without `apiKey` keeps the stored one.
-      const currentProject = settings.getProject(projectDir);
-      for (const key of ['providers', 'models']) {
-        sanitizeClientEntries(patch, key, currentProject[key]);
-      }
-      let next = Object.keys(patch).length ? settings.setProject(projectDir, patch) : currentProject;
-      if (Array.isArray(unset) && unset.length) next = settings.unsetProjectKeys(projectDir, unset);
+      // Project hooks run only after a trust review (src/projectHooks.js);
+      // the policy refuses them here — they are edited in the file itself or
+      // through the /api/hooks routes. A round-tripped snapshot's `hasApiKey`
+      // marker is dropped and an entry re-sent without `apiKey` keeps it.
+      const r = content.applyPatch({ scope: 'project', projectDir, patch, unset, actor: actorOf() });
       const dbBacked = settings.isDbBacked(projectDir);
       return sendJSON(res, 200, {
-      project: projectForClient(next),
-      path: dbBacked ? null : settings.getProjectPath(projectDir),
-      dbBacked
+        project: projectForClient(r.document),
+        path: dbBacked ? null : settings.getProjectPath(projectDir),
+        dbBacked,
+        changes: r.changes
       });
     } catch (e) {
-      return sendJSON(res, 400, { error: e.message });
+      return sendJSON(res, e.status || 400, { error: e.message, code: e.code || undefined });
     }
   }
 

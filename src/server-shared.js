@@ -132,27 +132,6 @@ function modelForClient(model) {
   return connectionForClient(model);
 }
 
-// A redacted settings snapshot contains `hasApiKey`, which is a
-// response-only marker. Never persist it if a client round-trips the
-// snapshot through a generic patch endpoint. Existing secrets are
-// preserved unless the client explicitly submits a new `apiKey`.
-// Shared by PUT /api/settings/app and PUT /api/settings/project so the
-// redaction contract is symmetric across scopes.
-function sanitizeClientEntries(patch, key, existing) {
-  if (!patch || !Array.isArray(patch[key])) return;
-  const prior = Array.isArray(existing) ? existing : [];
-  patch[key] = patch[key].map((entry) => {
-    if (!entry || typeof entry !== 'object') return entry;
-    const clean = { ...entry };
-    delete clean.hasApiKey;
-    if (!Object.prototype.hasOwnProperty.call(clean, 'apiKey')) {
-      const prev = prior.find(x => x && x.id === clean.id);
-      if (prev && typeof prev.apiKey === 'string') clean.apiKey = prev.apiKey;
-    }
-    return clean;
-  });
-}
-
 // The app-level store accumulates server-only bookkeeping that the browser
 // has no business seeing: in-flight OAuth flows (`authPending`, which carry a
 // PKCE `codeVerifier` and CSRF `state` — real secrets), the CDP debugger URL,
@@ -741,7 +720,6 @@ module.exports = {
   sendJSON,
   connectionForClient,
   modelForClient,
-  sanitizeClientEntries,
   settingsForClient,
   projectForClient,
   handleSSE,

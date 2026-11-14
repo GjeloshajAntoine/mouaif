@@ -22,6 +22,32 @@ The app-level and project-level payloads are projected differently, because the 
 
 Two fields are always removed: `__dbBacked` (internal storage bookkeeping, never part of the user's settings) and `apiKey` on any `providers` / `models` entry, which is replaced by a response-only `hasApiKey` boolean. Credentials belong in the app store only.
 
+## Writes (`PUT /api/settings/app`, `PUT /api/settings/project`)
+
+Both routes, and the model's `update_settings` tool, change the settings document through one function, `applyPatch()` in `src/content/service.js`, and follow one policy table (`src/content/policy.js`; see [Content registry](./content-registry.md)):
+
+- **App scope** accepts only the client-visible keys, the ones `GET /api/settings` returns. Any other key (`themes`, `mcp`, an unknown key) is refused with `400` and the list of writable keys. Before, only the tool refused them; the route stored them where no page could show or reset them.
+- **Project scope** accepts any key: `.mouaif.json` stays open-ended. `hooks` is refused on both scopes; hooks are saved through `/api/hooks` or the `hook_create` tool.
+- **Declared values are type-checked** when they change: `promptSize` must be one of the four prompt styles, `toolOutput.size` one of its sizes, a notification switch a boolean. `null` clears a value. A stored value that fails the check but is re-sent unchanged (the raw editor sends every key) does not block the save.
+- **Secrets**: an `apiKey` is written only from the local UI. A provider or model entry sent back with `hasApiKey` instead of its key keeps the stored key, unless its `baseUrl` changed.
+
+Both responses add a `changes` list describing what the write did:
+
+```json
+// PUT /api/settings/project  { "projectDir": "/abs/path", "toolOutput": { "size": "full" } }
+{
+  "project": { "toolOutput": { "size": "full" } },
+  "path": "/abs/path/.mouaif.json",
+  "dbBacked": false,
+  "changes": [
+    { "type": "toolOutput.size", "scope": "project", "op": "set", "key": "toolOutput.size",
+      "label": "Tool output size", "page": "settings/project/output", "before": null, "after": "full" }
+  ]
+}
+```
+
+Every write also sends a `content_changed` server event (`{ scope, projectDir, keys, types, actor }`) on `/events`.
+
 ## Where the app store lives
 
 App-level settings are stored as one JSON object in the `app_kv` row of `~/.mouaif/store.sqlite` (key `settings`), next to the purpose-built tables for project settings, the MCP tool cache and recent models.

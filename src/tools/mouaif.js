@@ -718,23 +718,6 @@ function selectKeys(value, keys) {
   return out;
 }
 
-// sanitizeClientEntries re-attaches the stored apiKey to a round-tripped
-// entry. If the entry now points at a different baseUrl, that would send
-// the stored credential to a host the user never entered it for — so the
-// key is dropped and must be re-entered in Settings → Providers.
-function dropKeyOnRedirect(entries, existing) {
-  if (!Array.isArray(entries)) return;
-  const prior = Array.isArray(existing) ? existing : [];
-  for (const entry of entries) {
-    if (!entry || typeof entry !== 'object' || typeof entry.apiKey !== 'string') continue;
-    const prev = prior.find((x) => x && x.id === entry.id);
-    if (!prev || prev.apiKey !== entry.apiKey) continue;
-    const before = typeof prev.baseUrl === 'string' ? prev.baseUrl.trim() : '';
-    const after = typeof entry.baseUrl === 'string' ? entry.baseUrl.trim() : '';
-    if (before !== after) delete entry.apiKey;
-  }
-}
-
 // permissionKeysTouched(args) -> string[]  PERMISSION_KEYS that an
 // update_settings call would write or remove.
 function permissionKeysTouched(args) {
@@ -773,50 +756,34 @@ function runSettings(args, opts) {
   if ((!patch || !Object.keys(patch).length) && !unset.length) {
     throw typedError('EBADINPUT', 'settings_update needs a non-empty patch object (and/or an unset list for project scope)');
   }
-  // Refuse credential writes at both supported locations before touching
-  // either store. Redacted provider/model snapshots remain round-trippable.
-  if (patch && (Object.prototype.hasOwnProperty.call(patch, 'apiKey')
-    || ['providers', 'models'].some((key) => Array.isArray(patch[key])
-      && patch[key].some((entry) => entry && Object.prototype.hasOwnProperty.call(entry, 'apiKey'))))) {
-    throw typedError('EBADINPUT', 'apiKey is not writable through this tool — connect the provider in Settings \u2192 Providers');
-  }
-  const shared = require('../server-shared.js');
-  // Hooks run code; they are added through hook_create (with its forced
-  // approval card), never through a settings write.
-  if ((patch && Object.prototype.hasOwnProperty.call(patch, 'hooks')) || unset.includes('hooks')) {
-    throw typedError('EBADINPUT', 'hooks are not written through update_settings — use hook_create');
-  }
-  if (scope === 'app') {
-    if (unset.length) throw typedError('EBADINPUT', 'unset is only supported for project scope');
-    if (!patch) throw typedError('EBADINPUT', 'app scope needs a patch object');
-    // Only keys the client can read back are writable: anything else would
-    // be stored where neither the UI nor get_settings can show or undo it.
-    const hidden = Object.keys(patch).filter((key) => !shared.CLIENT_SETTINGS_KEYS.includes(key));
-    if (hidden.length) {
-      throw typedError('EBADINPUT', 'not a writable app setting: ' + hidden.join(', ') +
-        ' — writable keys: ' + shared.CLIENT_SETTINGS_KEYS.join(', '));
-    }
-  }
-  if (patch) {
-    const current = scope === 'app' ? settings.getApp() : settings.getProject(projectDir);
-    for (const key of ['providers', 'models']) {
-      shared.sanitizeClientEntries(patch, key, current[key]);
-      dropKeyOnRedirect(patch[key], current[key]);
-    }
+  if (scope === 'app' && unset.length) throw typedError('EBADINPUT', 'unset is only supported for project scope');
+  // The content write path applies the model's rules (src/content/policy.js):
+  // only client-visible app keys, no apiKey, hooks only through hook_create,
+  // a stored key dropped when its provider's baseUrl changes.
+  let r;
+  try {
+    r = require('../content/service.js').applyPatch({
+      scope,
+      projectDir: scope === 'project' ? projectDir : undefined,
+      patch,
+      unset,
+      actor: 'tool',
+      remote: !!require('../share-gate.js').currentCaller()
+    });
+  } catch (e) {
+    throw typedError(e.code === 'ESHARE_ROUTE' ? 'EBADINPUT' : (e.code || 'EBADINPUT'), e.message);
   }
   if (scope === 'app') {
-    const merged = settings.setApp(patch);
-    return ok({ ok: true, scope: 'app', updated: Object.keys(patch), settings: forClient(merged) });
+    return ok({ ok: true, scope: 'app', updated: Object.keys(patch), settings: forClient(r.document), changes: r.changes });
   }
-  if (patch) settings.setProject(projectDir, patch);
-  if (unset.length) settings.unsetProjectKeys(projectDir, unset);
   return ok({
     ok: true,
     scope: 'project',
     projectDir,
     updated: patch ? Object.keys(patch) : [],
     removed: unset,
-    settings: forClient(settings.getProject(projectDir), 'project')
+    settings: forClient(r.document, 'project'),
+    changes: r.changes
   });
 }
 

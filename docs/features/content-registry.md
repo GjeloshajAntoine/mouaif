@@ -73,6 +73,45 @@ So a hand edit of `.mouaif.json`, a write from another `mouaif` process and a di
 
 The remaining cost is mostly the copy (about 20 µs) and the merge in `getResolved()`.
 
+## Writing
+
+`applyPatch({ scope, projectDir, patch, unset, actor, remote, dryRun })` in `src/content/service.js` is the one write path for the settings document. `PUT /api/settings/app`, `PUT /api/settings/project` and `update_settings` call it. It returns `{ changes, warnings, approval, document }`.
+
+Who may write what is one table in `src/content/policy.js`:
+
+| Content | `ui` | `tool` | `share` |
+| --- | --- | --- | --- |
+| App scope, `clientVisible` | write | write | refuse |
+| App scope, not `clientVisible` (or unregistered) | refuse | refuse | refuse |
+| Project scope, registered or not | write | write | write, unless the type sets `writers.share: false` |
+| A `secret` field (`apiKey`) | write | refuse | refuse |
+| `approval: true` (`tools`, `mcp`, `authAccounts`) | write | write after the user approves | as its actor |
+| Written by its own tool (`hooks` → `hook_create`) | refuse here | refuse here | refuse here |
+
+`share` is a shared project's remote caller using the same routes; a share caller's model is `tool` with `remote: true`. The approval itself is still asked by the chat loop before `update_settings` runs (`PERMISSION_KEYS`); a remote caller's direct UI writes are bounded by the share gate's tool rules, as before.
+
+### Change lists
+
+Every write returns the same structure, whatever the content:
+
+```js
+// a value
+{ type: 'toolOutput.size', scope: 'project', op: 'set', key: 'toolOutput.size',
+  label: 'Tool output size', page: 'settings/project/output', before: 'average', after: 'full' }
+
+// a collection item
+{ type: 'agents', scope: 'project', op: 'changed', id: 'reviewer', label: 'Agent "reviewer"',
+  page: 'settings/agents/reviewer',
+  fields: [
+    { key: 'modelId', label: 'Model', before: 'model-a', after: 'model-b' },
+    { key: 'content', label: 'Instructions', large: true, beforeSize: 1204, afterSize: 1310 } ] }
+```
+
+- A whole-array write (the model replacing `agents`) is diffed by item id into `added`, `changed` and `removed`.
+- `secret` fields show `set` or `not set`; `large` fields carry sizes only, so a transcript never stores a prompt body or theme script twice.
+- An unregistered project key appears with its key as the label and its raw JSON value (`raw: true`).
+- A `dryRun` stops before the write and returns the same list.
+
 ## Implementation notes
 
 - The registry is plain data with no imports, so `src/settings.js` can require it without a cycle.
