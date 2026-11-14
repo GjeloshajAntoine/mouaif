@@ -25,6 +25,10 @@ const MIGRATIONS_TABLE = '_migrations';
 // JSON file (keeps the working tree untouched). The row shape mirrors the
 // project file: the value is the full raw project object.
 const PROJECT_SETTINGS_TABLE = 'project_settings';
+// Other per-project documents a DB-mode project keeps out of its working tree,
+// one row per (project, document). Today only `mcp` (src/content/stores/
+// project-mcp.js); `project_settings` keeps the settings document.
+const PROJECT_DOCUMENTS_TABLE = 'project_documents';
 
 // A test process must never open the real app store. Test/probe scripts run
 // in-process against src/ modules, and a missing — or too-late — MOUAIF_HOME
@@ -151,6 +155,14 @@ function openDb(home) {
      );`
   );
   db.exec(
+    `CREATE TABLE IF NOT EXISTS ${PROJECT_DOCUMENTS_TABLE} (
+       project_dir TEXT NOT NULL,
+       doc         TEXT NOT NULL,
+       value       TEXT NOT NULL,
+       PRIMARY KEY (project_dir, doc)
+     );`
+  );
+  db.exec(
     `CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} (
        name       TEXT PRIMARY KEY,
        run_at     TEXT NOT NULL
@@ -216,6 +228,7 @@ module.exports = {
   MCP_TOOL_CACHE_TABLE,
   MIGRATIONS_TABLE,
   PROJECT_SETTINGS_TABLE,
+  PROJECT_DOCUMENTS_TABLE,
   db,
   generation,
   close,

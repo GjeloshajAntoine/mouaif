@@ -58,6 +58,23 @@ const GATE_MODES = ['off', 'ask', 'allow'];
 
 function bool(def) { return { type: 'boolean', default: def }; }
 
+// An MCP server entry (src/mcp.js normalizeServerEntry): app and project
+// servers share it. Headers and env often carry tokens, so change lists show
+// them as set / not set.
+const MCP_SERVER_FIELDS = Object.freeze({
+  name: { type: 'string', label: 'Name' },
+  slug: { type: 'string', label: 'Tool prefix' },
+  transport: { type: 'enum', label: 'Transport', options: ['stdio', 'http', 'sse'] },
+  command: { type: 'string', label: 'Command' },
+  args: { type: 'list', label: 'Arguments' },
+  cwd: { type: 'string', label: 'Working folder' },
+  url: { type: 'string', label: 'URL' },
+  headers: { type: 'object', label: 'Headers', secret: true },
+  env: { type: 'object', label: 'Environment', secret: true },
+  oauth: { type: 'object', label: 'OAuth' },
+  createdAt: { type: 'string', label: 'Created', hidden: true }
+});
+
 // A hook entry (src/hooks.js normalizeHook): app and project hooks share it.
 const HOOK_FIELDS = Object.freeze({
   name: { type: 'string', label: 'Name' },
@@ -443,16 +460,23 @@ const TYPES = [
     approval: true, writers: { ui: true, tool: 'hook_create', share: false }
   },
   {
-    id: 'mcpServers', shape: 'collection', scopes: ['app'], doc: 'settings', path: 'mcp',
-    container: 'map', itemLabel: 'name', merge: 'concat',
-    fields: {
-      name: { type: 'string', label: 'Name' },
-      command: { type: 'string', label: 'Command' },
-      url: { type: 'string', label: 'URL' },
-      enabled: { type: 'boolean', label: 'Enabled' }
-    },
-    label: 'MCP servers', itemNoun: 'MCP server', description: 'Tool servers the model can call.',
+    id: 'mcpServers', shape: 'collection', scopes: ['app'], doc: 'settings', path: 'mcp.servers',
+    container: 'array', itemId: 'id', itemLabel: 'name', merge: 'concat',
+    fields: MCP_SERVER_FIELDS,
+    label: 'MCP servers', itemNoun: 'MCP server', description: 'Tool servers the model can call, in every project.',
     keywords: ['mcp', 'server', 'tools', 'connector'],
+    group: 'Automation', page: 'settings/mcp', itemPage: 'settings/mcp/:id',
+    searchFields: ['name', 'command', 'url'],
+    approval: true, writers: { ui: true, tool: false, share: false }
+  },
+  {
+    // The project's own document (`.mcp.json`, or a DB row for a DB-mode
+    // project): src/content/stores/project-mcp.js.
+    id: 'projectMcpServers', shape: 'collection', scopes: ['project'], doc: 'mcp', path: 'servers',
+    container: 'array', itemId: 'id', itemLabel: 'name', merge: 'concat',
+    fields: MCP_SERVER_FIELDS,
+    label: 'MCP servers', itemNoun: 'MCP server', description: 'Tool servers the model can call in this project.',
+    keywords: ['mcp', 'server', 'tools', 'connector', '.mcp.json'],
     group: 'Automation', page: 'settings/mcp', itemPage: 'settings/mcp/:id',
     searchFields: ['name', 'command', 'url'],
     approval: true, writers: { ui: true, tool: false, share: false }

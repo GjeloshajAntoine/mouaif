@@ -50,8 +50,11 @@ Each declaration names a document (`doc`) and a path in it. Where a document liv
 | Document | App scope | Project, file mode | Project, DB mode |
 | --- | --- | --- | --- |
 | `settings` | `app_kv` row `settings` | `.mouaif.json` or `.mouaif/.mouaif.json` | `project_settings` row |
+| `mcp` | `mcp` inside the app `settings` row | `.mcp.json` | `.mcp.json` when it exists, else a `project_documents` row |
 
-Every adapter has the same members: `{ kind, scope, location, read(), write(next) }`. Atomic file writes, the corrupt-blob quarantine and the test-process guard live in the adapters (`app-db.js`, `project-file.js`, `project-db.js`, `json-file.js`); the SQLite handle is in `src/content/db.js`. `setProjectMode()` moves a project's documents between file and DB.
+The `mcp` document holds MCP servers and their `authorization` block; `src/mcp.js` and `src/tools/authorization.js` both read and write it through `storeFor('mcp', …)` (`stores/project-mcp.js`). An existing `.mcp.json` is read and written in both modes, since it may be the user's own file shared with other MCP clients; a DB-mode project without one never gets one created. When neither the file nor the row exists, the legacy `mcp` block of the project's settings document is read. `.mcp.json` is written atomically and cached like `.mouaif.json`, and a corrupt one answers `MOUAIF_PROJECT_PARSE_ERROR` (422).
+
+Every adapter has the same members: `{ kind, scope, location, read(), write(next) }`. Atomic file writes, the corrupt-blob quarantine and the test-process guard live in the adapters (`app-db.js`, `project-file.js`, `project-db.js`, `json-file.js`); the SQLite handle is in `src/content/db.js`. `setProjectMode()` moves a project's documents between file and DB: the settings document is copied, and for `mcp` only a DB row moves (to `.mcp.json`, when switching back to files and no such file exists yet).
 
 ### Read cache
 

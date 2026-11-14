@@ -2,7 +2,7 @@
 
 Plan for one registry of everything the user configures (single settings and lists such as agents, prompts, hooks, themes and MCP servers), one write path, backend search, a chat card that shows what any change did, and a domain-based folder layout. Date: 2026-11-14.
 
-**Status: plan only — nothing is implemented.**
+**Status: steps 1–7 of the order of work are implemented; 8–12 are not.**
 
 ## Decisions taken (2026-11-14)
 
@@ -128,7 +128,7 @@ A **document** is one JSON object per scope. Content declares which document it 
 | Document | App scope | Project, file mode | Project, DB mode |
 | --- | --- | --- | --- |
 | `settings` | `app_kv` row `settings` | `.mouaif.json` or `.mouaif/.mouaif.json` | `project_settings` row |
-| `mcp` | inside `settings` at `mcp` (unchanged) | `.mcp.json` | **new:** a second `project_settings` row |
+| `mcp` | inside `settings` at `mcp` (unchanged) | `.mcp.json` | **new:** a `project_documents` row (`doc = 'mcp'`) |
 
 Each adapter in `src/content/stores/` has the same members:
 

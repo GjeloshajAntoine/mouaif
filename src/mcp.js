@@ -11,7 +11,8 @@
 // module.
 //
 // Scope: MCP servers can be configured per project (in
-// <projectDir>/.mcp.json under servers; legacy <projectDir>/.mouaif.json
+// <projectDir>/.mcp.json under servers; a DB-mode project without that file
+// keeps them in the app DB instead; legacy <projectDir>/.mouaif.json
 // mcp.servers is read as a fallback) or app-wide (in the app SQLite
 // store under mcp.servers). A project sees the union — app entries
 // first, then project entries — with project entries winning on
@@ -45,12 +46,13 @@
 // the SDK fails to load for any reason. The require() result is cached
 // in `sdk` so a per-server call costs nothing.
 
-const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { URL, pathToFileURL } = require('url');
 const { err, canonicalPath: canonicalFilesystemPath } = require('./util.js');
 const settings = require('./settings.js');
+const contentStores = require('./content/stores/index.js');
+const projectMcpStore = require('./content/stores/project-mcp.js');
 const mcpOAuth = require('./oauth-mcp.js');
 const mcpApps = require('./mcp-apps.js');
 
@@ -202,111 +204,68 @@ function buildChildEnv(perServerEnv) {
 
 // ---- Project + app registry ---------------------------------------------
 
-const MCP_FILE = '.mcp.json';
+// Where the `mcp` document lives (`.mcp.json`, a DB row for a DB-mode
+// project, the legacy `.mouaif.json` block, or `mcp` in the app settings) is
+// decided by storeFor('mcp', ...): see src/content/stores/project-mcp.js.
+const { MCP_FILE, getMcpPath } = projectMcpStore;
 const APP_SCOPE = 'app';
 const PROJECT_SCOPE = 'project';
 
-function getMcpPath(projectDir) {
-  if (!projectDir || typeof projectDir !== 'string') {
-    throw new TypeError('projectDir must be a non-empty string');
-  }
-  return path.join(projectDir, MCP_FILE);
+// Strip any legacy inline toolCache keys: the cache lives in the app SQLite
+// store now, and leaving a copy in the config would both bloat it and go
+// stale.
+function withoutToolCache(servers) {
+  return servers.map((s) => {
+    if (!s || typeof s !== 'object') return s;
+    if (!Object.prototype.hasOwnProperty.call(s, 'toolCache')) return s;
+    const clone = Object.assign({}, s);
+    delete clone.toolCache;
+    return clone;
+  });
 }
 
-function readMcpFile(projectDir) {
-  const file = getMcpPath(projectDir);
-  if (!fs.existsSync(file)) return null;
-  try {
-    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
-  } catch (e) {
-    const error = new Error(`Failed to parse ${file}: ${e.message}`);
-    error.code = 'MCP_PROJECT_PARSE_ERROR';
-    error.cause = e;
-    throw error;
-  }
-}
-
-function writeMcpFile(projectDir, obj) {
-  const file = getMcpPath(projectDir);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(obj || {}, null, 2) + '\n', 'utf8');
+// Merge `mcp` into the stored document instead of replacing it: the document
+// also carries the authorization block written by tools/authorization.js
+// (setAuthorization), and a blanket overwrite would silently drop the user's
+// MCP allow/allowlist policy on every server CRUD. A corrupt document falls
+// back to the incoming object.
+function mergeInto(store, mcp) {
+  let base = {};
+  try { base = store.read() || {}; } catch { /* replace corrupt file */ }
+  const out = Object.assign({}, base, mcp || { servers: [] });
+  if (Array.isArray(out.servers)) out.servers = withoutToolCache(out.servers);
+  store.write(out);
 }
 
 function readProjectConfig(projectDir) {
-  const config = readMcpFile(projectDir);
-  if (config) {
-    const list = Array.isArray(config.servers) ? config.servers : [];
-    return { mcp: config, list, source: MCP_FILE };
-  }
-
-  // Back-compat: older projects stored MCP under .mouaif.json -> mcp.servers.
-  const project = settings.getProject(projectDir);
-  const mcp = (project && typeof project === 'object' && project.mcp && typeof project.mcp === 'object')
-    ? project.mcp
-    : {};
+  const store = contentStores.storeFor('mcp', PROJECT_SCOPE, projectDir);
+  const mcp = store.read();
   const list = Array.isArray(mcp.servers) ? mcp.servers : [];
-  return { mcp, list, source: settings.PROJECT_FILE };
+  return { mcp, list, source: store.source() };
 }
 
 function writeProjectConfig(projectDir, mcp) {
-  // Merge into the existing file instead of replacing it: .mcp.json also
-  // carries the authorization block written by tools/authorization.js
-  // (setAuthorization), and a blanket overwrite would silently drop the
-  // user's MCP allow/allowlist policy on every server CRUD. A corrupt or
-  // missing file falls back to the incoming object.
-  let base = {};
-  try { base = readMcpFile(projectDir) || {}; } catch { /* replace corrupt file */ }
-  const out = Object.assign({}, base, mcp || { servers: [] });
-  // Strip any legacy inline toolCache keys: the cache lives in the app
-  // SQLite store now, and leaving a copy here would both bloat the
-  // project file and go stale.
-  if (Array.isArray(out.servers)) {
-    out.servers = out.servers.map((s) => {
-      if (!s || typeof s !== 'object') return s;
-      if (!Object.prototype.hasOwnProperty.call(s, 'toolCache')) return s;
-      const clone = Object.assign({}, s);
-      delete clone.toolCache;
-      return clone;
-    });
-  }
-  writeMcpFile(projectDir, out);
+  mergeInto(contentStores.storeFor('mcp', PROJECT_SCOPE, projectDir), mcp);
 }
 
 // ---- App-level registry ---------------------------------------------------
-// App-scoped servers live in the app SQLite store (settings.setApp) under
-// `mcp.servers` — same entry shape as project entries. They are visible to
-// every project (the project entries win on a slug collision, matching the
-// settings resolution order in decisions §2). A project can shadow an app
-// entry with a same-named project entry; there is no other per-project
-// filtering of app entries.
+// App-scoped servers live in the app SQLite store under `mcp.servers` — same
+// entry shape as project entries. They are visible to every project (the
+// project entries win on a slug collision, matching the settings resolution
+// order in decisions §2). A project can shadow an app entry with a
+// same-named project entry; there is no other per-project filtering of app
+// entries.
 
 function readAppConfig() {
-  let app = {};
-  try { app = settings.getApp() || {}; } catch { app = {}; }
-  const mcp = (app.mcp && typeof app.mcp === 'object' && !Array.isArray(app.mcp)) ? app.mcp : {};
+  let mcp = {};
+  try { mcp = contentStores.storeFor('mcp', APP_SCOPE).read(); } catch { mcp = {}; }
   const list = Array.isArray(mcp.servers) ? mcp.servers : [];
   return { mcp, list, source: APP_SCOPE };
 }
 
 function writeAppConfig(mcp) {
-  // Merge into the existing app.mcp block: it also carries the app-level
-  // authorization fallback (tools/authorization.js), and a blanket
-  // overwrite would drop the user's MCP policy on every server CRUD.
-  let app = {};
-  try { app = settings.getApp() || {}; } catch { app = {}; }
-  const base = (app.mcp && typeof app.mcp === 'object' && !Array.isArray(app.mcp)) ? app.mcp : {};
-  const out = Object.assign({}, base, mcp || { servers: [] });
-  if (Array.isArray(out.servers)) {
-    out.servers = out.servers.map((s) => {
-      if (!s || typeof s !== 'object') return s;
-      if (!Object.prototype.hasOwnProperty.call(s, 'toolCache')) return s;
-      const clone = Object.assign({}, s);
-      delete clone.toolCache;
-      return clone;
-    });
-  }
-  settings.setApp({ mcp: out });
+  // The app block also carries the app-level authorization fallback.
+  mergeInto(contentStores.storeFor('mcp', APP_SCOPE), mcp);
 }
 
 // readAllConfigs(projectDir) -> { entries: [{ scope, raw }], byId: Map }

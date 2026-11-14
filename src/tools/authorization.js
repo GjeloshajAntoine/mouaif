@@ -1,9 +1,8 @@
 'use strict';
 
 const { Worker } = require('node:worker_threads');
-const fs = require('fs');
-const path = require('path');
 const settings = require('../settings.js');
+const contentStores = require('../content/stores/index.js');
 const trace = require('../trace.js');
 
 const MODES = new Set(['off', 'ask', 'allowlist', 'allow']);
@@ -247,7 +246,6 @@ const NATIVE_TOOLS = new Set(['shell', 'subagent', ...Object.keys(TOOL_FAMILIES)
 function familyTools(gate) {
   return new Set(TOOL_FAMILIES[gate] || [gate]);
 }
-const MCP_FILE = '.mcp.json';
 
 // ---- Per-chat authorization overrides (decisions §17) --------------------
 //
@@ -390,22 +388,19 @@ function serverSlugFor(projectDir, key) {
 // The chat-scoped authorization view the chat UI reads: what THIS chat
 // ends up with (chat override → project → app → default) plus the raw
 // per-chat override maps so the surfaces can label an override.
+// The project's `mcp` document — `.mcp.json`, a DB-mode project's row, or the
+// legacy `.mouaif.json` block — through the same store mcp.js uses
+// (src/content/stores/project-mcp.js). Reads are cached on the document's
+// stamp, so the per-call authorization check costs a stat. Unreadable reads
+// as {}.
 function getMcpConfig(projectDir) {
   if (!projectDir || typeof projectDir !== 'string') return {};
-  const file = path.join(projectDir, MCP_FILE);
-  if (!fs.existsSync(file)) return {};
-  try {
-    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
-  } catch {
-    return {};
-  }
+  try { return contentStores.storeFor('mcp', 'project', projectDir).read(); }
+  catch { return {}; }
 }
 
 function writeMcpConfig(projectDir, config) {
-  const file = path.join(projectDir, MCP_FILE);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(config || {}, null, 2) + '\n', 'utf8');
+  contentStores.storeFor('mcp', 'project', projectDir).write(config || {});
 }
 
 // A family leaf (a file operation, a chat or app function) shares its
