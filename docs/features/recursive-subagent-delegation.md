@@ -6,7 +6,14 @@ Subagents can delegate to their own nested subagents and create/coördinate thei
 
 ## Usage
 
-Recursion works out of the box. To change the budgets, set finite app/project settings before starting a root turn:
+Recursion works out of the box. Two budgets, shared by one turn and every subagent below it, bound it:
+
+| Setting | Default | Minimum | What it limits |
+| --- | --- | --- | --- |
+| `subagentLimits.maxDepth` | 3 | 1 | How many levels of subagents may stack. `1` turns nesting off: subagents cannot start their own. |
+| `subagentLimits.maxRuns` | 32 | 1 | How many subagents one turn may start in total, at every level together. |
+
+To change them, set app/project settings before starting a root turn:
 
 ```json
 {
@@ -17,7 +24,25 @@ Recursion works out of the box. To change the budgets, set finite app/project se
 }
 ```
 
-Defaults are depth **3** and total admitted runs **32**: the root's child and grandchild can each launch subagents, and the depth-3 leaf cannot. Set `maxDepth: 1` to opt out of recursion (children then do not see launch/control tools). Depth accepts 1–8 and total runs 1–256. Invalid, infinite or non-integer limits reject before execution. Limits are captured at root start; a child cannot reset or increase them.
+With the defaults, the root's child and grandchild can each launch subagents, and the depth-3 leaf cannot. With `maxDepth: 1`, children do not see the launch and control tools, and the `subagent` tool description no longer tells the model that subagents can delegate; at any other depth the description states the configured number of levels.
+
+A project value overrides the app value field by field: a project that sets only `maxDepth` keeps the app's `maxRuns`. A write replaces the whole `subagentLimits` object of its scope, so send every field you want that scope to keep.
+
+### Validation
+
+Each limit must be a whole number of at least 1; there is no maximum. `PUT /api/settings/app`, `PUT /api/settings/project` and the `update_settings` tool all refuse anything else and write nothing:
+
+```text
+subagentLimits.maxDepth must be a whole number of at least 1
+```
+
+A hand-edited `.mouaif.json` is not checked when it is saved. If it holds an invalid limit (`"maxDepth": "3"`, `0`, `2.5`), turns in that project still run: the invalid field uses its built-in default (not the app-wide value), the valid fields are kept, and the server log gets one warning that names the project, the bad value and the number used instead:
+
+```text
+[mouaif] invalid subagentLimits in the settings of /path/to/project: maxDepth = "3" (using 3). Each limit must be an integer: maxDepth ≥ 1, maxRuns ≥ 1.
+```
+
+Limits are read when a root turn starts; a change applies from the next message, and a child cannot reset or increase them.
 
 Use the same `subagent` tool synchronously or with `background:true`. Children inherit the actual advertised parent tool surface, then the selected agent may narrow it. A recursive child can declare a local group using `subagent_group_create`, launch its members and use immediate status, read-only messages, explicit sends, cancellation and contract approval on its own children/groups. Depth-exhausted children do not advertise launch/control tools, and forged launches still hit the depth guard.
 
@@ -39,6 +64,6 @@ Named artifacts are scoped to the producing member's immediate-parent bus. A loc
 
 ## Lifecycle and billing
 
-Stopping a child cancels its descendants, queued provider requests and pending approvals, but not unrelated sibling subtrees. A local parent finishing cancels unfinished children; root finishing shuts down the full tree within the existing one-second settlement budget. Each result finalizes once and late callbacks/events cannot reopen it. Cancellation never undoes completed writes or kills deliberately detached commands.
+Stopping a child cancels its descendants, in-flight provider requests and pending approvals, but not unrelated sibling subtrees. A local parent finishing cancels unfinished children; root finishing shuts down the full tree within the existing one-second settlement budget. Each result finalizes once and late callbacks/events cannot reopen it. Cancellation never undoes completed writes or kills deliberately detached commands.
 
 Each descendant's usage/cost travels up its ancestor chain as deltas; ancestor completion adds only an unreported remainder. Live root deltas and final root totals therefore include descendants exactly once. The nested transcript retains recursive results and rooted identities; late billing after forced shutdown remains unreconciled. Handles are in-memory/root-turn-local, not restartable chat jobs.

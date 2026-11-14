@@ -802,11 +802,41 @@ function buildUpstreamRequest(model, messages, specs, requestOpts, build) {
   return req;
 }
 
+// rootSubagentLimits(projectDir) -> { maxDepth, maxRuns }
+//
+// The delegation budgets of a root turn, read from the resolved settings.
+// Writes are validated (src/content/service.js), but a project file can be
+// edited by hand, and every streamChat call builds a root scope — the shell
+// reviewer and title generation too. So an unreadable or invalid stored value
+// never fails the turn: that field runs on its default and one warning per
+// distinct bad value is logged.
+const warnedSubagentLimits = new Set();
+function rootSubagentLimits(projectDir) {
+  const { resolveLimits, DEFAULT_LIMITS, LIMIT_RANGES } = require('./tools/subagent-orchestration.js');
+  let stored;
+  try { stored = require('./settings.js').getResolved(projectDir).subagentLimits; }
+  catch { return { ...DEFAULT_LIMITS }; }
+  const { limits, invalid } = resolveLimits(stored);
+  if (invalid.length) {
+    const detail = invalid.map((i) => i.name + ' = ' + JSON.stringify(i.value) + ' (using ' + JSON.stringify(i.fallback) + ')').join(', ');
+    const key = (projectDir || '') + '\n' + detail;
+    if (!warnedSubagentLimits.has(key)) {
+      if (warnedSubagentLimits.size >= 256) warnedSubagentLimits.clear();
+      warnedSubagentLimits.add(key);
+      console.warn('[mouaif] invalid subagentLimits in the settings of ' + (projectDir || 'the app') + ': ' + detail
+        + '. Each limit must be an integer: '
+        + Object.keys(LIMIT_RANGES).map((n) => n + ' ' + '≥ ' + LIMIT_RANGES[n].min).join(', ') + '.');
+    }
+  }
+  return limits;
+}
+
 async function streamChat(opts) {
   opts = opts || {};
   const ownsScope = !opts.orchestrationScope;
-  const limits = ownsScope ? require('./settings.js').getResolved(opts.projectDir).subagentLimits || {} : {};
-  const scope = ownsScope ? new (require('./tools/subagent-orchestration.js').Scope)(opts.projectDir, opts.chatId, opts.signal, limits) : opts.orchestrationScope;
+  const scope = ownsScope
+    ? new (require('./tools/subagent-orchestration.js').Scope)(opts.projectDir, opts.chatId, opts.signal, rootSubagentLimits(opts.projectDir))
+    : opts.orchestrationScope;
   try {
     return await streamChatInScope(Object.assign({}, opts, { orchestrationScope: scope }));
   } finally {
@@ -876,7 +906,11 @@ function collectToolSpecs(opts) {
     try {
       if (opts && opts.projectDir) agentNames = require('./agents.js').list(opts.projectDir).map((a) => a.name);
     } catch { /* no agents */ }
-    toolSpecs.push(sub.buildSpec ? sub.buildSpec(agentNames) : sub.SPEC);
+    // The description states the depth budget this turn runs with. A caller
+    // without a scope (the chat tool preview) reads it from the settings, as
+    // a root turn would.
+    const maxDepth = scope ? (scope.owner?.depthCap ?? scope.root.limits.maxDepth) : rootSubagentLimits(opts && opts.projectDir).maxDepth;
+    toolSpecs.push(sub.buildSpec ? sub.buildSpec(agentNames, { maxDepth }) : sub.SPEC);
     toolSpecs.push(...orchestration.SPECS);
   }
   catch { /* subagent tool module unavailable; skip */ }

@@ -9,8 +9,40 @@ const FAMILY_NAMES = Object.freeze(['subagent', ...TOOL_NAMES]);
 // Root-tree budgets when settings omit subagentLimits. Depth 3 lets a child
 // and a grandchild delegate by default (root → child → grandchild → leaf);
 // the leaf level stops advertising launch/control tools. Settings may lower
-// it to 1 for non-recursive delegation or raise it to 8.
+// it to 1 for non-recursive delegation or raise it without a maximum.
 const DEFAULT_LIMITS = Object.freeze({ maxDepth: 3, maxRuns: 32 });
+// Accepted integer range of each limit. The Scope constructor and the
+// settings registry (src/content/registry.js, checked on write) both read
+// this table, as does resolveLimits() below.
+const LIMIT_RANGES = Object.freeze({
+  maxDepth: Object.freeze({ min: 1 }),
+  maxRuns: Object.freeze({ min: 1 })
+});
+const validLimit = (name, value) => Number.isInteger(value) && value >= LIMIT_RANGES[name].min;
+
+// resolveLimits(stored) -> { limits, invalid }
+//
+// The limits a root turn runs with, from a stored `subagentLimits` value that
+// may have been edited by hand. A missing field takes its default; a field
+// that is not an integer in range also takes its default and is listed in
+// `invalid` ({ name, value, fallback }) so the caller can warn. Never throws:
+// a bad project file must not fail turns that never delegate.
+function resolveLimits(stored) {
+  const source = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+  const limits = {};
+  const invalid = [];
+  if (stored != null && source !== stored) invalid.push({ name: 'subagentLimits', value: stored, fallback: { ...DEFAULT_LIMITS } });
+  for (const name of Object.keys(DEFAULT_LIMITS)) {
+    const value = source[name];
+    if (value === undefined || value === null) limits[name] = DEFAULT_LIMITS[name];
+    else if (validLimit(name, value)) limits[name] = value;
+    else {
+      limits[name] = DEFAULT_LIMITS[name];
+      invalid.push({ name, value, fallback: DEFAULT_LIMITS[name] });
+    }
+  }
+  return { limits, invalid };
+}
 const error = (code, message) => Object.assign(new Error(message), { code });
 const spec = (name, description, properties, required = []) => ({ type: 'function', function: {
   name, description, parameters: { type: 'object', properties, required, additionalProperties: false }
@@ -80,9 +112,9 @@ class Scope {
     if (!parentScope) {
       this.allRuns = new Map(); this.scopes = new Set(); this.escalations = []; this.publicationCount = 0;
       this.limits = {};
-      for (const [name, max] of [['maxDepth', 8], ['maxRuns', 256]]) {
+      for (const name of Object.keys(DEFAULT_LIMITS)) {
         const value = limits[name] ?? DEFAULT_LIMITS[name];
-        if (!Number.isInteger(value) || value < 1 || value > max) throw error('EBADINPUT', name + ' must be a finite integer from 1 to ' + max);
+        if (!validLimit(name, value)) throw error('EBADINPUT', name + ' must be a whole number of at least ' + LIMIT_RANGES[name].min);
         this.limits[name] = value;
       }
     }
@@ -379,4 +411,4 @@ class Scope {
   }
 }
 
-module.exports = { Scope, SPECS, DEFAULT_LIMITS, TOOL_NAMES, FAMILY_NAMES, PARENT_TOOLS, SIBLING_TOOLS };
+module.exports = { Scope, SPECS, DEFAULT_LIMITS, LIMIT_RANGES, resolveLimits, TOOL_NAMES, FAMILY_NAMES, PARENT_TOOLS, SIBLING_TOOLS };

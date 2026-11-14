@@ -22,7 +22,8 @@
 //   scopes        ['app'] | ['project'] | ['app', 'project']
 //   doc           the document the content lives in ('settings' | 'mcp')
 //   path          dotted path inside the document
-//   field         (value) { type, options?, default?, secret?, large? }
+//   field         (value) { type, options?, default?, secret?, large? };
+//                 type 'integer' also takes `min` and `max` (inclusive)
 //   fields        (collection) { key: field } describing an item; a field
 //                 marked `hidden` (timestamps) is left out of change lists
 //   container     (collection) 'array' (items carry their id) or 'map'
@@ -57,6 +58,15 @@ const OUTPUT_SIZES = ['very-small', 'average', 'full', 'extensive'];
 const GATE_MODES = ['off', 'ask', 'allow'];
 
 function bool(def) { return { type: 'boolean', default: def }; }
+
+// One budget of `subagentLimits`: an integer in the range the delegation
+// scope accepts. The ranges and defaults live with the scope
+// (src/tools/subagent-orchestration.js) and are only read here.
+const SUBAGENT_LIMITS = require('../tools/subagent-orchestration.js');
+function subagentLimit(name) {
+  const range = SUBAGENT_LIMITS.LIMIT_RANGES[name];
+  return { type: 'integer', min: range.min, default: SUBAGENT_LIMITS.DEFAULT_LIMITS[name] };
+}
 
 // An MCP server entry (src/mcp.js normalizeServerEntry): app and project
 // servers share it. Headers and env often carry tokens, so change lists show
@@ -340,6 +350,26 @@ const TYPES = [
     label: 'Feature flags', description: 'Server-side feature toggles.',
     keywords: ['flag', 'experimental'],
     group: 'Advanced', page: 'settings/about',
+    clientVisible: true, resettable: true, writers: ALL_WRITERS
+  },
+
+  // ---- Subagent delegation budgets ---------------------------------------
+  // One root turn's whole delegation tree shares them; read when the turn
+  // starts (src/ai-stream.js rootSubagentLimits).
+  {
+    id: 'subagentLimits.maxDepth', shape: 'value', scopes: ['app', 'project'], doc: 'settings', path: 'subagentLimits.maxDepth',
+    field: subagentLimit('maxDepth'),
+    label: 'Subagent nesting depth', description: 'How many levels of subagents may stack below the chat. 1 turns nesting off: subagents cannot start their own.',
+    keywords: ['subagent', 'delegate', 'recursion', 'depth', 'nesting', 'limit'],
+    group: 'Project', page: 'settings/agents',
+    clientVisible: true, resettable: true, writers: ALL_WRITERS
+  },
+  {
+    id: 'subagentLimits.maxRuns', shape: 'value', scopes: ['app', 'project'], doc: 'settings', path: 'subagentLimits.maxRuns',
+    field: subagentLimit('maxRuns'),
+    label: 'Subagent runs per turn', description: 'How many subagents one turn may start in total, at every level together.',
+    keywords: ['subagent', 'delegate', 'budget', 'runs', 'limit'],
+    group: 'Project', page: 'settings/agents',
     clientVisible: true, resettable: true, writers: ALL_WRITERS
   },
 

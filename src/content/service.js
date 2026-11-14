@@ -89,6 +89,15 @@ function checkField(path, field, value) {
     case 'number':
       if (typeof value !== 'number' || !Number.isFinite(value)) throw typeError(path, 'a number');
       return;
+    case 'integer': {
+      const { min, max } = field;
+      const inRange = Number.isInteger(value) && (min === undefined || value >= min) && (max === undefined || value <= max);
+      if (!inRange) {
+        throw typeError(path, min !== undefined && max !== undefined ? 'a whole number from ' + min + ' to ' + max
+          : min !== undefined ? 'a whole number of at least ' + min : 'a whole number');
+      }
+      return;
+    }
     case 'string':
     case 'text':
       if (typeof value !== 'string') throw typeError(path, 'a string');

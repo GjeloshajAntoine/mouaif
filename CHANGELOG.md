@@ -15,6 +15,7 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Added
 
+- **Subagent limits are a setting** — how deep subagents may nest and how many one turn may start (`subagentLimits`) can be set per project or app-wide in the settings files, `PUT /api/settings/*` and `update_settings`. A value that is not a whole number of at least 1 is refused when it is written; there is no maximum. The `subagent` tool now tells the model the configured depth, and with depth 1 no longer says that subagents can delegate. See [Recursive subagent delegation](docs/features/recursive-subagent-delegation.md).
 - **Yellow Paper theme** — a built-in light theme with warm yellow cards on an ivory background, near-black ink and amber highlights. Pick it in **Settings → Themes**. See [Themes](docs/features/themes.md).
 - **`subagent.end` hooks** — a hook can run when a delegated run finishes, at any depth, whether the model waited for it or ran it in the background, and add context for the parent. See [Hooks](docs/features/hooks.md).
 - **Clearer provider setup** — **+ Add provider** now asks how you want to connect (sign in, paste a key, or your own server) and shows only what that needs. Each provider is tested when you add it, and the list shows whether it's connected, or why not. Text typed for one provider can no longer carry over to another, and an address with placeholder text or a required key left empty is refused
@@ -70,6 +71,7 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Fixed
 
+- **A mistyped subagent limit no longer breaks a project** — an invalid `subagentLimits` value in a hand-edited `.mouaif.json` (`"maxDepth": "3"`, `0`, `2.5`) made every message in that project fail, including shell review and chat titles. That limit now uses its default and the server log gets one warning. See [Recursive subagent delegation](docs/features/recursive-subagent-delegation.md).
 - **Claude replies are no longer cut at 1024 tokens** — an Anthropic chat without a max-output setting now asks for the model's room (up to 64000 tokens) instead of 1024, and a thinking budget leaves at least 4096 tokens for the answer. Current Claude models (Opus 4.6 and later, Sonnet 5, Claude 5) use adaptive thinking with an effort level, which they require, and a tool round with thinking on sends its thinking back as the API expects. See [thinking level](docs/features/thinking-level.md).
 - **Cut-off, filtered and refused replies are marked** — a reply that stops at the output limit, or is stopped by a content filter or a refusal, gets a note after it in the chat. A tool call cut off mid-way is no longer run. See [max output tokens](docs/features/max-output-tokens.md).
 - **A thinking level no longer leaks between runs** — a subagent's or the shell reviewer's thinking level stayed on the chat's model for the rest of the turn.

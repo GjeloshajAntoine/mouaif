@@ -8,7 +8,28 @@
 // several subagent calls in one turn, the tool loop runs them concurrently
 // (see the parallel branch in src/ai.js).
 
-const BASE_DESCRIPTION = 'Delegate a focused analysis or planning task to a nested AI call (a subagent) that can use the project tools and MCP tools, with the normal permission prompts. Several subagent calls in one turn run in parallel. By default the call waits and returns the subagent\'s result. With background: true it returns a callId at once, so you can keep working and use subagent_status, subagent_messages, subagent_send and subagent_stop on it; a background subagent still running when your turn ends is cancelled. Subagents may delegate further, up to subagentLimits.maxDepth levels (default 3), and the whole tree shares one budget of runs. For several subagents that depend on each other or split files between them, declare them first with subagent_group_create. Images are not passed on automatically: find them with list_chat_attachments and pass the chosen imageRef values in `images` (generated:<seq>:<i> refs select earlier subagent artwork to edit).';
+// The description is assembled per turn: the sentence about nested delegation
+// states the depth budget the turn actually runs with (subagentLimits.maxDepth),
+// and with a budget of 1 it says that subagents cannot delegate.
+const { DEFAULT_LIMITS, LIMIT_RANGES } = require('./subagent-orchestration.js');
+
+const DESCRIPTION_HEAD = 'Delegate a focused analysis or planning task to a nested AI call (a subagent) that can use the project tools and MCP tools, with the normal permission prompts. Several subagent calls in one turn run in parallel. By default the call waits and returns the subagent\'s result. With background: true it returns a callId at once, so you can keep working and use subagent_status, subagent_messages, subagent_send and subagent_stop on it; a background subagent still running when your turn ends is cancelled.';
+const DESCRIPTION_TAIL = ' For several subagents that depend on each other or split files between them, declare them first with subagent_group_create. Images are not passed on automatically: find them with list_chat_attachments and pass the chosen imageRef values in `images` (generated:<seq>:<i> refs select earlier subagent artwork to edit).';
+
+function depthSentence(maxDepth) {
+  if (maxDepth === 1) return ' Subagents cannot delegate further in this project (subagentLimits.maxDepth is 1), and all subagents of a turn share one budget of runs.';
+  return ' Subagents may delegate further, up to ' + maxDepth + ' levels deep in total (subagentLimits.maxDepth; an agent can set its own nesting limit), and the whole tree shares one budget of runs.';
+}
+
+// describe(maxDepth) -> the tool description for a turn whose depth budget is
+// `maxDepth`. Anything that is not an integer in range reads as the default.
+function describe(maxDepth) {
+  const depth = Number.isInteger(maxDepth) && maxDepth >= LIMIT_RANGES.maxDepth.min
+    ? maxDepth : DEFAULT_LIMITS.maxDepth;
+  return DESCRIPTION_HEAD + depthSentence(depth) + DESCRIPTION_TAIL;
+}
+
+const BASE_DESCRIPTION = describe(DEFAULT_LIMITS.maxDepth);
 
 const AGENT_DESCRIPTION = 'Optional project agent name (from Settings → Project → Agents) to use for this delegation. Omit it to use the project\'s default subagent.';
 
@@ -37,18 +58,24 @@ const SPEC = {
   }
 };
 
-// buildSpec(agentNames)
+// buildSpec(agentNames, { maxDepth })
 //
-// Return the tool spec with the `agent` parameter description listing
-// the project's currently-defined agent names, so the model sees
-// exactly what it can pass. With no agents the base spec is returned.
-function buildSpec(agentNames) {
+// Return the tool spec for one turn: the `agent` parameter description lists
+// the project's currently-defined agent names, so the model sees exactly what
+// it can pass, and the tool description states the turn's depth budget
+// (`maxDepth`, default 3). With no agents and the default depth the shared
+// SPEC is returned; otherwise a copy, never a mutation of SPEC.
+function buildSpec(agentNames, { maxDepth } = {}) {
   const names = Array.isArray(agentNames) ? agentNames.filter(Boolean) : [];
-  if (!names.length) return SPEC;
+  const description = describe(maxDepth);
+  if (!names.length && description === BASE_DESCRIPTION) return SPEC;
   const spec = JSON.parse(JSON.stringify(SPEC));
-  spec.function.parameters.properties.agent.description =
-    AGENT_DESCRIPTION + ' Available agents: ' + names.join(', ') + '.';
+  spec.function.description = description;
+  if (names.length) {
+    spec.function.parameters.properties.agent.description =
+      AGENT_DESCRIPTION + ' Available agents: ' + names.join(', ') + '.';
+  }
   return spec;
 }
 
-module.exports = { SPEC, buildSpec };
+module.exports = { SPEC, buildSpec, describe };

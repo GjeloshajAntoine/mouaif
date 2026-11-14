@@ -123,6 +123,37 @@ check('declared values are checked on write', () => {
   refused(() => project({ agents: {} }, 'ui'), /agents must be a list/);
   assert.equal(settings.getProject(proj).promptSize, 'chat', 'nothing written');
 });
+check('subagentLimits: out-of-range and non-integer budgets are refused on write, at both scopes', () => {
+  const bad = [
+    [{ maxDepth: '3' }, /subagentLimits.maxDepth must be a whole number of at least 1/],
+    [{ maxDepth: 0 }, /subagentLimits.maxDepth must be a whole number of at least 1/],
+    [{ maxDepth: 2.5 }, /subagentLimits.maxDepth must be a whole number of at least 1/],
+    [{ maxRuns: 0 }, /subagentLimits.maxRuns must be a whole number of at least 1/],
+    [{ maxDepth: 2, maxRuns: -1 }, /subagentLimits.maxRuns must be a whole number of at least 1/]
+  ];
+  for (const actor of ['ui', 'tool']) {
+    for (const [value, re] of bad) {
+      refused(() => project({ subagentLimits: value }, actor), re);
+      refused(() => app({ subagentLimits: value }, actor), re);
+    }
+    refused(() => project({ subagentLimits: 3 }, actor), /subagentLimits must be an object/);
+  }
+  assert.equal('subagentLimits' in settings.getProject(proj), false, 'nothing written to the project');
+  assert.equal(settings.getApp().subagentLimits, undefined, 'nothing written to the app');
+});
+check('subagentLimits: a valid write is accepted at app and project scope and resolves field by field', () => {
+  const a = app({ subagentLimits: { maxRuns: 64 } }, 'ui');
+  assert.deepStrictEqual(a.changes.map((c) => [c.type, c.after, c.page]), [['subagentLimits.maxRuns', 64, 'settings/agents']]);
+  app({ subagentLimits: { maxRuns: 256 } }, 'tool');
+  const p = project({ subagentLimits: { maxDepth: 1 } }, 'tool');
+  assert.equal(p.approval, false);
+  assert.deepStrictEqual(settings.getResolved(proj).subagentLimits, { maxDepth: 1, maxRuns: 256 });
+  project({ subagentLimits: { maxDepth: 8, maxRuns: 1 } }, 'ui');
+  refused(() => app({ subagentLimits: { maxDepth: 2 } }, 'share'), /shared project/);
+  service.applyPatch({ scope: 'project', projectDir: proj, unset: ['subagentLimits'], actor: 'ui' });
+  service.applyPatch({ scope: 'app', unset: ['subagentLimits'], actor: 'ui' });
+  assert.deepStrictEqual(settings.getResolved(proj).subagentLimits, { maxDepth: 3, maxRuns: 32 });
+});
 check('a stored invalid value re-sent unchanged does not block the save', () => {
   fs.writeFileSync(path.join(proj, '.mouaif.json'), JSON.stringify({ ...settings.getProject(proj), promptSize: 'legacy' }));
   project({ promptSize: 'legacy', name: 'Q' }, 'ui');

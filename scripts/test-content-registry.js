@@ -45,14 +45,15 @@ const EXPECTED_DEFAULTS = {
   toolOverrides: {},
   toolFeedbackMaxBytes: 64 * 1024,
   notifications: { status: true, authorization: true, quickActions: true, login: true },
-  flags: {}
+  flags: {},
+  subagentLimits: { maxDepth: 3, maxRuns: 32 }
 };
 
 const EXPECTED_CLIENT_KEYS = [
   'providers', 'models', 'projects', 'promptSize', 'enterForNewline', 'autoRetry',
   'fileOrbButton', 'dictationButton', 'imageButton', 'statusBar', 'dictation', 'prompts',
   'profileLaunchers', 'githubCopilot', 'modelPricing', 'authAccounts', 'tools',
-  'toolFeedbackMaxBytes', 'toolOutput', 'notifications', 'flags'
+  'toolFeedbackMaxBytes', 'toolOutput', 'notifications', 'flags', 'subagentLimits'
 ];
 
 const EXPECTED_RESETTABLE = [
@@ -134,6 +135,21 @@ check('enum defaults are among their options', () => {
     if (t.shape !== 'value' || t.field.type !== 'enum' || t.field.default === undefined) continue;
     assert.ok(t.field.options.includes(t.field.default), t.id);
   }
+});
+
+check('subagentLimits: two integer budgets at app and project scope, ranges from the scope', () => {
+  const { DEFAULT_LIMITS, LIMIT_RANGES } = require(path.join(ROOT, 'src/tools/subagent-orchestration.js'));
+  assert.deepStrictEqual(registry.typesForRoot('subagentLimits').map((t) => t.id),
+    ['subagentLimits.maxDepth', 'subagentLimits.maxRuns']);
+  for (const [name, min] of [['maxDepth', 1], ['maxRuns', 1]]) {
+    const t = registry.getType('subagentLimits.' + name);
+    assert.deepStrictEqual(t.scopes, ['app', 'project']);
+    assert.deepStrictEqual(t.field, { type: 'integer', min, default: DEFAULT_LIMITS[name] });
+    assert.deepStrictEqual({ ...LIMIT_RANGES[name] }, { min });
+    assert.equal(t.clientVisible, true);
+    assert.equal(t.page, 'settings/agents');
+  }
+  assert.match(registry.getType('subagentLimits.maxDepth').description, /1 turns nesting off/);
 });
 
 check('lookup helpers', () => {
