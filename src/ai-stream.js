@@ -537,7 +537,8 @@ async function runSingleToolCall(c, cx) {
   if (c.name === 'subagent') {
   try {
   const selection = require('./agents.js').subagentModelForCall(
-  opts && opts.projectDir, opts && opts.chatId, args && args.agent, opts && opts.model);
+  opts && opts.projectDir, opts && opts.chatId, args && typeof args.agent === 'string' ? args.agent.trim() : '', opts && opts.model, null,
+  { nested: !!(opts && opts.nestedSubagent) });
   subagentModel = { providerId: require('./providerConnections.js').connectionIdOf(selection.model), modelId: selection.model.id, source: selection.source };
   } catch (e) { subagentModel = { error: e.message }; }
   }
@@ -2435,8 +2436,14 @@ async function streamChatInScope(opts) {
       // selection metadata, never the URL/credential of the app connection.
       try {
       const selection = require('./agents.js').subagentModelForCall(
-      callOpts && callOpts.projectDir, callOpts && callOpts.chatId, agentName, model, chosenModel);
-      if (selection.source !== 'chat model' && model && model.borrowed) {
+      callOpts && callOpts.projectDir, callOpts && callOpts.chatId, agentName, model, chosenModel,
+      { nested: !!opts.nestedSubagent });
+      // 'chat model' and 'parent model' both mean "the model of the call that
+      // launches this subagent": nestedModel is already a copy of it, with
+      // its connection (or its borrowed marker) intact, so there is nothing
+      // to hydrate. A nested launch that names no agent always lands here.
+      const inherited = selection.source === 'chat model' || selection.source === 'parent model';
+      if (!inherited && model && model.borrowed) {
       // A shared project used from the mouaif it was added on: an agent's
       // pinned model is borrowed too. The adding mouaif checks that it
       // offers it and resolves its image API from its own catalog.
@@ -2444,7 +2451,7 @@ async function streamChatInScope(opts) {
       nestedModel = Object.assign({}, projectModelRecord(rec), {
         provider: rec.provider, auth: 'borrowed', borrowed: model.borrowed
       });
-      } else if (selection.source !== 'chat model') {
+      } else if (!inherited) {
       const rec = selection.model;
       const { findConnection, hydrateModel } = require('./providerConnections.js');
       const connection = findConnection(rec.provider);
@@ -2597,6 +2604,11 @@ async function streamChatInScope(opts) {
         }
       }
 
+      // Recursive launches run on the executing parent's model. A launch that
+      // names no agent already inherited it above (subagentModelForCall), so
+      // what reaches this check is a named agent whose pin, or the chat/project
+      // subagent default it falls back to, selects another model: that needs
+      // the user's explicit choice on the approval card.
       const { connectionIdOf } = require('./providerConnections.js');
       if (opts.nestedSubagent && !chosenModel && (nestedModel.id !== model.id || connectionIdOf(nestedModel) !== connectionIdOf(model))) {
         const r = { error: { code: 'EDENIED', message: 'recursive agent model pin cannot widen the inherited model; explicit user override required' } };

@@ -1,10 +1,12 @@
 'use strict';
-// subagentLimits as a stored setting:
+// subagentLimits as a stored setting, and model choice below the root:
 //   - an invalid stored limit never fails a turn: that field runs on its
 //     default and one warning is logged
 //   - the subagent tool description states the turn's depth budget, and with
 //     maxDepth 1 does not say that subagents can delegate
-//   - PUT /api/settings/app|project and update_settings refuse a bad limit
+//   - a nested launch that names no agent runs on its parent's model, with the
+//     default subagent's instructions; a nested launch of a named agent whose
+//     model differs is still refused
 // Upstream is a stubbed fetch; all configuration is temporary.
 //
 // Run: node scripts/test-subagent-limits-settings.js
@@ -79,7 +81,8 @@ async function main() {
   assert.match(subagentTool.SPEC.function.description, /up to 3 levels deep in total/, 'SPEC is never mutated');
 
   settings.setApp({ providers: [
-    { id: 'openai-compatible', baseUrl: 'http://fixture/v1', apiKey: 'fixture-secret' }
+    { id: 'openai-compatible', baseUrl: 'http://fixture/v1', apiKey: 'fixture-secret' },
+    { id: 'second', type: 'openai-compatible', baseUrl: 'http://second/v1', apiKey: 'second-secret' }
   ] });
 
   // ---- Invalid stored limits: the turn runs, one warning ----------------
@@ -120,6 +123,79 @@ async function main() {
   assert.equal(warnings.filter((w) => w.includes('subagentLimits')).length, 2, 'valid limits do not warn');
   console.warn = realWarn;
 
+  // ---- Nested model choice ---------------------------------------------
+  // The default subagent is pinned to another model, and the project has a
+  // subagent default too. The root's unnamed launch uses the pin (unchanged);
+  // below the root an unnamed launch stays on its parent's model.
+  writeProject({
+    tools: { subagent: { mode: 'allow' } },
+    subagentModelId: 'project-default', subagentProviderId: 'second',
+    defaultAgent: { content: 'DEFAULT PERSONA', modelId: 'default-pin', providerId: 'second' },
+    agents: [
+      { name: 'Pinned', content: 'PINNED PERSONA', modelId: 'named-pin', providerId: 'second' },
+      { name: 'Same', content: 'SAME PERSONA', modelId: 'default-pin', providerId: 'second' }
+    ]
+  });
+  requests.length = 0;
+  const childSteps = [
+    launch('leaf-unnamed', { task: 'leaf unnamed' }),
+    launch('leaf-pinned', { task: 'leaf pinned', agent: 'Pinned' }),
+    launch('leaf-same', { task: 'leaf same', agent: 'Same' }),
+    { content: 'child final' }
+  ];
+  const childResults = [];
+  script = (r) => {
+    if (r.task === 'root task') return r.toolResults.length ? { content: 'root final' } : launch('child', { task: 'child task' });
+    if (r.task === 'child task') {
+      if (r.toolResults.length) childResults[r.toolResults.length - 1] = r.toolResults.at(-1);
+      return childSteps[r.toolResults.length];
+    }
+    return { content: r.task + ' final' };
+  };
+  const out = await turn();
+  assert.equal(out.ok, true, JSON.stringify(out));
+  const child = requests.find((r) => r.task === 'child task');
+  assert.equal(child.body.model, 'default-pin', 'root launch: the default subagent pin still applies');
+  assert.ok(child.url.startsWith('http://second/'));
+  assert.equal(child.system, 'DEFAULT PERSONA');
+
+  const unnamed = requests.find((r) => r.task === 'leaf unnamed');
+  assert.ok(unnamed, 'the nested unnamed launch ran: ' + JSON.stringify(childResults[0]));
+  assert.equal(unnamed.body.model, 'default-pin', 'nested unnamed launch runs on the executing parent model');
+  assert.ok(unnamed.url.startsWith('http://second/'), 'on the parent connection');
+  assert.equal(unnamed.system, 'DEFAULT PERSONA', 'and keeps the default subagent instructions');
+  assert.equal(childResults[0].error, undefined, JSON.stringify(childResults[0]));
+
+  assert.equal(requests.some((r) => r.task === 'leaf pinned'), false, 'a nested named agent on another model never starts');
+  assert.equal(childResults[1].error.code, 'EDENIED');
+  assert.match(childResults[1].error.message, /explicit user override required/);
+
+  const same = requests.find((r) => r.task === 'leaf same');
+  assert.ok(same, 'a nested named agent pinned to the parent model runs: ' + JSON.stringify(childResults[2]));
+  assert.equal(same.body.model, 'default-pin');
+  assert.equal(same.system, 'SAME PERSONA');
+
+  // With the parent on the chat model, the unnamed nested launch must not
+  // pick up the default pin or the project default either.
+  writeProject({
+    tools: { subagent: { mode: 'allow' } },
+    subagentModelId: 'project-default', subagentProviderId: 'second',
+    agents: [{ name: 'Root', content: 'ROOT PERSONA', modelId: 'parent', providerId: 'openai-compatible' }]
+  });
+  requests.length = 0;
+  script = (r) => {
+    if (r.task === 'root task') return r.toolResults.length ? { content: 'root final' } : launch('child', { task: 'child task', agent: 'Root' });
+    if (r.task === 'child task') return r.toolResults.length ? { content: 'child final' } : launch('leaf', { task: 'leaf task' });
+    return { content: 'leaf final' };
+  };
+  assert.equal((await turn()).ok, true);
+  assert.equal(requests.find((r) => r.task === 'child task').body.model, 'parent');
+  const leaf = requests.find((r) => r.task === 'leaf task');
+  assert.ok(leaf, 'the leaf ran');
+  assert.equal(leaf.body.model, 'parent', 'the project subagent default does not switch a nested unnamed launch');
+  assert.ok(leaf.url.startsWith('http://fixture/'));
+  assert.equal(leaf.body.messages.filter((m) => m.role === 'user').at(-1).content, 'leaf task');
+
   // ---- Writes: the settings routes and update_settings validate ---------
   // Real handlers in-process; no server is started.
   writeProject({ tools: { subagent: { mode: 'allow' } } });
@@ -156,7 +232,7 @@ async function main() {
   assert.deepEqual(settings.getApp().subagentLimits, { maxDepth: 4 });
   assert.equal(settings.getProject(projectDir).subagentLimits.maxDepth, 1, 'refused writes left the project value alone');
 
-  console.log('subagent limits settings: validated writes at both scopes, tolerant read with one warning and depth-aware description passed');
+  console.log('subagent limits settings: validated writes at both scopes, tolerant read with one warning, depth-aware description, nested unnamed model inheritance and named-pin rejection passed');
 }
 
 main().catch((e) => { console.error(e); process.exitCode = 1; }).finally(() => {

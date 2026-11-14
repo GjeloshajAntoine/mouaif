@@ -78,6 +78,8 @@ An agent is a named persona (`{ name, content, tools?, modelId?, providerId?, th
 
 `subagentLimits` bounds one turn and every subagent below it: `maxDepth` is how many levels of subagents may stack (1 means subagents cannot start their own), `maxRuns` how many the turn may start in total. Each must be a whole number of at least 1 (no maximum); anything else is refused. A write replaces the whole object in that scope, so include every field the scope should keep; fields a project leaves out come from the app value, then the default. It has no field in the app form. Each agent can also set `maxNesting` (≥ 0) and `maxRuns` (≥ 1) for the subagents it starts, in its editor (Settings → Agents) or via the agents API; they only tighten these. A change applies from the next message.
 
+Below the root chat, a subagent that launches another without naming an agent passes on its own model; an agent's model pin and the `subagentModelId` defaults only choose the model for launches made by the root chat.
+
 ## Tool authorization
 
 `tools` maps a gate to `{ mode, allowlist, defaultTimeoutMs, maxTimeoutMs }`, where `mode` is `off` \| `ask` \| `allow`. Families carry one gate each, and a single tool may override its family:

@@ -173,13 +173,23 @@ function resolveSubagentModel({ projectDir, agent, chat, project, override, mode
   return { model, source: 'chat model' };
 }
 
-function subagentModelForCall(projectDir, chatId, agentName, model, override) {
+// subagentModelForCall(projectDir, chatId, agentName, model, override, { nested })
+//
+// `model` is the model of the call that launches the subagent. `nested` marks
+// a launch made by a subagent (recursive delegation): with no approval
+// override and no named agent it runs on the launching parent's model
+// (source 'parent model'), so the default subagent's pin and the chat/project
+// subagent defaults, which the user set for the root's delegations, cannot
+// switch models further down the tree. A named agent's pin still resolves
+// here; the caller refuses it when it differs from the parent's model.
+function subagentModelForCall(projectDir, chatId, agentName, model, override, { nested = false } = {}) {
   const agent = agentName ? get(projectDir, agentName) : getDefault(projectDir);
   if (agentName && !agent) {
     const error = new Error('Unknown agent "' + agentName + '"');
     error.code = 'EUNKNOWN_AGENT';
     throw error;
   }
+  if (nested && !override && !agentName) return { model, source: 'parent model' };
   return resolveSubagentModel({ projectDir, agent,
     chat: chatId ? require('./chats.js').getChat(projectDir, chatId) : null,
     project: settings.getResolved(projectDir || null), override, model });

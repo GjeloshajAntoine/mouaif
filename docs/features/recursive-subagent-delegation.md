@@ -70,7 +70,10 @@ Named artifacts are scoped to the producing member's immediate-parent bus. A loc
 ## Permissions and budgets
 
 - Every level uses the real root chat/project authorization identity. Inherited tool names and permission modes cannot widen: disabled/unadvertised tools reject before approval; inherited Ask remains Ask even if a descendant changes settings. Inherited allowlists conservatively require approval rather than silently widening. Current stricter project gates also apply.
-- Recursive model selection inherits the executing parent's model. Agent pins that switch models are rejected unless the user explicitly supplies an approval-card override for that launch. Thinking/agent instructions may narrow behavior without granting tools.
+- Below the root, a subagent runs on the model of the subagent that launched it:
+  - A nested `subagent` call that names no `agent` always uses its parent's model. The default subagent's instructions, tool list and thinking level still apply; its model pin and the chat or project subagent-model defaults do not (they apply to launches made by the root chat, as before).
+  - A nested call that names an agent runs only when that agent resolves to the parent's model. If its pin (or, without a pin, the chat or project subagent-model default) selects another model, the launch is refused with `EDENIED`, unless the user picks a model on that launch's approval card.
+  - Launches made by the root chat are unchanged: approval-card choice, then the agent's pin, then the chat default, then the project default, then the chat model.
 - Only explicitly selected image references passed to a parent may be selected again by descendants. Other root-chat attachments cannot be smuggled through `subagent.images`. Ordinary authorized file access remains a separate permission boundary.
 - There is no limit on how many subagents call the model at the same time; only depth and total runs are bounded.
 - Total admitted runs, eight groups, 64 artifact entries, 64 upward conflict escalations and 256 observation calls are shared across the root tree. Waiting group members consume admission budget. Local dependency DAGs reject cycles/unknown edges; dependencies cannot target ancestor runs or other scopes. Status never waits; there is no ancestor-wait tool.
