@@ -144,9 +144,13 @@
 
 ### Tests
 
-`npm run test:dictation` runs the automated checks below and syntax-checks
-`test-dictation-ui.mjs`, which is a manual fixture that prints a URL and stays
-up. `test-dictation-chat.cjs` runs as part of the suite: by default it launches
+`npm run test:dictation` runs only the automated checks below.
+`test-dictation-ui.mjs` is a separate manual fixture that prints a URL and stays
+up; run it directly when needed, not in CI. The test-coverage guard rejects
+manual fixtures in automated test scripts. The page harness covers provider
+failures with built-in, typed, and named connections; the chat harness explicitly
+stubs its app and chat entry routes and still rejects unexpected requests.
+`test-dictation-chat.cjs` runs as part of the suite: by default it launches
 an isolated headless Chrome with a temporary profile and an ephemeral debugging
 port, closes that browser after the checks, and removes the profile. Set
 `CDP_URL` to use an existing debug browser instead; only the test's blank

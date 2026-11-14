@@ -142,6 +142,8 @@ let cursor = 0;
     // Recorded rather than applied: the assertion that matters is *what* the
     // page writes to the app store when a model is picked.
     saveApp: async (patch) => { saved.push(patch); },
+    appProviders: () => current.app.providers || [],
+    connectionType: (connection) => (connection && (connection.type || connection.id)) || '',
     // The provider labels the page attributes a failed catalog with. Two rows
     // are enough for a fixture whose providers are openai-compatible and gemini;
     // the real table lives in frontend/src/api.js.
@@ -598,20 +600,25 @@ assert.equal(patch.dictation.modelId, 'gemini-2.5-flash',
 
 // ---- A provider that failed is named, not fatal ------------------------
 
-{
+for (const { providers, provider, label } of [
+  { providers: [], provider: 'gemini', label: 'Google Gemini' },
+  { providers: [{ id: 'my-gemini', type: 'gemini' }], provider: 'my-gemini', label: 'Google Gemini' },
+  { providers: [{ id: 'my-gemini', type: 'gemini', name: 'Work Gemini' }], provider: 'my-gemini', label: 'Work Gemini' }
+]) {
   const view = useCase({
     projectDir: '/fixture/project',
+    app: { providers },
     catalog: {
       models: PROJECT_MODELS,
-      kinds: KINDS, total: 2, providers: ['openai-compatible', 'gemini'],
-      liveFailures: [{ provider: 'gemini', code: 'EUNREACHABLE', error: 'fetch failed' }]
+      kinds: KINDS, total: 2, providers: ['openai-compatible', provider],
+      liveFailures: [{ provider, code: 'EUNREACHABLE', error: 'fetch failed' }]
     }
   });
   view.render();
   await view.settle();
   const nodes = view.render();
   const errors = all(nodes, (n) => buttonClass(n).includes('dictation__error')).map((n) => n.children.join(''));
-  assert.ok(errors.some((t) => t.includes('Google Gemini') && t.includes('fetch failed')),
+  assert.ok(errors.some((t) => t.includes(label) && t.includes('fetch failed')),
     'the failing provider is named the way Settings names it, with its own message: ' + JSON.stringify(errors));
   // …and nothing else: the failure line is the whole report. A follow-up
   // "open Settings → Providers" sentence was tried and dropped — the picker and
@@ -619,7 +626,7 @@ assert.equal(patch.dictation.modelId, 'gemini-2.5-flash',
   // what the screen already offered. The provider id never reaches the screen.
   assert.ok(!find(nodes, (n) => buttonClass(n).includes('dictation__failure-action')),
     'no follow-up instruction line under a catalog failure');
-  assert.ok(!errors.some((t) => t.includes('gemini:')), 'the raw provider id is not shown');
+  assert.ok(!errors.some((t) => t.includes(provider + ':')), 'the raw provider id is not shown');
   // The good rows are still offered: one bad provider must not empty the list.
   assert.ok(picker(nodes).models.length > 0);
 }

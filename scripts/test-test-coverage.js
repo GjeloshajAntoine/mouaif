@@ -53,6 +53,7 @@ const CHROME_TESTS = new Set([
 // Manual browser harnesses — print a URL and wait for a human.
 const MANUAL_TESTS = new Set([
   'test-mcp-ui.mjs',
+  'test-dictation-ui.mjs',
 ]);
 
 // Tests that currently fail — tracked so they get fixed or removed.
@@ -170,6 +171,16 @@ check('helper fixture servers are not run directly as tests', () => {
   for (const helper of HELPERS) {
     assert.ok(!testScript.includes('node scripts/' + helper),
       'helper ' + helper + ' is run directly in the "test" script; it is a fixture server, not a test');
+  }
+});
+
+check('manual browser fixtures are not run by automated test scripts', () => {
+  for (const [name, script] of Object.entries(PKG.scripts || {})) {
+    if (!/^test(?::|$)/.test(name)) continue;
+    for (const manual of MANUAL_TESTS) {
+      assert.ok(!script.includes('scripts/' + manual),
+        name + ' runs manual fixture ' + manual + '; run it separately instead');
+    }
   }
 });
 
