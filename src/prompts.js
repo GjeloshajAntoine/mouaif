@@ -45,6 +45,7 @@
 // tool / agent-file settings also pick it up (see below).
 const crypto = require('crypto');
 const settings = require('./settings.js');
+const collection = require('./content/collection.js');
 
 // ---- Helpers ------------------------------------------------------------
 
@@ -138,21 +139,16 @@ preset: normalizePreset(raw.preset),
 
 // ---- CRUD ---------------------------------------------------------------
 
+// Storage goes through the shared collection code (src/content/collection.js):
+// app prompts in the app store, project prompts in the project's settings.
 function getPromptsList(projectDir) {
-  if (projectDir) {
-    const project = settings.getProject(projectDir);
-    return Array.isArray(project.prompts) ? project.prompts : [];
-  }
-  const app = settings.getApp();
-  return Array.isArray(app.prompts) ? app.prompts : [];
+  return projectDir ? collection.read('prompts', 'project', projectDir) : collection.read('prompts', 'app');
 }
 
 function savePromptsList(projectDir, list) {
-  if (projectDir) {
-    settings.setProject(projectDir, { prompts: list });
-  } else {
-    settings.setApp({ prompts: list });
-  }
+  return projectDir
+    ? collection.replace('prompts', 'project', projectDir, list)
+    : collection.replace('prompts', 'app', undefined, list);
 }
 
 function listPrompts(projectDir, opts = {}) {

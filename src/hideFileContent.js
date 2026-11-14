@@ -32,7 +32,6 @@
 // malformed rule, or a file that no longer exists must not crash a tool
 // call. If the rules cannot be read, the tools behave exactly as if no
 // redaction were configured.
-const settings = require('./settings.js');
 // Marker that replaces the body of a hidden line. Kept short so it does
 // not dominate the model context, but distinct enough that the model can
 // tell a line was intentionally withheld.
@@ -41,11 +40,16 @@ const REDACT_MARKER = '[hidden]';
 // array; any read problem yields [] so the callers can no-op.
 function getEntries(projectDir) {
 if (!projectDir || typeof projectDir !== 'string') return [];
-let project;
-try { project = settings.getProject(projectDir); }
+try { return require('./content/collection.js').read('hideFileContent', 'project', projectDir); }
 catch { return []; }
-const entries = project && project.hideFileContent;
-return Array.isArray(entries) ? entries : [];
+}
+// setRules(projectDir, rules) -> normalized rules, stored through the shared
+// collection code. Malformed entries are dropped so the stored value stays
+// canonical and the file tools and the settings route never disagree.
+function setRules(projectDir, rules) {
+const normalized = (Array.isArray(rules) ? rules : []).map(normalizeEntry).filter(Boolean);
+require('./content/collection.js').replace('hideFileContent', 'project', projectDir, normalized);
+return getRules(projectDir);
 }
 // Normalize a project file path to a POSIX-relative path with no leading
 // './'. Mirrors src/tools/files.js toRelPath's output so rule paths match
@@ -311,6 +315,7 @@ module.exports = {
 REDACT_MARKER,
 getEntries,
 getRules,
+setRules,
 buildRuleIndex,
 rulesForPathIn,
 ruleForPath,

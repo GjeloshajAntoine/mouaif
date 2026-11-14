@@ -110,6 +110,7 @@ function fieldChanges(type, before, after, { addedOnly = false } = {}) {
     if (same(b[key], a[key])) continue;
     if (addedOnly && (a[key] === undefined || a[key] === '' || a[key] === null)) continue;
     const field = (type.fields || {})[key];
+    if (field && field.hidden) continue;
     out.push(Object.assign({ key, label: (field && field.label) || key }, shapePair(field, b[key], a[key])));
   }
   return out;
@@ -173,4 +174,4 @@ function diffKey(key, before, after, { scope }) {
   return out;
 }
 
-module.exports = { diffKey, collectionChanges, same, isPlainObject };
+module.exports = { diffKey, collectionChanges, valueChange, same, isPlainObject };

@@ -23,7 +23,8 @@
 //   doc           the document the content lives in ('settings' | 'mcp')
 //   path          dotted path inside the document
 //   field         (value) { type, options?, default?, secret?, large? }
-//   fields        (collection) { key: field } describing an item
+//   fields        (collection) { key: field } describing an item; a field
+//                 marked `hidden` (timestamps) is left out of change lists
 //   container     (collection) 'array' (items carry their id) or 'map'
 //                 (the item id is the map key)
 //   itemId        (collection, array) the item property that is its id
@@ -180,17 +181,20 @@ const TYPES = [
   // ---- Prompts ------------------------------------------------------------
   {
     id: 'prompts', shape: 'collection', scopes: ['app', 'project'], doc: 'settings', path: 'prompts',
-    container: 'array', itemId: 'id', itemLabel: 'name', merge: 'override', default: [],
+    container: 'array', itemId: 'id', itemLabel: 'title', merge: 'override', default: [],
     fields: {
-      name: { type: 'string', label: 'Name' },
+      title: { type: 'string', label: 'Title' },
       content: { type: 'text', label: 'Prompt', large: true },
       icon: { type: 'string', label: 'Icon' },
-      tools: { type: 'list', label: 'Tools' }
+      showOnProjectCard: { type: 'boolean', label: 'On the project card' },
+      preset: { type: 'object', label: 'Tools and context' },
+      createdAt: { type: 'string', label: 'Created', hidden: true },
+      updatedAt: { type: 'string', label: 'Updated', hidden: true }
     },
     label: 'Custom prompts', itemNoun: 'Prompt', description: 'System prompts a chat can start from.',
     keywords: ['system prompt', 'persona', 'instructions'],
     group: 'Prompts', page: 'settings/prompts', itemPage: 'settings/prompts/:id',
-    searchFields: ['id', 'name', 'content'],
+    searchFields: ['id', 'title', 'content'],
     clientVisible: true, resettable: true, writers: ALL_WRITERS
   },
   {
@@ -443,7 +447,9 @@ const TYPES = [
       tools: { type: 'list', label: 'Allowed tools' },
       modelId: { type: 'string', label: 'Model' },
       providerId: { type: 'string', label: 'Provider' },
-      thinkingLevel: { type: 'string', label: 'Thinking' }
+      thinkingLevel: { type: 'string', label: 'Thinking' },
+      createdAt: { type: 'string', label: 'Created', hidden: true },
+      updatedAt: { type: 'string', label: 'Updated', hidden: true }
     },
     label: 'Agents', itemNoun: 'Agent', description: 'Personas the subagent tool can delegate to.',
     keywords: ['subagent', 'persona', 'delegate'],

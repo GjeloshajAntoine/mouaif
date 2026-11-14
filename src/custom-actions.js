@@ -4,6 +4,7 @@
 // the project settings under `customActions`; execution still goes through
 // the underlying shell/MCP authorization gate.
 const settings = require('./settings.js');
+const collection = require('./content/collection.js');
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const KINDS = new Set(['cli', 'mcp']);
 function typedError(code, message) {
@@ -59,7 +60,7 @@ return normalizeActions(project && project.customActions);
 }
 function replaceActions(projectDir, raw) {
 const actions = normalizeActions(raw);
-settings.setProject(projectDir, { customActions: actions });
+collection.replace('customActions', 'project', projectDir, actions);
 return actions;
 }
 module.exports = { ID_RE, normalizeAction, normalizeActions, listActions, replaceActions };

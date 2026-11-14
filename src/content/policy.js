@@ -67,6 +67,29 @@ function checkKey({ key, scope, actor = 'ui', remote = false }) {
   return { approval: actor === 'tool' && types.some((t) => t.approval === true) };
 }
 
+// checkType({ type, scope, actor, remote, via }) -> { approval } or throws.
+// A write of one declared type through its own operations (a collection's
+// put / remove, or a feature route). `via` names the dedicated tool or route
+// making it: content written only by its own tool (hooks) is accepted when
+// `via` is that tool, or `route` for its own HTTP route.
+function checkType({ type, scope, actor = 'ui', remote = false, via = null }) {
+  if (actor === 'share') remote = true;
+  if (!type.scopes.includes(scope)) throw refusal(type.label + ' have no ' + scope + ' scope');
+  if (remote && scope === 'app') {
+    throw refusal('App settings are not available through a shared project', 403, 'ESHARE_ROUTE');
+  }
+  const dedicated = registry.dedicatedTool(type);
+  if (dedicated && via !== dedicated && via !== 'route') {
+    throw refusal(type.label + ' are written only through ' + dedicated);
+  }
+  const writerActor = remote ? 'share' : actor;
+  if (type.writers && type.writers[writerActor] === false) {
+    throw refusal(type.label + (remote ? ' cannot be changed through a shared project' : ' cannot be changed this way'),
+      remote ? 403 : 400, remote ? 'ESHARE_ROUTE' : 'EBADINPUT');
+  }
+  return { approval: actor === 'tool' && type.approval === true };
+}
+
 // Secret fields (an `apiKey` on a provider or model entry, or a bare
 // `apiKey` key) are written only from the local UI. A redacted snapshot —
 // `hasApiKey` instead of the key — stays round-trippable for every actor.
@@ -93,4 +116,4 @@ function secretFields(type) {
   return Object.keys(type.fields || {}).filter((k) => type.fields[k].secret);
 }
 
-module.exports = { checkKey, checkSecrets, secretFields, refusal };
+module.exports = { checkKey, checkType, checkSecrets, secretFields, refusal };

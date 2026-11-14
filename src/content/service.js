@@ -22,7 +22,7 @@
 const { EventEmitter } = require('events');
 const registry = require('./registry.js');
 const policy = require('./policy.js');
-const { diffKey, isPlainObject, same } = require('./changes.js');
+const { diffKey, collectionChanges, valueChange, isPlainObject, same } = require('./changes.js');
 const stores = require('./stores/index.js');
 const { clone } = require('./stores/cache.js');
 
@@ -179,4 +179,74 @@ function applyPatch({ scope, projectDir, patch, unset, actor = 'ui', remote = fa
   return result;
 }
 
-module.exports = { applyPatch, warningsFor, validateKey, events, carrySecrets };
+// ---- One declared type -----------------------------------------------------
+
+function getAt(obj, parts) {
+  let cur = obj;
+  for (const p of parts) {
+    if (!isPlainObject(cur)) return undefined;
+    cur = cur[p];
+  }
+  return cur;
+}
+
+// The document with `value` at `parts` (undefined removes it). Parents are
+// copied, never mutated.
+function setAt(obj, parts, value) {
+  const out = { ...(isPlainObject(obj) ? obj : {}) };
+  const [head, ...rest] = parts;
+  if (rest.length) out[head] = setAt(out[head], rest, value);
+  else if (value === undefined) delete out[head];
+  else out[head] = value;
+  return out;
+}
+
+// readType(type, scope, projectDir) -> the stored value at the type's path
+// (undefined when absent).
+function readType(type, scope, projectDir) {
+  const store = stores.storeFor(type.doc === 'settings' ? 'settings' : type.doc, scope, projectDir);
+  return getAt(store.read(), type.path.split('.'));
+}
+
+// writeType({ type, scope, projectDir, value, unset, actor, remote, via, dryRun })
+//   -> { changes, value, approval }
+// Writes one declared type's whole value (a collection's items) in one
+// document write. Feature modules normalise before calling; this applies the
+// policy, computes the change list and publishes content_changed. `unset`
+// names extra top-level keys to drop in the same write (a legacy key the new
+// value replaces).
+// A write made while serving a shared project's remote caller (the share gate
+// runs the request inside the caller's context).
+function isRemoteCall() {
+  try { return !!require('../share-gate.js').currentCaller(); } catch { return false; }
+}
+
+function writeType({ type, scope, projectDir, value, unset = [], actor = 'ui', remote, via = null, dryRun = false }) {
+  if (remote === undefined) remote = isRemoteCall();
+  if (typeof type === 'string') type = registry.getType(type);
+  if (!type) throw policy.refusal('unknown content type');
+  if (scope === 'project' && (!projectDir || typeof projectDir !== 'string')) throw policy.refusal('projectDir is required');
+  const { approval } = policy.checkType({ type, scope, actor, remote, via });
+  const parts = type.path.split('.');
+  const store = stores.storeFor(type.doc === 'settings' ? 'settings' : type.doc, scope, projectDir);
+  const current = store.read();
+  const before = getAt(current, parts);
+  let next = setAt(current, parts, value === undefined ? undefined : clone(value));
+  const dropped = unset.filter((k) => Object.prototype.hasOwnProperty.call(next, k));
+  for (const key of dropped) { next = { ...next }; delete next[key]; }
+  const changes = type.shape === 'collection'
+    ? collectionChanges(type, scope, before, value)
+    : (same(before, value) ? [] : [valueChange(type, scope, type.path, before, value)]);
+  if (dryRun || (same(before, value) && !dropped.length)) return { changes, value, approval };
+  store.write(next);
+  events.emit('content_changed', {
+    scope,
+    projectDir: scope === 'project' ? projectDir : null,
+    keys: [parts[0], ...dropped],
+    types: [type.id],
+    actor: remote ? 'share' : actor
+  });
+  return { changes, value, approval };
+}
+
+module.exports = { applyPatch, writeType, readType, warningsFor, validateKey, events, carrySecrets };

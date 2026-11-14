@@ -34,6 +34,7 @@
 // for one release; only { id->name, content, tools } survive.
 
 const settings = require('./settings.js');
+const collection = require('./content/collection.js');
 
 const MAX_BYTES = 64 * 1024;
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -164,10 +165,10 @@ function get(projectDir, name) {
   return list(projectDir).find((a) => a.name === name) || null;
 }
 
+// One write through the shared collection code, which also drops the legacy
+// key once the new one is written.
 function writeList(projectDir, agents) {
-  settings.setProject(projectDir, { agents });
-  // Drop the legacy key once we write the new one.
-  try { settings.unsetProjectKeys(projectDir, ['agentPresets']); } catch { /* non-fatal */ }
+  return collection.replace('agents', 'project', projectDir, agents, { unset: ['agentPresets'] });
 }
 
 function create(projectDir, opts) {

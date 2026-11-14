@@ -33,6 +33,7 @@ const fs = require('fs');
 const path = require('path');
 const { err, relEscapes, canonicalPath } = require('./util.js');
 const settings = require('./settings.js');
+const collection = require('./content/collection.js');
 const hideFileContent = require('./hideFileContent.js');
 
 // ---- Constants ----------------------------------------------------------
@@ -150,24 +151,23 @@ function normalizeMap(projectDir, raw) {
 
 // ---- CRUD ---------------------------------------------------------------
 
+// Storage goes through the shared collection code (src/content/collection.js).
 function getTags(projectDir) {
-  const project = settings.getProject(projectDir);
-  return normalizeMap(projectDir, project && project.tags);
+  return normalizeMap(projectDir, collection.read('tags', 'project', projectDir));
 }
 
 function setTags(projectDir, map) {
   const normalized = normalizeMap(projectDir, map);
-  settings.setProject(projectDir, { tags: normalized });
+  collection.replace('tags', 'project', projectDir, normalized);
   return normalized;
 }
 
 function removeTag(projectDir, relPathOrAbs) {
   const rel = toRelPath(projectDir, relPathOrAbs);
-  const project = settings.getProject(projectDir);
-  const current = normalizeMap(projectDir, project && project.tags);
+  const current = getTags(projectDir);
   if (!Object.prototype.hasOwnProperty.call(current, rel)) return false;
   delete current[rel];
-  settings.setProject(projectDir, { tags: current });
+  collection.replace('tags', 'project', projectDir, current);
   return true;
 }
 

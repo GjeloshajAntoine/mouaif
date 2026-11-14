@@ -90,6 +90,24 @@ Who may write what is one table in `src/content/policy.js`:
 
 `share` is a shared project's remote caller using the same routes; a share caller's model is `tool` with `remote: true`. The approval itself is still asked by the chat loop before `update_settings` runs (`PERMISSION_KEYS`); a remote caller's direct UI writes are bounded by the share gate's tool rules, as before.
 
+### Collections
+
+`src/content/collection.js` gives every declared collection the same operations over its document and path, so the feature modules no longer each re-implement "read the array, change it, write it back":
+
+```js
+read(type, scope, projectDir)                 list(type, scope, projectDir)
+get(type, scope, projectDir, id)              listMerged(type, projectDir)
+put(type, scope, projectDir, item, opts)      putAt(type, scope, projectDir, id, item, opts)
+remove(type, scope, projectDir, id, opts)     replace(type, scope, projectDir, items, opts)
+```
+
+- `put` inserts an array item or replaces the one with the same `itemId` in place; `putAt` sets a map entry (tags by path, wording sets by id).
+- `listMerged` follows the type's merge rule: `override` (a project item replaces the app item with the same id: prompts, models), `concat` (both lists, tagged with their scope: hooks, MCP servers) or `replace` (the project list wins when it has items).
+- Every write goes through `writeType()` in the service: the policy check, one document write, a change list and `content_changed`. `opts.unset` drops a legacy key in the same write (agents drop `agentPresets`). A write made while serving a shared project's caller is marked `remote` automatically.
+- Content written by its own tool (hooks) needs `opts.via` set to that tool or to `route`.
+
+Converted to it: `prompts.js`, `agents.js`, `custom-actions.js`, `tags.js`, `hideFileContent.js` (`setRules`), and the app provider and model routes. The modules keep their normalising, limits and runtime behaviour.
+
 ### Change lists
 
 Every write returns the same structure, whatever the content:

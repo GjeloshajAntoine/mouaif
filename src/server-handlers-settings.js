@@ -20,6 +20,7 @@ const {
 } = require('./server-shared.js');
 const { connectionType, nextConnectionId } = require('./providerConnections.js');
 const content = require('./content/service.js');
+const collection = require('./content/collection.js');
 
 // `share` when a shared project's remote caller made this request
 // (src/share-gate.js runs it inside the caller's context), else `ui`.
@@ -130,8 +131,7 @@ async function handleSettings(req, res, parsed) {
     if ((body.id !== undefined && typeof body.id !== 'string') || (body.type !== undefined && typeof body.type !== 'string')) {
       return sendJSON(res, 400, { error: 'id and type must be strings' });
     }
-    const app = settings.getApp();
-    const providers = Array.isArray(app.providers) ? app.providers.slice() : [];
+    const providers = collection.read('providers', 'app').slice();
     const wantedId = (body.id || '').trim();
     const idx = wantedId ? providers.findIndex(p => p && p.id === wantedId) : -1;
     const type = idx >= 0 ? connectionType(providers[idx]) : ((body.type || '').trim() || wantedId);
@@ -165,12 +165,11 @@ async function handleSettings(req, res, parsed) {
       merged.apiKey = providers[idx].apiKey;
     }
     if (merged.auth === 'oauth') delete merged.apiKey;
-    if (idx >= 0) providers[idx] = merged; else providers.push(merged);
     try {
-      const next = settings.setApp({ providers });
+      const r = collection.put('providers', 'app', undefined, merged);
       return sendJSON(res, 200, {
         provider: connectionForClient(merged),
-        providers: next.providers.map(connectionForClient)
+        providers: r.value.map(connectionForClient)
       });
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });
@@ -181,17 +180,13 @@ async function handleSettings(req, res, parsed) {
   const delProviderMatch = urlPath.match(/^\/api\/settings\/app\/providers\/([A-Za-z0-9._-]+)$/);
   if (delProviderMatch && method === 'DELETE') {
     const id = delProviderMatch[1];
-    const app = settings.getApp();
-    const providers = Array.isArray(app.providers) ? app.providers.slice() : [];
-    const idx = providers.findIndex(p => p && p.id === id);
-    if (idx < 0) return sendJSON(res, 404, { error: 'Provider not found', id });
-    const [removed] = providers.splice(idx, 1);
+    if (!collection.get('providers', 'app', undefined, id)) return sendJSON(res, 404, { error: 'Provider not found', id });
     try {
-      settings.setApp({ providers });
+      const r = collection.remove('providers', 'app', undefined, id);
       return sendJSON(res, 200, {
         ok: true,
-        removed: connectionForClient(removed),
-        providers: providers.map(connectionForClient)
+        removed: connectionForClient(r.removed),
+        providers: r.value.map(connectionForClient)
       });
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });
@@ -229,8 +224,7 @@ async function handleSettings(req, res, parsed) {
       // may have toggled auth modes and forgotten to clear the key.
       delete body.apiKey;
     }
-    const app = settings.getApp();
-    const models = Array.isArray(app.models) ? app.models.slice() : [];
+    const models = collection.read('models', 'app');
     const idx = models.findIndex(m => m && m.id === body.id);
     if (idx < 0 && !body.provider) {
       return sendJSON(res, 400, { error: 'provider is required when adding a new model' });
@@ -239,12 +233,11 @@ async function handleSettings(req, res, parsed) {
     // Same dedup for the merged result (an existing apikey record
     // toggled to oauth would still carry apiKey from the prior entry).
     if (merged.auth === 'oauth') delete merged.apiKey;
-    if (idx >= 0) models[idx] = merged; else models.push(merged);
     try {
-      const next = settings.setApp({ models });
+      const r = collection.put('models', 'app', undefined, merged);
       return sendJSON(res, 200, {
         model: modelForClient(merged),
-        models: next.models.map(modelForClient)
+        models: r.value.map(modelForClient)
       });
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });
@@ -255,17 +248,13 @@ async function handleSettings(req, res, parsed) {
   const delModelMatch = urlPath.match(/^\/api\/settings\/app\/models\/([A-Za-z0-9._-]+)$/);
   if (delModelMatch && method === 'DELETE') {
     const id = delModelMatch[1];
-    const app = settings.getApp();
-    const models = Array.isArray(app.models) ? app.models.slice() : [];
-    const idx = models.findIndex(m => m && m.id === id);
-    if (idx < 0) return sendJSON(res, 404, { error: 'Model not found', id });
-    const [removed] = models.splice(idx, 1);
+    if (!collection.get('models', 'app', undefined, id)) return sendJSON(res, 404, { error: 'Model not found', id });
     try {
-      settings.setApp({ models });
+      const r = collection.remove('models', 'app', undefined, id);
       return sendJSON(res, 200, {
         ok: true,
-        removed: modelForClient(removed),
-        models: models.map(modelForClient)
+        removed: modelForClient(r.removed),
+        models: r.value.map(modelForClient)
       });
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });
@@ -412,12 +401,10 @@ async function handleSettings(req, res, parsed) {
     if (!Array.isArray(body.rules)) {
       return sendJSON(res, 400, { error: 'rules must be an array' });
     }
-    // Normalize each entry; drop malformed ones. This keeps the stored value
-    // canonical so the file-tool reader and this endpoint never disagree.
-    const normalized = body.rules.map(hideFileContent.normalizeEntry).filter(Boolean);
+    // setRules normalizes each entry and drops malformed ones, so the stored
+    // value stays canonical and the file-tool reader never disagrees.
     try {
-      settings.setProject(dir, { hideFileContent: normalized });
-      return sendJSON(res, 200, { rules: hideFileContent.getRules(dir) });
+      return sendJSON(res, 200, { rules: hideFileContent.setRules(dir, body.rules) });
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });
     }
