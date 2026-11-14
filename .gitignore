@@ -36,3 +36,6 @@ perf/runs/
 # src/settings.js writeJsonFile). They exist only between the write and the
 # rename; a crash can leave one behind.
 .mouaif*.tmp-*
+
+# Claude Code worktrees and local agent state.
+.claude/
