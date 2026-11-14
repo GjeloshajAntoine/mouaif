@@ -522,13 +522,11 @@ check('mimeTypeFor maps the containers a MediaRecorder produces', () => {
 // throwaway store rather than pattern matching.
 
 check('the dictation choice is allowlisted for the client', () => {
-const shared = fs.readFileSync(path.join(__dirname, '..', 'src/server-shared.js'), 'utf8');
-const listStart = shared.indexOf('const CLIENT_SETTINGS_KEYS = Object.freeze([');
-assert.ok(listStart > -1, 'CLIENT_SETTINGS_KEYS block found');
-const listEnd = shared.indexOf(']);', listStart);
-assert.match(
-shared.slice(listStart, listEnd),
-/'dictation'/,
+// The client keys are generated from the content registry (step 4 of
+// docs/agent/plans/settings-architecture.md), no longer a list in server-shared.js.
+const registry = require(path.join(__dirname, '..', 'src/content/registry.js'));
+assert.ok(
+registry.clientSettingsKeys().includes('dictation'),
 'a stored-but-stripped key is a key the UI never reads back'
 );
 });
