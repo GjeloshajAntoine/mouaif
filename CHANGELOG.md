@@ -11,6 +11,7 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Added
 
+- **Yellow Paper theme** — a built-in light theme with warm yellow cards on an ivory background, near-black ink and amber highlights. Pick it in **Settings → Themes**. See [Themes](docs/features/themes.md).
 - **`subagent.end` hooks** — a hook can run when a delegated run finishes, at any depth, whether the model waited for it or ran it in the background, and add context for the parent. See [Hooks](docs/features/hooks.md).
 - **Clearer provider setup** — **+ Add provider** now asks how you want to connect (sign in, paste a key, or your own server) and shows only what that needs. Each provider is tested when you add it, and the list shows whether it's connected, or why not. Text typed for one provider can no longer carry over to another, and an address with placeholder text or a required key left empty is refused
 - **Several connections of one provider** — add the same provider more than once in **Settings → Providers**, each with its own name, API key or signed-in account, base URL, model list and balance. Existing connections keep working as they are.

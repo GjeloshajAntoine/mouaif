@@ -38,6 +38,8 @@ const FLAT_BACKGROUND = 'html, body { background: var(--bg); }';
 // PNGs are cached as immutable, so bump `v` when the files change.
 const PAPER_GRAIN = 'url("themes/parchment-grain.png?v=1")';
 const PAPER_MOTTLE = 'url("themes/parchment-mottle.png?v=1")';
+// Yellow Paper's much fainter texture, from the same script.
+const LEGAL_GRAIN = 'url("themes/legal-pad-grain.png?v=3")';
 const REDUCED_MOTION_OFF = (selector) =>
   `@media (prefers-reduced-motion: reduce) { ${selector} { animation: none !important; } }`;
 
@@ -223,6 +225,74 @@ body::before {
 .chat-msg--user .chat-msg__body a { color: inherit; }
 body { text-rendering: optimizeLegibility; font-variant-ligatures: common-ligatures; }
 ::selection { background: rgba(45, 74, 120, 0.18); }
+`
+  },
+  {
+    // The id predates the name; it stays so a saved choice keeps working.
+    id: 'legal-pad',
+    name: 'Yellow Paper',
+    note: 'warm yellow sheets · black ink',
+    base: 'light',
+    vars: {
+      '--bg': '#f9f3e1',
+      '--surface': '#fbe9a3',
+      '--surface-2': '#f6de8b',
+      '--surface-3': '#f0d275',
+      '--border': 'rgba(110, 88, 0, 0.16)',
+      '--border-strong': '#dcc163',
+      '--fg': '#25221b',
+      '--fg-soft': '#454034',
+      '--muted': '#655f4c',
+      '--muted-2': '#8a846f',
+      '--accent': '#3b3626',
+      '--accent-soft': 'rgba(240, 176, 0, 0.26)',
+      '--accent-press': '#25221b',
+      '--accent-hi': '#4f4935',
+      '--accent-hi-2': '#6b6450',
+      '--on-accent': '#fff6d2',
+      '--success': '#2f6b2c',
+      '--success-soft': 'rgba(47, 107, 44, 0.14)',
+      '--warning': '#875400',
+      '--warning-soft': 'rgba(138, 82, 0, 0.14)',
+      '--danger': '#b3261e',
+      '--danger-soft': '#f8d2b0',
+      '--r-sm': '3px',
+      '--r-md': '4px',
+      '--r-lg': '6px',
+      '--shadow-sm': '0 1px 1px rgba(76, 60, 0, 0.10), 0 2px 5px -2px rgba(76, 60, 0, 0.20)',
+      '--shadow-md': '0 1px 2px rgba(76, 60, 0, 0.10), 0 6px 16px -6px rgba(76, 60, 0, 0.28)',
+      '--shadow-lg': '0 2px 4px rgba(76, 60, 0, 0.10), 0 14px 30px -10px rgba(76, 60, 0, 0.34)'
+    },
+    css: `
+/* A warm ivory page under the paper: a barely visible unevenness and a soft highlight
+   on one static fixed layer behind the app, like Parchment's paper. */
+html { background: var(--bg); }
+body, .app__shell, .app__main--flush { background: transparent; }
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    ${LEGAL_GRAIN} 0 0 / 256px 256px,
+    radial-gradient(120% 90% at 50% 30%, rgba(255, 253, 246, 0.6), transparent 70%),
+    var(--bg);
+}
+/* Cards are the yellow sheets lying on it. */
+.group__list, .project-card, .theme-card, .chat-msg__body, .dictation__card, .settings-themes__notice {
+  border: 1px solid rgba(130, 104, 0, 0.2);
+  box-shadow: var(--shadow-sm);
+}
+/* Your own messages sit on a paler slip with an amber edge. */
+.chat-msg--user .chat-msg__body {
+  background-color: #fff6cf;
+  color: var(--fg);
+  border: 1px solid rgba(130, 104, 0, 0.24);
+  border-left: 3px solid #e6a800;
+}
+.chat-msg--user .chat-msg__body a { color: inherit; }
+::selection { background: rgba(240, 176, 0, 0.4); }
 `
   },
   {

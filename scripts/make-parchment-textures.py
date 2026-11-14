@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-# Regenerates the Parchment theme textures in frontend/public/themes/:
+# Regenerates the paper textures of the Parchment and Yellow Paper themes in
+# frontend/public/themes/:
 #   parchment-mottle.png  cloudy tone changes and sparse foxing spots (256 px, shown at 640 px)
 #   parchment-grain.png   fine pulp grain (128 px)
+#   legal-pad-grain.png   soft, barely visible unevenness for clean yellow stock (128 px, shown at 256 px)
 # Both tile seamlessly and vary only in alpha over a fixed brown, stored as an
 # 8-bit palette so they stay small. Needs Pillow. Output is deterministic.
 import os
@@ -78,3 +80,14 @@ for v in gr.getdata():
     px.append((70, 48, 18, int(a * 255)))
 img = Image.new('RGBA', (G, G)); img.putdata(px)
 save_alpha_palette(img, OUT + 'parchment-grain.png', 16, (70, 48, 18), (70, 48, 18))
+
+# Yellow Paper: new machine-made stock, so instead of grain it has only a soft,
+# barely visible unevenness: blurred noise at under two percent, in an olive brown
+# that just deepens the yellow. Shown at 256 px so no single speck reads.
+gr = stretch(tile_blur(noise(G), 2.2))
+px = []
+for v in gr.getdata():
+    a = max(0, v - 96) / 159 * 0.018
+    px.append((104, 84, 8, int(a * 255)))
+img = Image.new('RGBA', (G, G)); img.putdata(px)
+save_alpha_palette(img, OUT + 'legal-pad-grain.png', 8, (104, 84, 8), (104, 84, 8))
