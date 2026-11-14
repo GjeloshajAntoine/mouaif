@@ -4,8 +4,8 @@ const { Scope } = require('../src/tools/subagent-orchestration.js');
 const tick = () => new Promise((r) => setImmediate(r));
 const result = () => ({ ok: true, result: { text: 'done' } });
 (async () => {
-  for (const limits of [{ maxDepth: Infinity }, { maxRuns: 0 }, { maxConcurrent: -1 }]) assert.throws(() => new Scope('/p', 'c', null, limits), { code: 'EBADINPUT' });
-  const root = new Scope('/p', 'c', null, { maxDepth: 3, maxRuns: 4, maxConcurrent: 1 });
+  for (const limits of [{ maxDepth: Infinity }, { maxRuns: 0 }]) assert.throws(() => new Scope('/p', 'c', null, limits), { code: 'EBADINPUT' });
+  const root = new Scope('/p', 'c', null, { maxDepth: 3, maxRuns: 4 });
   let resolveA, resolveB;
   const a = root.start('a', '', () => new Promise((r) => { resolveA = r; }), () => {});
   const sibling = root.start('sibling', '', async () => result(), () => {});
@@ -29,9 +29,7 @@ const result = () => ({ ok: true, result: { text: 'done' } });
   assert.equal(root.dispatch('subagent_read', { name: 'to-parent' }).author, 'a');
   assert.throws(() => deep.dispatch('subagent_read', { name: 'to-parent' }, b.author), { code: 'EUNKNOWN_PUBLICATION' });
   const release = await local.acquire(a.controller.signal);
-  let acquired = false;
-  const next = deep.acquire(b.controller.signal).then((r) => { acquired = true; r(); });
-  await tick(); assert.equal(acquired, false); release(); await next; assert.equal(root.active, 0);
+  (await deep.acquire(b.controller.signal))(); release(); // no slot to wait for
   deep.dispatch('subagent_publish', { name: 'to-local', summary: 'child artifact' }, b.author);
   assert.equal(local.dispatch('subagent_read', { name: 'to-local' }, a.author).author, 'b');
   const c = deep.start('c', '', async () => result(), () => {}); await c.promise;
@@ -42,7 +40,7 @@ const result = () => ({ ok: true, result: { text: 'done' } });
   assert.equal(root.allRuns.size, 0);
   // Default budget lets nested subagents delegate (root -> child -> grandchild -> leaf).
   const defaults = new Scope('/p', 'c');
-  assert.deepEqual(defaults.limits, { maxDepth: 3, maxConcurrent: 4, maxRuns: 32 });
+  assert.deepEqual(defaults.limits, { maxDepth: 3, maxRuns: 32 });
   const d1 = defaults.start('d1', '', () => new Promise(() => {}), () => {}); await tick();
   const d2 = defaults.child(d1).start('d2', '', () => new Promise(() => {}), () => {}); await tick();
   const d3 = defaults.child(d1).child(d2).start('d3', '', () => new Promise(() => {}), () => {}); await tick();
@@ -62,15 +60,16 @@ const result = () => ({ ok: true, result: { text: 'done' } });
   const now = Date.now(); await shutdown.finish();
   assert.ok(Date.now() - now < 1500); assert.equal(callbacks, 2);
   lateParent(result()); lateChild(result()); await Promise.all([p.promise, kid.promise]); assert.equal(callbacks, 2);
-  const queued = new Scope('/p', 'c', null, { maxConcurrent: 1 });
-  const held = await queued.acquire();
-  const waiting = queued.acquire();
-  const rejects = assert.rejects(waiting, { code: 'EABORTED' });
-  await queued.finish(); await rejects; held(); assert.equal(queued.active, 0);
+  // Model requests are not limited in number; an ended scope refuses them.
+  const unlimited = new Scope('/p', 'c', null, {});
+  const holds = await Promise.all(Array.from({ length: 40 }, () => unlimited.acquire()));
+  holds.forEach((r) => r());
+  await unlimited.finish();
+  await assert.rejects(unlimited.acquire(), { code: 'EABORTED' });
   // Inherited off rejects even with a currently enabled advertised name, before dispatch/approval.
   let effects = 0;
   const { runSingleToolCall } = require('../src/ai-stream.js');
   const denied = await runSingleToolCall({ name: 'shell', id: 'forged', arguments: '{}' }, { opts: { nestedSubagent: true, enabledTools: ['shell'], inheritedPermissions: { shell: { mode: 'off' } } }, onEvent() {}, dispatchTool: () => { effects++; } });
   assert.equal(denied.exec.result.error.code, 'ETOOL_DISABLED'); assert.equal(effects, 0);
-  console.log('recursive scope: rooted identities, local controls, visibility, upward arbitration, depth/total/concurrency budgets, subtree cancellation and ancestor deadlock rejection passed');
+  console.log('recursive scope: rooted identities, local controls, visibility, upward arbitration, depth/total budgets, unlimited concurrency, subtree cancellation and ancestor deadlock rejection passed');
 })().catch((e) => { console.error(e); process.exitCode = 1; });

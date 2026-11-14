@@ -12,13 +12,12 @@ Recursion works out of the box. To change the budgets, set finite app/project se
 {
   "subagentLimits": {
     "maxDepth": 3,
-    "maxConcurrent": 4,
     "maxRuns": 32
   }
 }
 ```
 
-Defaults are depth **3**, concurrency **4**, total admitted runs **32**: the root's child and grandchild can each launch subagents, and the depth-3 leaf cannot. Set `maxDepth: 1` to opt out of recursion (children then do not see launch/control tools). Depth accepts 1–8, concurrency 1–32 and total runs 1–256. Invalid, infinite or non-integer limits reject before execution. Limits are captured at root start; a child cannot reset or increase them.
+Defaults are depth **3** and total admitted runs **32**: the root's child and grandchild can each launch subagents, and the depth-3 leaf cannot. Set `maxDepth: 1` to opt out of recursion (children then do not see launch/control tools). Depth accepts 1–8 and total runs 1–256. Invalid, infinite or non-integer limits reject before execution. Limits are captured at root start; a child cannot reset or increase them.
 
 Use the same `subagent` tool synchronously or with `background:true`. Children inherit the actual advertised parent tool surface, then the selected agent may narrow it. A recursive child can declare a local group using `subagent_group_create`, launch its members and use immediate status, read-only messages, explicit sends, cancellation and contract approval on its own children/groups. Depth-exhausted children do not advertise launch/control tools, and forged launches still hit the depth guard.
 
@@ -35,8 +34,8 @@ Named artifacts are scoped to the producing member's immediate-parent bus. A loc
 - Every level uses the real root chat/project authorization identity. Inherited tool names and permission modes cannot widen: disabled/unadvertised tools reject before approval; inherited Ask remains Ask even if a descendant changes settings. Inherited allowlists conservatively require approval rather than silently widening. Current stricter project gates also apply.
 - Recursive model selection inherits the executing parent's model. Agent pins that switch models are rejected unless the user explicitly supplies an approval-card override for that launch. Thinking/agent instructions may narrow behavior without granting tools.
 - Only explicitly selected image references passed to a parent may be selected again by descendants. Other root-chat attachments cannot be smuggled through `subagent.images`. Ordinary authorized file access remains a separate permission boundary.
-- `maxConcurrent` bounds simultaneous delegated **provider requests**, not paused parent frames or detached shell processes. Slots release before tool dispatch, so a synchronous recursive child can run even with concurrency 1; ancestors do not monopolize slots while waiting on children.
-- Total admitted runs, eight groups, 64 artifact entries, 64 upward conflict escalations and 256 observation calls are shared across the root tree. Waiting group members consume admission budget, not provider slots. Local dependency DAGs reject cycles/unknown edges; dependencies cannot target ancestor runs or other scopes. Status never waits; there is no ancestor-wait tool.
+- There is no limit on how many subagents call the model at the same time; only depth and total runs are bounded.
+- Total admitted runs, eight groups, 64 artifact entries, 64 upward conflict escalations and 256 observation calls are shared across the root tree. Waiting group members consume admission budget. Local dependency DAGs reject cycles/unknown edges; dependencies cannot target ancestor runs or other scopes. Status never waits; there is no ancestor-wait tool.
 
 ## Lifecycle and billing
 

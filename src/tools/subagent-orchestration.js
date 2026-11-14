@@ -10,7 +10,7 @@ const FAMILY_NAMES = Object.freeze(['subagent', ...TOOL_NAMES]);
 // and a grandchild delegate by default (root → child → grandchild → leaf);
 // the leaf level stops advertising launch/control tools. Settings may lower
 // it to 1 for non-recursive delegation or raise it to 8.
-const DEFAULT_LIMITS = Object.freeze({ maxDepth: 3, maxConcurrent: 4, maxRuns: 32 });
+const DEFAULT_LIMITS = Object.freeze({ maxDepth: 3, maxRuns: 32 });
 const error = (code, message) => Object.assign(new Error(message), { code });
 const spec = (name, description, properties, required = []) => ({ type: 'function', function: {
   name, description, parameters: { type: 'object', properties, required, additionalProperties: false }
@@ -78,11 +78,10 @@ class Scope {
     this.owner = owner;
     this.root = parentScope?.root || this;
     if (!parentScope) {
-      this.allRuns = new Map(); this.scopes = new Set(); this.escalations = []; this.publicationCount = 0; this.active = 0; this.queue = [];
+      this.allRuns = new Map(); this.scopes = new Set(); this.escalations = []; this.publicationCount = 0;
       this.limits = {};
-      for (const [name, max] of [['maxDepth', 8], ['maxConcurrent', 32], ['maxRuns', 256]]) {
-        const fallback = DEFAULT_LIMITS[name];
-        const value = limits[name] ?? fallback;
+      for (const [name, max] of [['maxDepth', 8], ['maxRuns', 256]]) {
+        const value = limits[name] ?? DEFAULT_LIMITS[name];
         if (!Number.isInteger(value) || value < 1 || value > max) throw error('EBADINPUT', name + ' must be a finite integer from 1 to ' + max);
         this.limits[name] = value;
       }
@@ -203,28 +202,11 @@ class Scope {
     if (!this.accepts(row)) throw error('EABORTED', 'local parent is no longer active');
     return row.childScope || (row.childScope = new Scope(this.projectDir, this.chatId, row.controller.signal, {}, this, row));
   }
+  // acquire(signal) -> release(). Subagent model requests are not limited in
+  // number: this only refuses a request whose run or scope already ended.
   async acquire(signal) {
-    const root = this.root;
-    if (signal?.aborted || this.closed) throw error('EABORTED', 'run cancelled before provider dispatch');
-    if (root.active >= root.limits.maxConcurrent) await new Promise((resolve, reject) => {
-      const item = { resolve, reject, signal, scope: this };
-      item.abort = () => { root.queue = root.queue.filter((q) => q !== item); signal?.removeEventListener('abort', item.abort); reject(error('EABORTED', 'queued provider request cancelled')); };
-      root.queue.push(item); signal?.addEventListener('abort', item.abort, { once: true });
-    });
-    else root.active++;
-    if (signal?.aborted || this.closed || root.closed) {
-      const next = root.queue.shift();
-      if (next) { next.signal?.removeEventListener('abort', next.abort); next.resolve(); }
-      else root.active--;
-      throw error('EABORTED', 'provider slot owner ended');
-    }
-    let released = false;
-    return () => {
-      if (released) return; released = true;
-      const next = root.queue.shift();
-      if (next) { next.signal?.removeEventListener('abort', next.abort); next.resolve(); }
-      else root.active--;
-    };
+    if (signal?.aborted || this.closed || this.root.closed) throw error('EABORTED', 'run cancelled before provider dispatch');
+    return () => {};
   }
   event(row, kind, data) {
     if (!this.accepts(row)) return;
@@ -367,7 +349,6 @@ class Scope {
   async finish() {
     if (this.closing) return this.closing;
     this.closed = true;
-    for (const item of [...this.root.queue]) if (this.isAncestorOf(item.scope)) item.abort();
     this.abort();
     const children = [...this.runs.values()].filter((r) => r.childScope).map((r) => r.childScope.finish());
     this.groups.close();

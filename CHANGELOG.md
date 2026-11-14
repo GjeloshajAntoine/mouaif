@@ -9,6 +9,10 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ## [Unreleased]
 
+### Removed
+
+- The cap on subagent model requests running at the same time (`subagentLimits.maxConcurrent`, default 4) is gone: subagents no longer queue for a slot, and a stored `maxConcurrent` is ignored.
+
 ### Added
 
 - **Yellow Paper theme** — a built-in light theme with warm yellow cards on an ivory background, near-black ink and amber highlights. Pick it in **Settings → Themes**. See [Themes](docs/features/themes.md).
