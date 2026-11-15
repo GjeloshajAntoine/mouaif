@@ -242,6 +242,46 @@ You can ask in the chat ("from now on, block force pushes here", "keep going unt
 - **Prompts**: context a hook added sits under the prompt in a collapsed **Added by hooks** block. A prompt a hook sent carries *Hook · `<id>` · follow-up N/3*.
 - **Blocked prompts** are not saved. The composer gets the text back and the status line shows the hook's reason.
 
+## What hooks cannot do
+
+Hooks are a **tighten-only** surface: they add checks and context around a turn, never capability. Knowing the edges keeps an extension design honest.
+
+### No `allow`
+
+There is no `allow` decision. A hook can block a call, force its approval card, rewrite its arguments or add context; it cannot skip the card, run a tool set to Off, or add a tool. New tools come from an MCP server or a change in mouaif itself, and the permissions in **Settings → Project → Tools** stay the only place that grants anything.
+
+### What each event may change
+
+| Event | Can | Cannot |
+| --- | --- | --- |
+| `prompt.submit` | block, add context | ask, rewrite the prompt or its images, change the model or system prompt |
+| `tool.before` | block, ask, rewrite top-level arguments, add context | replace the tool, add a new one, change which server a name resolves to |
+| `tool.after` | add context, redact what the model sees | replace the result the model gets, run the call again |
+| `turn.start` / `turn.error` | watch | change the request or stop the turn |
+| `turn.end` | one follow-up prompt (max 3 in a chain) | run on a failed or stopped turn |
+| `subagent.end` | add context to the run's result | change its answer, start a turn |
+| `attention` | silence the push | change what is pushed, add a push |
+
+An inline view of an [extension](extensions.md) covers part of the `updateModelContext` gap: it can add context the model sees, not transform the request.
+
+### Events that do not exist
+
+Nothing fires on chat create, fork or delete, on settings, provider or model changes, on MCP server start or stop, on file or shell activity outside a chat, or on the outgoing model request. A plugin that needs those has to poll through its own view's tools, or needs a core change.
+
+### Calls that run no hooks
+
+Hooks check what the **model** does. A command you run from the composer (`/shell`, `@action`, a direct MCP call) runs none, a tool that shows no approval card runs none (progress updates, `list_features`, skill activation), and a subagent's tool calls run none unless the hook has **Also run for subagents' tool calls**. A `tool.after` never fires for a background subagent's result, which lands after its call returned.
+
+### Where a handler can reach
+
+- **Module** hooks are evaluated in a fresh sandbox with no `require`, `import`, `process`, `fetch`, `fs` or timers: they get the event and `ctx.log` / `ctx.match`. This keeps them cheap, not safe — an `http` hook is the way to reach another machine.
+- **Command** and **script** hooks run with your permissions like any command, with the environment allowlisted and `os.setPriority` lowered.
+- **MCP** hooks call one tool on the extension's own server with the event as arguments and read the answer from `structuredContent` or the first text block.
+
+### Budgets
+
+Four hooks run per event per call; a fifth that matches is *skipped* — and **blocks** if it has **Block when the hook fails or times out** ticked. Eight hook processes run at once across the app, context is capped at 8 KB per event, a follow-up chain stops at 3, and a hook times out between 0.5 and 60 s (default 5 s) and can only delay the notification it silences.
+
 ## What the model sees
 
 A blocked call returns `{ "ok": false, "code": "EHOOK_BLOCKED", "reason": "…", "hook": "<id>" }` as the tool's result, so the model can change course.
