@@ -11,7 +11,6 @@ process.env.MOUAIF_HOME = path.join(root, 'home');
 const settings = require('../src/settings.js');
 const runs = require('../src/runs.js');
 const schedules = require('../src/schedules.js');
-const runTool = require('../src/tools/run.js');
 const scheduleTool = require('../src/tools/schedule.js');
 
 const MIN = 60 * 1000;
@@ -51,27 +50,32 @@ const scheduler = schedules.createScheduler({
   hooks: { gate: (dir, id) => manager.gate(dir, id), delivered: (dir, id, gate) => manager.delivered(dir, id, gate), onTick: () => manager.watch() }
 });
 const ctx = { projectDir, chatId: CHAT };
-const tool = (name, args, opts) => runTool.runRunTool(name, args, opts || ctx, manager);
+// Calls the run manager the way the old model tools did, returning { ok, result }.
+const tool = async (name, args, opts) => {
+  const c = opts || ctx;
+  try {
+    let result;
+    if (name === 'run_start') result = { ok: true, run: manager.start(c, args) };
+    else if (name === 'run_status') {
+      const run = manager.status(c);
+      result = run ? { ok: true, run, shouldContinue: run.status === 'running' } : { ok: true, run: null };
+    } else result = { ok: true, run: manager.end(c, args) };
+    return { ok: true, result };
+  } catch (e) {
+    return { ok: false, result: { ok: false, code: e.code } };
+  }
+};
 const wakeRunners = scheduleTool.createRunners({ store: scheduleStore, now, getChat, runOf: (dir, id) => manager.get(dir, id) });
 const wake = (args) => scheduleTool.runScheduleTool('schedule_wake', args, ctx, wakeRunners);
 
 async function main() {
-  // ---- specs and validation ------------------------------------------------------
-  assert.deepEqual([...runTool.NAMES], ['run_start', 'run_status', 'run_end']);
+  // ---- validation ------------------------------------------------------
   const bad = async (name, args, code, opts) => assert.equal((await tool(name, args, opts)).result.code, code, name + JSON.stringify(args));
   await bad('run_start', {}, 'EBADINPUT');
   await bad('run_start', { goal: ' ' }, 'EBADINPUT');
   await bad('run_start', { goal: 'x'.repeat(501) }, 'EBADINPUT');
-  await bad('run_start', { goal: 'x', maxTurns: 0 }, 'EBADINPUT');
-  await bad('run_start', { goal: 'x', maxTurns: 501 }, 'EBADINPUT');
-  await bad('run_start', { goal: 'x', maxTurns: 1.5 }, 'EBADINPUT');
-  await bad('run_start', { goal: 'x', maxCostUsd: 0 }, 'EBADINPUT');
-  await bad('run_start', { goal: 'x', maxHours: 169 }, 'EBADINPUT');
-  await bad('run_start', { goal: 'x', bogus: 1 }, 'EBADINPUT');
-  await bad('run_start', { goal: 'x' }, 'EBADINPUT', { projectDir });
   await bad('run_start', { goal: 'x' }, 'ENOTARGET', { projectDir, chatId: 'gone' });
   await bad('run_end', {}, 'ENOTARGET');
-  await bad('run_end', { outcome: 'maybe' }, 'EBADINPUT');
   assert.equal((await tool('run_status', {})).result.run, null, 'no run yet');
 
   // ---- start / status / end -----------------------------------------------------------

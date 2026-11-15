@@ -82,7 +82,7 @@ function createRunStore({ getDb = () => require('./settings.js').getDb(), now = 
     start(run) {
       const d = open();
       const existing = this.get(run.projectDir, run.chatId);
-      if (existing && ACTIVE.includes(existing.status)) throw err('EEXISTS', 'This chat already has a ' + existing.status + ' run; call run_end first');
+      if (existing && ACTIVE.includes(existing.status)) throw err('EEXISTS', 'This chat already has a ' + existing.status + ' run');
       const time = now();
       d.prepare(`INSERT OR REPLACE INTO agent_run (project_dir, chat_id, goal, status, max_turns, max_cost, deadline_at, turns_used, start_cost, nudges, created_at, updated_at, kind)
         VALUES (?, ?, ?, 'running', ?, ?, ?, 0, ?, 0, ?, ?, ?)`).run(run.projectDir, run.chatId, run.goal, run.maxTurns,
