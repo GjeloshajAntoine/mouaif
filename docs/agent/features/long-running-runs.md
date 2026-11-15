@@ -19,5 +19,5 @@ Run `node scripts/test-runs.js`, `node scripts/test-long-run-e2e.js` and `node s
 - REST: `GET /api/chats/:id/run?projectDir=` and `POST /api/chats/:id/run { projectDir, action }` in `src/server-handlers-chats.js`. `ENOTARGET` maps to 409, a missing store to 503.
 - Notifications use `push.sendPushToAll` with tag `chat-<id>-run`; failures are swallowed.
 - Frontend: `RunDock.jsx` (polls the endpoint every 5 s while active, 30 s otherwise, and not while the tab is hidden) with its text helpers in `runDock.js` and styles in `run-dock.css`, mounted in `Chat.jsx` next to `AgentNetworkDock`. Dismissal of a stalled or exhausted run is per browser (`localStorage`, keyed by chat and run start).
-- Tools: `src/tools/run.js`; dispatch in `src/ai-stream.js`; catalog in `src/server-handlers-tools.js`; family leaves in `src/tools/authorization.js` and `frontend/src/toolGroups.js`. `schedule_wake` asks `runOf()` and refuses with `ERUN_ENDED`.
+- Tools: there are no run tools for agents (`run_start`/`run_status`/`run_end` were removed; the frontend keeps their labels for old transcripts). `schedule_wake` asks `runOf()` and refuses with `ERUN_ENDED`.
 - Tests: `scripts/test-runs.js` (real SQLite, fake clock), `scripts/test-long-run-e2e.js` (real dispatcher, scheduler, chat runner and REST handler; only the model is faked), `scripts/test-run-dock.mjs`.
