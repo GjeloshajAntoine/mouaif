@@ -1323,10 +1323,19 @@ async function streamChatInScope(opts) {
     // @agent dispatch from the composer). Closure state: convo (tool
     // messages), call-key circuit breaker, delegated-usage counters,
     // and the discoveredToolNames set for the very-small profile.
+    // Every call card of this round carries the same `round` key (the id of
+    // the round's first call). It is stored on the call row, so a reloaded
+    // chat rebuilds the round as the ONE assistant message it was sent as
+    // (src/messages.js reconstructUpstreamHistory) and the provider's
+    // prompt cache still matches.
+    const roundKey = calls.length > 1 && calls[0].id ? String(calls[0].id) : '';
+    const roundEvent = roundKey
+      ? (name, data) => onEvent(name, name === 'tool_call' ? Object.assign({}, data, { round: roundKey }) : data)
+      : onEvent;
     const runOneCall = async (c) => {
       const out = await runSingleToolCall(c, {
         opts,
-        onEvent,
+        onEvent: roundEvent,
         convo,
         toolSpecs,
         visibleToolSpecs,

@@ -1654,7 +1654,8 @@ promptSize: resolvedProfileId,
         try {
           messages.appendMessage(projectDir, chatId, {
             role: 'tool', phase: 'call', toolCallId: data.id || '', name: data.name || '',
-            args: data.args || {}, content: JSON.stringify(data.args || {})
+            args: data.args || {}, content: JSON.stringify(data.args || {}),
+            round: data.round || undefined
           });
         } catch { /* non-fatal */ }
       } else if (name === 'tool_result') {

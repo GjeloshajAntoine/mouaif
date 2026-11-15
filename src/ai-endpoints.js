@@ -1289,7 +1289,7 @@ function buildOpenAIRequest(model, messages, stream, specs, requestOpts) {
   // cache_control breakpoints on message content blocks. The native
   // Anthropic builder adds them; the plain OpenAI body has none, so
   // Claude-via-OpenRouter would get a 0% cache hit on every turn. Inject
-  // the same breakpoints (last system message + penultimate message) the
+  // the same breakpoints (last system message + last message) the
   // native path uses. Other OpenAI-shaped providers are untouched.
   const effectiveMessages = isOpenRouterAnthropicModel(model)
     ? injectOpenRouterAnthropicCache(messages)
@@ -1509,26 +1509,29 @@ function openAIMessageToAnthropic(m) {
   return { role: m.role || 'user', content };
 }
 
-// markPenultimateMessage(messages) — add a cache_control breakpoint to the
-// second-to-last converted message. The penultimate message is the deepest
-// point of the stable, replayed prefix: everything before the current turn
-// (system, tools, and the full history) is re-sent byte-identically on every
-// request — each tool round and every follow-up user turn — so the next
-// request reads it from cache at the discounted rate. The FINAL message is
-// never marked: a breakpoint on the current turn is ignored by the API and
-// its content is not part of the stable prefix anyway. Plain-text messages
-// are wrapped in a text block because cache_control is only honored on
-// object blocks.
-function markPenultimateMessage(messages) {
-  const target = messages[messages.length - 2];
+// markLastMessage(messages) — add a cache_control breakpoint to the last
+// converted message. The whole request up to and including the current turn
+// is then written to the cache, and the next request (the next tool round or
+// the next user turn) replays it byte-identically and reads it at the
+// discounted rate. Marking an earlier message instead leaves the newest one
+// — usually a large tool result — billed at the full input rate now and
+// again as a cache write on the next request. Plain-text messages are
+// wrapped in a text block because cache_control is only honored on object
+// blocks; thinking blocks cannot carry a marker, so the last other block is
+// used.
+function markLastMessage(messages) {
+  const target = messages[messages.length - 1];
   if (!target || !target.content) return;
   if (!Array.isArray(target.content)) {
     target.content = [{ type: 'text', text: String(target.content), cache_control: { type: 'ephemeral' } }];
     return;
   }
-  const last = target.content[target.content.length - 1];
-  if (last && typeof last === 'object' && !last.cache_control) {
-    last.cache_control = { type: 'ephemeral' };
+  for (let i = target.content.length - 1; i >= 0; i--) {
+    const block = target.content[i];
+    if (!block || typeof block !== 'object') continue;
+    if (block.type === 'thinking' || block.type === 'redacted_thinking') continue;
+    if (!block.cache_control) block.cache_control = { type: 'ephemeral' };
+    return;
   }
 }
 
@@ -1547,7 +1550,7 @@ function isOpenRouterAnthropicModel(model) {
 
 // markOpenAIMessageCache(message) — add a cache_control breakpoint to an
 // OpenAI-shaped message by wrapping/annotating its content parts. Mirrors
-// markPenultimateMessage but for the OpenAI content shape OpenRouter
+// markLastMessage but for the OpenAI content shape OpenRouter
 // consumes: a plain string is wrapped in a single text part, and the last
 // part of an existing array gets the marker. Returns a NEW message object
 // so the caller never mutates the shared conversation array.
@@ -1576,10 +1579,8 @@ function markOpenAIMessageCache(message) {
 // conversation with cache_control breakpoints placed the same way
 // buildAnthropicRequest places them on the native path: the LAST system
 // message (the stable profile + agent files + custom prompt block) and
-// the penultimate message (the deepest point of the replayed prefix:
-// system + history). The final message is never marked — a breakpoint on
-// the current turn is ignored and its content is not part of the stable
-// prefix. The input array is never mutated.
+// the last message (so the whole request is written to the cache and the
+// next request reads it). The input array is never mutated.
 function injectOpenRouterAnthropicCache(messages) {
   if (!Array.isArray(messages) || !messages.length) return messages;
   const out = messages.slice();
@@ -1587,19 +1588,12 @@ function injectOpenRouterAnthropicCache(messages) {
   for (let i = out.length - 1; i >= 0; i--) {
     if (out[i] && out[i].role === 'system') { out[i] = markOpenAIMessageCache(out[i]); break; }
   }
-  // Penultimate breakpoint → cache system + tools + history once there is
-  // any history to replay (caching engages from the second request).
-  // Walk back from the penultimate message to the deepest one that can
-  // actually carry a breakpoint. In the agentic tool loop the penultimate
-  // message is often an assistant tool-call message with `content: null`
-  // (the OpenAI shape keeps tool calls in `tool_calls`, not in content),
-  // and cache_control is only honored on a content block. Marking that
-  // message is a no-op, which on the native path is harmless (the system
-  // block still clears the minimum) but here would leave ONLY the small
-  // system block marked — usually below Claude's minimum cacheable length,
-  // so every tool round got a 0% cache hit. Skip content-less messages so
-  // a real breakpoint always lands.
-  for (let i = out.length - 2; i >= 0; i--) {
+  // Last message → cache system + tools + the whole conversation. Walk back
+  // to the deepest message that can actually carry a breakpoint: an
+  // assistant tool-call message has `content: null` (the OpenAI shape keeps
+  // tool calls in `tool_calls`, not in content), and cache_control is only
+  // honored on a content block.
+  for (let i = out.length - 1; i >= 0; i--) {
     const m = out[i];
     if (!m || m.role === 'system' || m.content == null || m.content === '') continue;
     out[i] = markOpenAIMessageCache(out[i]);
@@ -1686,8 +1680,7 @@ function anthropicEffort(level, efforts) {
 // one round into a single user message. The tool loop appends one `tool`
 // message per call; Anthropic expects every result of a round together
 // (split results teach the model to stop making parallel calls). Other user
-// content (image follow-ups, the next prompt) stays in its own message so
-// the penultimate cache breakpoint keeps landing on the results.
+// content (image follow-ups, the next prompt) stays in its own message.
 function mergeAnthropicToolResults(messages) {
   const onlyToolResults = (msg) => msg && msg.role === 'user' && Array.isArray(msg.content)
     && msg.content.length > 0 && msg.content.every((b) => b && b.type === 'tool_result');
@@ -1718,25 +1711,23 @@ function buildAnthropicRequest(model, messages, stream, specs) {
   // tool_calls become tool_use blocks, `tool` role messages become
   // tool_result user messages. Without this conversion the multi-turn
   // tool loop could never run against Claude. Conversion happens first
-  // because empty segments drop out — the penultimate breakpoint below
-  // must target the array actually sent upstream.
+  // because empty segments drop out — the message breakpoint below must
+  // target the array actually sent upstream.
   const convertedMessages = mergeAnthropicToolResults(chatMessages.map(openAIMessageToAnthropic).filter(Boolean));
   const traits = anthropicModelTraits(model.id);
   // Without an explicit cap, ask for the model's room: a streamed reply
   // has no HTTP timeout to fear, and a low default (this used to be 1024)
   // silently cut answers and tool arguments short.
   const defaultMaxTokens = stream ? Math.min(64000, traits.maxOutput) : Math.min(16000, traits.maxOutput);
-  // Cache breakpoint on the penultimate message. Anthropic only honors a
-  // cache_control marker when the prompt prefix before it exceeds the
-  // per-model minimum cacheable length (1024 tokens for Sonnet 3.5/3.7,
-  // 4096 for Sonnet 4 / Opus 4 / Haiku 4.5). The system block alone — and
-  // even the system block plus a small tool set — is usually below that,
-  // so a system-only breakpoint is silently ignored and caching never
-  // happens. The penultimate-message breakpoint guarantees the cached
-  // prefix (system + tools + history) clears the minimum whenever there
-  // is any history to replay: caching engages from the second request of
-  // a conversation, even with every tool switched off.
-  if (convertedMessages.length >= 2) markPenultimateMessage(convertedMessages);
+  // Cache breakpoint on the last message. Anthropic only honors a
+  // cache_control marker when the prompt prefix before it reaches the
+  // per-model minimum cacheable length (512 to 4096 tokens depending on the
+  // model). The system block alone — and even the system block plus a small
+  // tool set — is often below that, so a system-only breakpoint is silently
+  // ignored. The last-message breakpoint covers system + tools + the whole
+  // conversation, so the next request reads all of it from the cache, even
+  // with every tool switched off.
+  markLastMessage(convertedMessages);
   const body = {
     model: model.id,
     max_tokens: maxOutputNum || defaultMaxTokens,
@@ -1756,7 +1747,7 @@ function buildAnthropicRequest(model, messages, stream, specs) {
   // the other providers advertise. Marking the LAST tool definition with
   // cache_control extends the cached prefix far past the system block, so
   // the tool marker alone usually clears the minimum cacheable length.
-  // The penultimate-message breakpoint above still applies for requests
+  // The last-message breakpoint above still applies for requests
   // whose prefix is short (no tools, or a small tool set).
   const tools = openAIToolsToAnthropic(specs);
   if (tools.length) {

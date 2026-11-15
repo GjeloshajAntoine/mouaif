@@ -45,6 +45,7 @@
 | `args` | TEXT | Nullable, JSON |
 | `ok` | INTEGER | Nullable, 0/1 |
 | `phase` | TEXT | `call` or `result` |
+| `round` | TEXT | Nullable, call rows only. The id of the first call of a round in which the model asked for several tools; rows sharing it are rebuilt as one assistant message. See [prompt-caching.md](prompt-caching.md) |
 | `client_id` | TEXT | Nullable. Row identity from before the row had a `seq`; unique per chat. See [chat-client-row-ids.md](chat-client-row-ids.md) |
 **`chat_artifact`** table — one row per [chat artifact](./chat-artifacts.md) of a DB-backed project, created by `src/artifactStores.js`, with `content` as a BLOB. Deleted with its chat. File-backed projects keep artifacts in the project folder instead.
 ### Module structure

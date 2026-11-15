@@ -177,6 +177,9 @@ if (typeof m.name === 'string') out.name = m.name;
 if (m.args && typeof m.args === 'object') out.args = m.args;
 if (typeof m.ok === 'boolean') out.ok = m.ok;
 if (typeof m.phase === 'string') out.phase = m.phase;
+// The round a call belonged to when the model asked for several tools at
+// once: the id of that round's first call. Absent on a single-call round.
+if (typeof m.round === 'string' && m.round) out.round = m.round.slice(0, 200);
 }
 return out;
 }
@@ -312,6 +315,10 @@ const toolOutput = options && options.toolOutput;
 const out = [];
 const usedIds = new Set();
 let pairNumber = 0;
+// The multi-call round being rebuilt: its assistant message, where its tool
+// messages start in `out`, and the row index of each result (live, the
+// results follow the assistant message in the order they finished).
+let openRound = null;
 for (let i = 0; i < source.length; i++) {
 const m = source[i];
 if (!m || typeof m !== 'object') continue;
@@ -352,15 +359,29 @@ try { storedResult = JSON.parse(storedContent); } catch { /* plain-text result *
 // one assistant message. Persistence keeps the text as a separate UI
 // segment immediately before the call card; merge that segment back
 // on replay so resumed chats serialize the same provider-cache prefix.
+//
+// Several calls made in one round were sent as ONE assistant message
+// followed by their results. Their rows share a `round` key; a call that
+// continues the round still open at the end of `out` joins that message
+// instead of starting its own, for the same reason.
+const round = typeof m.round === 'string' ? m.round : '';
+const joinsRound = !!(round && openRound && openRound.key === round
+&& out.length === openRound.start + openRound.results.length);
+if (joinsRound) {
+openRound.assistant.tool_calls.push({ id: wireId, type: 'function', function: { name, arguments: args } });
+} else {
 const previous = out[out.length - 1];
 const mergePreviousAssistant = previous && previous.role === 'assistant'
 && !previous.tool_calls && typeof previous.content === 'string' && previous.content.trim();
 if (mergePreviousAssistant) out.pop();
-out.push({
+const assistant = {
 role: 'assistant',
 content: mergePreviousAssistant ? previous.content : null,
 tool_calls: [{ id: wireId, type: 'function', function: { name, arguments: args } }]
-});
+};
+out.push(assistant);
+openRound = round ? { key: round, assistant, start: out.length, results: [] } : null;
+}
 const feedback = toolFeedback.compactToolFeedback({
 name, content: storedContent, result: storedResult, maxBytes: toolFeedbackMaxBytes, toolOutput,
 imageRefs: name === 'subagent' && Number.isSafeInteger(result.seq)
@@ -368,12 +389,20 @@ imageRefs: name === 'subagent' && Number.isSafeInteger(result.seq)
 });
 // A result a tool.after hook redacted replays as the model saw it.
 const seen = result.hooks && result.hooks.redacted && typeof result.hooks.modelContent === 'string' ? result.hooks.modelContent : feedback;
-out.push({
+const toolMessage = {
 role: 'tool', tool_call_id: wireId, name,
 // Context a hook added to this result rides after it, exactly as the
 // model saw it live (src/ai-stream.js), so a resumed chat keeps it.
 content: withHookContext(seen, result.hooks)
-});
+};
+if (openRound) {
+let at = openRound.results.length;
+while (at > 0 && openRound.results[at - 1] > resultIndex) at--;
+openRound.results.splice(at, 0, resultIndex);
+out.splice(openRound.start + at, 0, toolMessage);
+} else {
+out.push(toolMessage);
+}
 if (resultIndex === i + 1) i++;
 continue;
 }

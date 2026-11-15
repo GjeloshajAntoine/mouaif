@@ -139,15 +139,14 @@ if (orBuild) {
   const cm = chatReq.body.messages;
   check('cache: system block marked in a plain chat',
     hasCacheControl(cm[0].content));
-  check('cache: penultimate message marked in a plain chat',
-    hasCacheControl(cm[cm.length - 2].content));
-  check('cache: final (current-turn) message NOT marked',
-    !hasCacheControl(cm[cm.length - 1].content));
+  check('cache: last message marked in a plain chat',
+    hasCacheControl(cm[cm.length - 1].content));
+  check('cache: earlier history messages NOT marked',
+    cm.every((m, i) => i === cm.length - 1 || m.role === 'system' || !hasCacheControl(m.content)));
 
-  // Agentic tool loop: the penultimate message is an assistant tool-call
-  // message with content:null (OpenAI keeps calls in tool_calls). The
-  // breakpoint must walk back to a message that can hold it, or Claude
-  // gets a 0% cache hit on every tool round.
+  // Agentic tool loop: the last message is the tool result, which carries
+  // the breakpoint. A tool-call message has content:null (OpenAI keeps
+  // calls in tool_calls) and can never hold one.
   const toolReq = orBuild(model, [
     { role: 'system', content: 'stable system prefix' },
     { role: 'user', content: 'do the thing' },
@@ -155,10 +154,9 @@ if (orBuild) {
     { role: 'tool', tool_call_id: 'c1', content: 'tool output' }
   ], true, [{ type: 'function', function: { name: 'shell', description: 'run', parameters: { type: 'object' } } }]);
   const tm = toolReq.body.messages;
-  const historyMarked = tm.some((m, i) => i < tm.length - 1 && m.role !== 'system' && hasCacheControl(m.content));
-  check('cache: a history breakpoint lands in the tool loop (content:null skipped)',
-    historyMarked,
-    'no non-system history message carried cache_control');
+  check('cache: the tool result (last message) carries the breakpoint in the tool loop',
+    hasCacheControl(tm[3].content) && !hasCacheControl(tm[1].content),
+    'the last message carried no cache_control');
   check('cache: the content:null tool-call message is NOT marked',
     !hasCacheControl(tm[2].content));
 } else {

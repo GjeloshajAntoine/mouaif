@@ -161,6 +161,32 @@ const SPECS = [{ type: 'function', function: { name: 'report_progress', descript
     check('S4: other system rows are kept', kept.length === 2);
   }
 
+  // ---- Rounds: several calls of one round rebuild as one message ----
+  {
+    const call = (id, round) => ({ role: 'tool', phase: 'call', toolCallId: id, name: 'shell', args: { cmd: id }, content: '{}', ...(round ? { round } : {}) });
+    const result = (id) => ({ role: 'tool', phase: 'result', toolCallId: id, name: 'shell', ok: true, content: '{"ok":true}' });
+    const history = messages.reconstructUpstreamHistory([
+      { role: 'user', content: 'go' },
+      { role: 'assistant', content: 'Checking both.' },
+      call('a1', 'a1'), result('a1'), call('a2', 'a1'), result('a2'),
+      call('b1', 'b1'), result('b1'), call('b2', 'b1'), result('b2'),
+      call('c1'), result('c1'), call('d1'), result('d1')
+    ]);
+    const shape = history.map((m) => m.role === 'assistant' ? 'A' + m.tool_calls.map((t) => t.id).join('+') : m.role === 'tool' ? 'T' + m.tool_call_id : 'U');
+    check('rounds: calls sharing a round key share one assistant message',
+      shape.join(' ') === 'U Aa1+a2 Ta1 Ta2 Ab1+b2 Tb1 Tb2 Ac1 Tc1 Ad1 Td1', shape.join(' '));
+    check('rounds: the text before the round stays on its assistant message', history[1].content === 'Checking both.');
+    // Parallel subagents: results are stored in the order they finished.
+    const sub = (id) => ({ role: 'tool', phase: 'call', toolCallId: id, name: 'subagent', args: {}, content: '{}', round: 's1' });
+    const subResult = (id) => ({ role: 'tool', phase: 'result', toolCallId: id, name: 'subagent', ok: true, content: '{"ok":true,"text":"x"}' });
+    const parallel = messages.reconstructUpstreamHistory([
+      { role: 'user', content: 'go' }, sub('s1'), sub('s2'), subResult('s2'), subResult('s1')
+    ]);
+    check('rounds: parallel results keep their finishing order',
+      parallel.length === 4 && parallel[1].tool_calls.length === 2
+        && parallel[2].tool_call_id === 's2' && parallel[3].tool_call_id === 's1', JSON.stringify(parallel));
+  }
+
   // ---- F3: retry reuses the saved prompt ----------------------------
   {
     const err = { role: 'system', content: '⚠ EUPSTREAM: boom' };

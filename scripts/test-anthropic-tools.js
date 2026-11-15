@@ -61,16 +61,18 @@ const MODEL = { id: 'claude-sonnet-4-5', provider: 'anthropic', maxTokens: 4096,
     JSON.stringify(req.headers));
   check('builder: assistant tool_calls -> tool_use block', req.body.messages[1].role === 'assistant' && req.body.messages[1].content[0].type === 'tool_use' && req.body.messages[1].content[0].id === 'toolu_01abc' && req.body.messages[1].content[0].input.title === 'T');
   check('builder: tool role -> user tool_result', req.body.messages[2].role === 'user' && req.body.messages[2].content[0].type === 'tool_result' && req.body.messages[2].content[0].tool_use_id === 'toolu_01abc');
-  // The penultimate message (the deepest stable, replayed point) carries
-  // the breakpoint that guarantees the cached prefix clears the per-model
-  // minimum cacheable length even when the system + tools prefix is short.
-  check('builder: penultimate message cacheable (tool_result block)',
-    req.body.messages.length === 4 && req.body.messages[2].content[0].cache_control
-      && req.body.messages[2].content[0].cache_control.type === 'ephemeral',
+  // The last message carries the breakpoint, so the whole request is
+  // written to the cache and the next request reads all of it. It also
+  // guarantees the cached prefix clears the per-model minimum cacheable
+  // length when the system + tools prefix is short.
+  check('builder: last message cacheable',
+    req.body.messages.length === 4 && req.body.messages[3].content[0].cache_control
+      && req.body.messages[3].content[0].cache_control.type === 'ephemeral',
     JSON.stringify(req.body.messages));
-  check('builder: final message never marked',
-    !req.body.messages[req.body.messages.length - 1].cache_control
-      && !(req.body.messages[req.body.messages.length - 1].content && req.body.messages[req.body.messages.length - 1].content[0] && req.body.messages[req.body.messages.length - 1].content[0].cache_control));
+  check('builder: earlier messages carry no marker',
+    JSON.stringify(req.body.messages.slice(0, 3)).indexOf('cache_control') < 0);
+  check('builder: three breakpoints in all (system, last tool, last message)',
+    (JSON.stringify(req.body).match(/cache_control/g) || []).length === 3);
 
   // Prompt caching is generally available and works alongside OAuth's beta gate.
   const oauthReq = BUILDERS.anthropic(Object.assign({}, MODEL, { auth: 'oauth' }), messages, true, SPECS);
@@ -85,13 +87,14 @@ const MODEL = { id: 'claude-sonnet-4-5', provider: 'anthropic', maxTokens: 4096,
   // Empty specs -> no tools field at all (system-only request stays valid).
   const noToolsReq = BUILDERS.anthropic(MODEL, [{ role: 'user', content: 'hi' }], true, undefined);
   check('builder: no specs -> no tools field', !('tools' in noToolsReq.body));
-  check('builder: single-message request has no message marker',
-    typeof noToolsReq.body.messages[0].content === 'string'
-      || !('cache_control' in (Array.isArray(noToolsReq.body.messages[0].content) ? noToolsReq.body.messages[0].content[0] : {})));
+  check('builder: single-message request marks that message',
+    Array.isArray(noToolsReq.body.messages[0].content)
+      && noToolsReq.body.messages[0].content[0].text === 'hi'
+      && noToolsReq.body.messages[0].content[0].cache_control.type === 'ephemeral',
+    JSON.stringify(noToolsReq.body.messages));
 
-  // With NO tools and a short system block, the penultimate-message
-  // breakpoint is what makes the cache engage — the exact "every tool
-  // switched off" case.
+  // With NO tools and a short system block, the last-message breakpoint is
+  // what makes the cache engage — the exact "every tool switched off" case.
   const arraySystemReq = BUILDERS.anthropic(MODEL, [
     { role: 'system', content: [{ type: 'text', text: 'A', cache_control: { type: 'ephemeral' } }, { type: 'text', text: 'B' }] },
     { role: 'user', content: 'hi' }
@@ -106,24 +109,24 @@ const MODEL = { id: 'claude-sonnet-4-5', provider: 'anthropic', maxTokens: 4096,
     { role: 'assistant', content: 'Hello!' },
     { role: 'user', content: 'run the tools' }
   ], true, undefined);
-  check('builder: no-tools request marks the penultimate message',
+  check('builder: no-tools request marks the last message',
     !('tools' in bareReq.body) && bareReq.body.messages.length === 3
-      && bareReq.body.messages[1].content[0].cache_control
-      && bareReq.body.messages[1].content[0].cache_control.type === 'ephemeral',
+      && bareReq.body.messages[2].content[0].cache_control
+      && bareReq.body.messages[2].content[0].cache_control.type === 'ephemeral',
     JSON.stringify(bareReq.body.messages));
-  // A plain-text penultimate message is wrapped into an object text block
-  // so the cache_control field is honored.
+  // A plain-text last message is wrapped into an object text block so the
+  // cache_control field is honored.
   const textReq = BUILDERS.anthropic(MODEL, [
     { role: 'user', content: 'first' },
     { role: 'assistant', content: 'answer' },
     { role: 'user', content: 'second' }
   ], true, undefined);
-  check('builder: plain-text penultimate wrapped as text block',
+  check('builder: plain-text last message wrapped as text block',
     textReq.body.messages.length === 3
-      && textReq.body.messages[1].content[0].type === 'text'
-      && textReq.body.messages[1].content[0].text === 'answer'
-      && textReq.body.messages[1].content[0].cache_control,
-    JSON.stringify(textReq.body.messages[1]));
+      && textReq.body.messages[2].content[0].type === 'text'
+      && textReq.body.messages[2].content[0].text === 'second'
+      && textReq.body.messages[2].content[0].cache_control,
+    JSON.stringify(textReq.body.messages[2]));
 }
 
 // ---- 2. Parser ----------------------------------------------------------
@@ -212,12 +215,13 @@ const MODEL = { id: 'claude-sonnet-4-5', provider: 'anthropic', maxTokens: 4096,
     check('loop: request 1 last tool cacheable', capturedBodies[0].tools[capturedBodies[0].tools.length - 1].cache_control !== undefined);
     check('loop: request 2 carries tool_use block', capturedBodies[1].messages.some((m) => m.role === 'assistant' && Array.isArray(m.content) && m.content.some((c) => c.type === 'tool_use' && c.id === 'toolu_01')), JSON.stringify(capturedBodies[1].messages));
     check('loop: request 2 carries tool_result block', capturedBodies[1].messages.some((m) => m.role === 'user' && Array.isArray(m.content) && m.content.some((c) => c.type === 'tool_result' && c.tool_use_id === 'toolu_01')), JSON.stringify(capturedBodies[1].messages));
-    // Request 2's penultimate message (the assistant tool_use turn) carries
-    // the cache breakpoint that guarantees the prefix clears the minimum.
-    check('loop: request 2 penultimate message cacheable',
+    // Request 2's last message (the tool_result turn) carries the cache
+    // breakpoint, so the next request reads the whole round from the cache.
+    check('loop: request 2 last message cacheable',
       capturedBodies[1].messages.length === 3
-        && capturedBodies[1].messages[1].content[0].cache_control
-        && capturedBodies[1].messages[1].content[0].cache_control.type === 'ephemeral',
+        && capturedBodies[1].messages[2].content[0].cache_control
+        && capturedBodies[1].messages[2].content[0].cache_control.type === 'ephemeral'
+        && JSON.stringify(capturedBodies[1].messages.slice(0, 2)).indexOf('cache_control') < 0,
       JSON.stringify(capturedBodies[1].messages));
     check('loop: cache_creation folded into done usage', usage && usage.cacheCreationTokens === 5000, JSON.stringify(usage));
     check('loop: cache_read folded into done usage', usage && usage.cacheReadTokens === 5200, JSON.stringify(usage));
@@ -225,6 +229,53 @@ const MODEL = { id: 'claude-sonnet-4-5', provider: 'anthropic', maxTokens: 4096,
     check('loop: completion tokens summed across rounds', usage && usage.completionTokens === 55, JSON.stringify(usage));
   } finally {
     global.fetch = realFetch;
+  }
+
+  // A round with two calls: both call cards carry the same `round` key, and
+  // the rows stored from them rebuild the request the live loop sent.
+  {
+    const bodies = [];
+    const block = (index, id, current) => [
+      '{"type":"content_block_start","index":' + index + ',"content_block":{"type":"tool_use","id":"' + id + '","name":"report_progress","input":{}}}',
+      '{"type":"content_block_delta","index":' + index + ',"delta":{"type":"input_json_delta","partial_json":"{\\"title\\":\\"Round\\",\\"current\\":' + current + ',\\"total\\":2,\\"status\\":\\"running\\"}"}}',
+      '{"type":"content_block_stop","index":' + index + '}'
+    ];
+    const queue = [
+      sseText('{"type":"message_start","message":{"usage":{"input_tokens":10}}}',
+        ...block(0, 'toolu_a', 1), ...block(1, 'toolu_b', 2),
+        '{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":5}}', '{"type":"message_stop"}'),
+      sseText('{"type":"message_start","message":{"usage":{"input_tokens":10}}}',
+        '{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+        '{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Done."}}',
+        '{"type":"content_block_stop","index":0}',
+        '{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}', '{"type":"message_stop"}')
+    ];
+    global.fetch = async (url, opts) => {
+      bodies.push(JSON.parse(opts.body));
+      const text = queue.shift();
+      return { ok: true, status: 200, statusText: 'OK', body: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(text)); c.close(); } }) };
+    };
+    try {
+      const events = [];
+      await streamChat({ model: MODEL, messages: [{ role: 'user', content: 'hello' }], onEvent: (name, data) => events.push({ name, data }) });
+      const cards = events.filter((e) => e.name === 'tool_call');
+      check('round: both call cards carry the first call id as round',
+        cards.length === 2 && cards[0].data.round === 'toolu_a' && cards[1].data.round === 'toolu_a', JSON.stringify(cards));
+      // Store the rows the way src/server-handlers-chats.js does, then rebuild.
+      const rows = [{ role: 'user', content: 'hello' }];
+      for (const e of events) {
+        if (e.name === 'tool_call') rows.push({ role: 'tool', phase: 'call', toolCallId: e.data.id, name: e.data.name, args: e.data.args, round: e.data.round });
+        if (e.name === 'tool_result') rows.push({ role: 'tool', phase: 'result', toolCallId: e.data.id, name: e.data.name, ok: e.data.ok, content: JSON.stringify(e.data.result || {}) });
+      }
+      const rebuilt = BUILDERS.anthropic(MODEL, require('../src/messages.js').reconstructUpstreamHistory(rows), true, undefined).body.messages;
+      const live = bodies[1].messages;
+      check('round: rebuilt request equals the live one', JSON.stringify(rebuilt) === JSON.stringify(live),
+        JSON.stringify(rebuilt) + ' vs ' + JSON.stringify(live));
+      check('round: one assistant message with both tool_use blocks, one user message with both results',
+        live.length === 3 && live[1].content.length === 2 && live[2].content.length === 2);
+    } finally {
+      global.fetch = realFetch;
+    }
   }
 
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');

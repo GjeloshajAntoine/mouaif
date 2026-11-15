@@ -40,12 +40,11 @@ function lastPartCache(msg) {
 
   ok(lastPartCache(sent[0]) && lastPartCache(sent[0]).type === 'ephemeral',
     'openrouter claude: system message carries cache_control');
-  // Penultimate is the assistant "first answer" (index 2).
-  ok(lastPartCache(sent[2]) && lastPartCache(sent[2]).type === 'ephemeral',
-    'openrouter claude: penultimate message carries cache_control');
-  // Final message must never be marked.
-  ok(lastPartCache(sent[3]) == null,
-    'openrouter claude: final message not marked');
+  // The last message carries the breakpoint, so the whole request is cached.
+  ok(lastPartCache(sent[3]) && lastPartCache(sent[3]).type === 'ephemeral',
+    'openrouter claude: last message carries cache_control');
+  ok(lastPartCache(sent[2]) == null && typeof sent[1].content === 'string',
+    'openrouter claude: earlier messages not marked');
   // Input array not mutated.
   ok(typeof messages[0].content === 'string',
     'openrouter claude: original messages array untouched');
@@ -56,9 +55,8 @@ function lastPartCache(msg) {
   const messages = [{ role: 'user', content: 'hello' }];
   const req = BUILDERS.openrouter(OR_CLAUDE, messages, true);
   const sent = req.body.messages;
-  // No system, only one message -> penultimate does not exist; nothing to cache.
-  ok(lastPartCache(sent[0]) == null,
-    'openrouter claude: single message has no breakpoint');
+  ok(lastPartCache(sent[0]) && lastPartCache(sent[0]).type === 'ephemeral',
+    'openrouter claude: single message carries the breakpoint');
 }
 
 // --- OpenRouter Claude: system + one user message ----------------------
@@ -69,8 +67,9 @@ function lastPartCache(msg) {
   ];
   const req = BUILDERS.openrouter(OR_CLAUDE, messages, true);
   const sent = req.body.messages;
-  ok(lastPartCache(sent[0]) && lastPartCache(sent[0]).type === 'ephemeral',
-    'openrouter claude: system marked as both system and penultimate');
+  ok(lastPartCache(sent[0]) && lastPartCache(sent[0]).type === 'ephemeral'
+    && lastPartCache(sent[1]) && lastPartCache(sent[1]).type === 'ephemeral',
+    'openrouter claude: system and last message both marked');
 }
 
 // --- Non-Claude OpenRouter model is untouched --------------------------
@@ -105,12 +104,16 @@ function lastPartCache(msg) {
 {
   const messages = [
     { role: 'system', content: 'sys' },
+    { role: 'user', content: 'earlier' },
     { role: 'user', content: [{ type: 'text', text: 'part one' }, { type: 'text', text: 'part two' }] },
-    { role: 'user', content: 'final' }
+    // A tool-call message has no content block to mark; the walk skips it.
+    { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 't', arguments: '{}' } }] }
   ];
   const req = BUILDERS.openrouter(OR_CLAUDE, messages, true);
   const sent = req.body.messages;
-  const penult = sent[1];
+  const penult = sent[2];
+  ok(typeof sent[1].content === 'string' && sent[3].content === null,
+    'openrouter claude: content-less last message skipped');
   ok(Array.isArray(penult.content) && penult.content.length === 2,
     'openrouter claude: array-content parts preserved');
   ok(penult.content[1].cache_control && !penult.content[0].cache_control,
