@@ -167,13 +167,20 @@ function collectLiveFrames(runKey) {
   check('stream completed with 200', res.statusCode === 200, 'status=' + res.statusCode);
 
   const broadcast = live.turnEnds();
-  check('the tool round broadcast one assistant_turn_end', broadcast.length === 1, 'saw ' + broadcast.length);
+  // One for the tool round, one for the final answer (so a follower keeps
+  // its final bubble instead of redrawing it at run_end).
+  check('each segment broadcast one assistant_turn_end', broadcast.length === 2, 'saw ' + broadcast.length);
 
   const rows = messages.listMessages(projectDir, chatId);
   const assistantRows = rows.filter((m) => m && m.role === 'assistant');
   // The two seeded 'old answer' rows, the tool-round segment, and the final
   // answer.
   check('four assistant rows persisted', assistantRows.length === 4, 'got ' + assistantRows.length);
+  const finalFrame = broadcast[1];
+  const finalRow = assistantRows[3];
+  check('the final boundary carries the saved row identity',
+    !!(finalFrame && finalRow && finalFrame.data.clientId === finalRow.clientId && finalFrame.data.seq === finalRow.seq),
+    JSON.stringify(finalFrame && finalFrame.data));
 
   const segmentRow = assistantRows[2];
   check('the segment row is the tool round text', segmentRow && segmentRow.content === 'First segment.',

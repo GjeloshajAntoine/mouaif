@@ -177,6 +177,30 @@ function transientTest() {
   t('the segment handover carries no liveSeq', !!(segData && segData.liveSeq === undefined));
   t('the live_subscribed frame is not mistaken for a segment', segData && segData.liveSeq === undefined);
 
+  // The round's usage rides along, so the follower can draw the info line
+  // under the bubble it restores; connected followers get it as it changes.
+  liveChat.setUsage(rk, { modelId: 'm1', promptTokens: 1200, cacheReadTokens: 0 });
+  liveChat.setUsage(rk, { completionTokens: 40 });
+  const usageFrames = collectFrames(sub3).filter((f) => f.name === 'live_usage');
+  let lastUsage = null; try { lastUsage = JSON.parse(usageFrames[usageFrames.length - 1].data); } catch { }
+  t('a connected follower receives the merged round usage',
+    usageFrames.length === 2 && !!lastUsage && lastUsage.modelId === 'm1' && lastUsage.promptTokens === 1200
+    && lastUsage.completionTokens === 40 && lastUsage.cacheReadTokens === undefined && lastUsage.liveSeq === undefined,
+    JSON.stringify(lastUsage));
+  const sub3b = makeFakeRes();
+  liveChat.addSubscriber(rk, null, sub3b);
+  const seg3b = collectFrames(sub3b).find((f) => f.name === 'live_segment');
+  let seg3bData = null; try { seg3bData = JSON.parse(seg3b.data); } catch { }
+  t('the segment handover carries the round usage',
+    !!(seg3bData && seg3bData.usage && seg3bData.usage.promptTokens === 1200 && seg3bData.usage.completionTokens === 40),
+    String(seg3b && seg3b.data));
+  liveChat.setUsage(rk, null);
+  liveChat.setSegment(rk, 'next segment', '');
+  const sub3c = makeFakeRes();
+  liveChat.addSubscriber(rk, null, sub3c);
+  const seg3c = collectFrames(sub3c).find((f) => f.name === 'live_segment');
+  t('usage cleared at a segment boundary is not handed over', !!seg3c && !seg3c.data.includes('usage'), String(seg3c && seg3c.data));
+
   // A cleared segment sends nothing: the segment that ended is persisted as a
   // transcript row and reaches the follower through the message sync.
   liveChat.setSegment(rk, '', '');

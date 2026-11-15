@@ -46,3 +46,7 @@ The `chat-msg--live-image` row (`transcript.js:744`) has no key, so the keyed re
 - **Finding 3:** broadcast a final boundary with the saved row's `clientId` before `run_end`, so the follower finalizes its bubble in place.
 
 Findings 1–3 are the ones worth doing first. Findings 4–6 have no fix proposed yet.
+
+## Status
+
+All six are fixed; see the behavior list in [Live tool preview](features/live-tool-preview.md).

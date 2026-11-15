@@ -1282,6 +1282,17 @@ state.messages = state.messages.filter((m) => m !== userMsg);
   // Set when this reader was aborted on purpose (chat switch / unmount).
   let aborted = false;
   function handleStreamEvent(ev, data) {
+    // Buffered frames carry the replay cursor (src/live-chat.js). Tracking it
+    // here lets a foreground handoff (resumeRunningChat) subscribe from the
+    // right point instead of replaying the whole buffer onto cards that
+    // already show it.
+    if (data && typeof data.liveRunId === 'string' && data.liveRunId !== state.liveRunId) {
+      state.liveRunId = data.liveRunId;
+      state.nextLiveSeq = 0;
+    }
+    if (data && typeof data.liveSeq === 'number' && data.liveSeq + 1 > (state.nextLiveSeq || 0)) {
+      state.nextLiveSeq = data.liveSeq + 1;
+    }
     // Nested subagent activity: render inside the parent subagent
     // card instead of the live bubble / standalone tool cards.
     if (ev.eventName === 'subagent_event' && data) {

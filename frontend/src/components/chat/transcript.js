@@ -552,8 +552,27 @@ export function appendMessageToTranscript(m, isLive, refs, state) {
       meta.hidden = true;
     }
     row.appendChild(meta);
+    row._meta = meta;
   }
   afterTranscriptAppend(refs, true);
+}
+
+// fillRowMeta(node, m, state)
+//
+// A bubble a follower streamed is drawn with its meta line hidden, and the
+// live stream carries no usage. When its saved row arrives the node is
+// reused, not rebuilt, so the line has to be filled in here or it stays
+// hidden until a reload. The same goes for the provisional line a follower
+// draws while streaming (live.js paintFollowerMeta): it has no cost, so the
+// saved row replaces it. A line that already shows otherwise (the owner
+// stream drew it, with its live tok/s) is left alone.
+function fillRowMeta(node, m, state) {
+  const meta = node && node._meta;
+  if (!meta || !(meta.hidden || meta._provisional) || !m || m.role !== 'assistant') return;
+  if (m.usage || m.cost || m.modelId) {
+    renderUsageMeta(meta, m, state);
+    meta._provisional = false;
+  }
 }
 
 // ensureLiveStreamingBody(row)
@@ -3236,7 +3255,8 @@ export function syncTranscriptAppend(state, refs, prevCount) {
     // (stamping it with the row's key for later passes) keeps the transcript
     // to one row per segment.
     const key = transcriptRowKey(m);
-    if (key && findKeyedRow(transcriptEl, key)) continue;
+    const shown = key ? findKeyedRow(transcriptEl, key) : null;
+    if (shown) { fillRowMeta(shown, m, state); continue; }
     renderMessageRow(state, refs, m, true);
   }
   if (anchor && anchor.parentNode === transcriptEl) refs._insertAnchor = anchor;
@@ -3709,6 +3729,7 @@ export function reconcileTranscriptRows(state, refs, order) {
       node = existing.get(key) || null;
       if (node) {
         stats.reused++;
+        fillRowMeta(node, m, state);
       } else {
         // Build the row. Every builder inserts through transcriptInsert,
         // which records the node it placed. (This used to diff the child
@@ -3801,8 +3822,11 @@ export function reconcileTranscriptRows(state, refs, order) {
 
   // Rows no message placed this pass (a deleted chat, a diverged prefix) are
   // the only nodes this pass removes.
+  // A live generated image has no key; it stays until clearLiveImages() runs
+  // at the end of the turn, when the saved row carries the same picture.
   for (const child of Array.from(el.children)) {
     if (!isMessageRowNode(child) || placed.has(child)) continue;
+    if (child.dataset && child.dataset.liveImage === '1') continue;
     child.remove();
     stats.removed++;
   }

@@ -31,10 +31,12 @@ import {
   appendReasoningToLive,
   finalizeLiveSegment,
   restoreLiveSegment,
-  clearLiveSegment
+  clearLiveSegment,
+  clearLiveImages
 } from './transcript.js';
 import { mountOverlayCard, removeOverlayCardByCallId, removeOverlayCards } from './overlay.js';
-import { setChatStatus } from './usage.js';
+import { setChatStatus, renderUsageMeta } from './usage.js';
+import { createCounter } from '../../usage.js';
 import { agentNetworkEvent, agentNetworkTurnEnded } from './agentNetworkState.js';
 
 const liveByChat = new Map();
@@ -120,6 +122,49 @@ export function subscribeLive(state, refs) {
   return true;
 }
 
+// ---- Follower info line ---------------------------------------------
+//
+// The owner's stream draws model, context, output and tok/s under the bubble
+// it is streaming (stream.js repaintLiveRate). A follower draws the same line
+// from what the live stream gives it: the round's usage (`live_usage`, and
+// the snapshot on `live_segment`) and its own tok/s estimate over the deltas
+// it has seen. Marked provisional so the saved row's numbers replace it
+// (transcript.js fillRowMeta).
+
+function followerCounter(state) {
+  if (!state._followCounter) state._followCounter = createCounter();
+  return state._followCounter;
+}
+
+function resetFollowerMeta(state) {
+  state._followUsage = null;
+  state._followPaintAt = 0;
+  if (state._followCounter) state._followCounter.reset();
+}
+
+function paintFollowerMeta(refs, state, throttled) {
+  if (throttled) {
+    // Same cadence as the owner: a repaint per token strobes on a phone.
+    const now = Date.now();
+    if (now - (state._followPaintAt || 0) <= 120) return;
+    state._followPaintAt = now;
+  }
+  const el = refs.transcript && refs.transcript.current;
+  const live = el ? el.querySelector('[data-live="1"]') : null;
+  const meta = live && live._meta;
+  if (!meta) return;
+  const u = state._followUsage || {};
+  const usage = {};
+  for (const k of ['promptTokens', 'completionTokens', 'cacheReadTokens', 'cacheCreationTokens']) {
+    if (typeof u[k] === 'number' && u[k] > 0) usage[k] = u[k];
+  }
+  const modelId = (typeof u.modelId === 'string' && u.modelId) || (state.chat && state.chat.modelId) || '';
+  const liveRate = followerCounter(state).rate();
+  if (!modelId && !Object.keys(usage).length && liveRate == null) return;
+  renderUsageMeta(meta, { modelId, usage, liveRate }, state);
+  meta._provisional = true;
+}
+
 // closeLive(state, projectDir, chatId)
 //
 // Drop a live subscription (call on chat switch / unmount so a
@@ -141,6 +186,9 @@ export function closeLive(state, projectDir, chatId) {
   liveByChat.delete(key);
   setLiveRunState(state, key, { active: false, connected: false });
   if (entry.abort) entry.abort.abort();
+  // Never carry one chat's round usage into the next subscription; a
+  // resubscribe to the same run gets it back with `live_segment`.
+  resetFollowerMeta(state);
   return true;
 }
 
@@ -181,6 +229,12 @@ function dispatchLiveEvent(ev, refs, state, key) {
       state.nextLiveSeq = 0;
       state.runSettled = false;
       clearLiveSegment(refs, state);
+      resetFollowerMeta(state);
+    } else {
+      // Same run, (re)subscribed: drop any bubble left from before the
+      // socket dropped. If its segment ended in the gap it is already a saved
+      // row; if not, the `live_segment` that follows redraws it.
+      clearLiveSegment(refs, state, true);
     }
     return;
   }
@@ -195,10 +249,21 @@ function dispatchLiveEvent(ev, refs, state, key) {
   // the cursor must stay comparable with the buffered events it gates.
   if (ev.eventName === 'message' && typeof data.delta === 'string') {
     appendDeltaToLive(data.delta, refs, state);
+    followerCounter(state).add(data.delta);
+    paintFollowerMeta(refs, state, true);
     return;
   }
   if (ev.eventName === 'reasoning' && typeof data.delta === 'string') {
     appendReasoningToLive(data.delta, refs, state);
+    followerCounter(state).add(data.delta);
+    paintFollowerMeta(refs, state, true);
+    return;
+  }
+  // The round's usage so far (src/live-chat.js setUsage); older servers
+  // send none, and the line then shows the model and tok/s only.
+  if (ev.eventName === 'live_usage') {
+    state._followUsage = data;
+    paintFollowerMeta(refs, state, false);
     return;
   }
   // Segment boundary: the row was just persisted. Mark the follower's bubble
@@ -207,13 +272,17 @@ function dispatchLiveEvent(ev, refs, state, key) {
   // absent when the segment produced no text (nothing was persisted).
   if (ev.eventName === 'assistant_turn_end') {
     finalizeLiveSegment(refs, state, data && data.seq, data && data.clientId);
+    // The next segment is a new round: fresh usage, fresh tok/s window.
+    resetFollowerMeta(state);
     return;
   }
   // The in-progress segment, sent once to a follower that joined mid-turn
   // (see src/live-chat.js addSubscriber). Paints the text produced before the
   // subscription; the deltas that follow append to it.
   if (ev.eventName === 'live_segment') {
+    if (data.usage && typeof data.usage === 'object') state._followUsage = data.usage;
     restoreLiveSegment(data, refs, state);
+    paintFollowerMeta(refs, state, false);
     return;
   }
   if (ev.eventName === 'shell_output') {
@@ -267,11 +336,19 @@ function handleLiveRunEnd(ev, refs, state, key) {
   state.runSettled = true;
   agentNetworkTurnEnded(state);
   if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
-  setChatStatus(refs, 'done', 'success');
+  // The run's outcome (src/live-chat.js finishLiveChat); older servers send
+  // none, which reads as done.
+  const outcome = data && typeof data.outcome === 'string' ? data.outcome : 'done';
+  if (outcome === 'error') setChatStatus(refs, 'error', 'error');
+  else if (outcome === 'stopped') setChatStatus(refs, 'stopped', 'success');
+  else setChatStatus(refs, 'done', 'success');
   // Drop a live bubble that never got its `assistant_turn_end` (the run died
   // mid-segment). The final persisted row arrives with the kickPoll below, so
   // leaving the un-finalized node would show the turn twice.
   clearLiveSegment(refs, state);
+  resetFollowerMeta(state);
+  // Images the owner stream drew before a handoff; the saved row has them.
+  clearLiveImages(refs);
   // Resume the older-history drain. It deliberately bails while a run is
   // in flight (the tail is being written), and nothing restarted it
   // afterwards — so history only appeared when the user scrolled to the top.

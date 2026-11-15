@@ -208,7 +208,9 @@ function clientReplay() {
   const received = [];
   const context = vm.createContext({
     appendDeltaToLive: (delta) => received.push(delta), handleShellOutputEvent: (data) => received.push(data.delta), clearLiveSegment() {},
-    appendMessageToTranscript() {}, renderAssistantBody() {}, afterTranscriptAppend() {}
+    appendMessageToTranscript() {}, renderAssistantBody() {}, afterTranscriptAppend() {},
+    // The follower info line (live.js) is defined above the slice taken below.
+    resetFollowerMeta() {}, paintFollowerMeta() {}, followerCounter: () => ({ add() {}, reset() {}, rate: () => null })
   });
   vm.runInContext(liveSource.slice(liveSource.indexOf('function isCurrentChat('), liveSource.indexOf('function handleLiveRunEnd(')) + ';this.dispatch=dispatchLiveEvent;', context);
   const state = { props: { projectDir: '/test', chatId: 'a' }, liveRunId: 'old', nextLiveSeq: 50, runSettled: true };

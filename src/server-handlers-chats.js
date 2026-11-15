@@ -987,40 +987,44 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
   // cut at the output limit or stopped by a filter would otherwise look
   // like a normal completion (see finishNotice below).
   let turnFinishReason = '';
+  // How the run ended, carried on `run_end` so a follower reports a failed
+  // turn as an error rather than "done".
+  let liveOutcome = 'done';
   function emit(name, data) {
+    if (name === 'error') liveOutcome = 'error';
     if (name === 'finish' && data && typeof data.reason === 'string') turnFinishReason = data.reason;
     if (name === 'tool_result') {
       turnToolCount++;
       hostEvent('tool.after', { tool: data && data.name, ok: !!(data && data.ok), callId: data && data.id,
         result: capJson(data && data.result) });
     }
-    try {
-      res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n');
-    } catch { /* socket closed */ }
-    if (traceStream) trace.write(traceStream, name, data);
-    // Fan transient tool streams out to followers (live-chat.js) so a
-    // returning page or a second tab renders them in real time. These
-    // are exactly the events that never reach the persisted transcript
-    // on their own: buffered until the matching tool_result lands (or
-    // the run ends), replayed to late subscribers, and pushed live to
-    // connected ones. Conveniently, the run entry also gives us the
-    // toolResultId for a later prune on `tool_result`.
+    // Buffered events go into the replay buffer first so the owner's copy
+    // can carry the same liveSeq a follower would see (see live-chat.js).
+    let cursor = null;
     if (name === 'shell_output' || name === 'subagent_event'
     || name === 'authorization_required' || name === 'ask_user_required'
     // A shell review (src/shellReview.js) arrives while the call is still
     // pending, so it must be buffered with the approval prompt it belongs to.
     || name === 'shell_review') {
-    liveChat.pushLive(runKey, name, data);
-    if (name === 'subagent_event' && (data?.kind === 'tool_call' || data?.kind === 'tool_result') && data?.data?.id) {
-    liveChat.pruneLive(runKey, data.data.id);
-    }
+    // A nested tool_call prunes stale frames for its id BEFORE it is pushed,
+    // so the call itself survives in the buffer; a nested tool_result prunes
+    // after, dropping the settled call as before.
+    const nestedId = name === 'subagent_event' && data?.data?.id;
+    if (nestedId && data.kind === 'tool_call') liveChat.pruneLive(runKey, nestedId);
+    cursor = liveChat.pushLive(runKey, name, data);
+    if (nestedId && data.kind === 'tool_result') liveChat.pruneLive(runKey, nestedId);
     } else if (name === 'progress_update') {
-    // Latest-value, not a log: each frame carries the whole state, so an
-    // earlier one is worthless once a newer exists. Coalesced in the buffer
-    // so returning to a long run does not replay a progress frame per tool
-    // round to draw a single card.
-    liveChat.replaceLive(runKey, name, data, liveChat.progressKey(data));
-    } else if (name === 'tool_result') {
+    // Latest-value, not a log: each frame carries the whole state. Coalesced
+    // in the buffer so returning to a long run does not replay a progress
+    // frame per tool round to draw a single card.
+    cursor = liveChat.replaceLive(runKey, name, data, liveChat.progressKey(data));
+    }
+    try {
+      res.write('event: ' + name + '\ndata: ' + JSON.stringify(cursor ? Object.assign({}, data, cursor) : data) + '\n\n');
+    } catch { /* socket closed */ }
+    if (traceStream) trace.write(traceStream, name, data);
+    // Fan the remaining live events out to followers (live-chat.js).
+    if (cursor) { /* buffered above */ } else if (name === 'tool_result') {
     liveChat.pruneLive(runKey, data && data.id);
     } else if (name === 'message' || name === 'reasoning') {
     // Assistant text deltas: fan out to followers WITHOUT buffering.
@@ -1032,6 +1036,16 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
     // without bound. `live_segment` (src/live-chat.js) covers the gap for a
     // follower that joins mid-turn.
     liveChat.pushTransient(runKey, name, data);
+    } else if (name === 'usage_input') {
+    // The round's usage, for the info line under a follower's live bubble.
+    liveChat.setUsage(runKey, {
+      modelId: model.id,
+      promptTokens: Number(data && data.promptTokens),
+      cacheReadTokens: Number(data && data.cacheReadTokens),
+      cacheCreationTokens: Number(data && data.cacheCreationTokens)
+    });
+    } else if (name === 'usage_output') {
+    liveChat.setUsage(runKey, { modelId: model.id, completionTokens: Number(data && data.completionTokens) });
     } else if (name === 'assistant_turn_end') {
     // The segment boundary. Broadcast as a live ROW so a follower can mark
     // its bubble final *and* adopt the seq the row was actually persisted
@@ -1052,6 +1066,7 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
     ? data
     : Object.assign({}, data, { seq: assistantSegmentSeq }));
     liveChat.setSegment(runKey, '', '');
+    liveChat.setUsage(runKey, null);
     }
   }
   if (traceStream) {
@@ -1809,6 +1824,19 @@ promptSize: resolvedProfileId,
           const event = trace.eventForMessage(assistantMsg);
           trace.write(traceStream, event.type, event.payload);
         }
+        // Close the final segment for followers too: tool rounds get their
+        // boundary from ai-stream.js, the last segment does not, so without
+        // this a follower dropped its live bubble at run_end and redrew it
+        // from the poll (a flash and a scroll jump).
+        if (assistantMsg) {
+          liveChat.pushTransient(runKey, 'assistant_turn_end', {
+            content: assistantContent, hasToolCalls: false,
+            seq: typeof assistantMsg.seq === 'number' ? assistantMsg.seq : undefined,
+            clientId: assistantMsg.clientId
+          });
+          liveChat.setSegment(runKey, '', '');
+          liveChat.setUsage(runKey, null);
+        }
         emit('done', enriched);
         hostEvent('turn.end', { toolCount: turnToolCount, text: (assistantContent || '').slice(0, 8192) });
         return;
@@ -1839,7 +1867,7 @@ promptSize: resolvedProfileId,
     });
   } catch { /* non-fatal */ }
   }
-  liveChat.finishLiveChat(runKey);
+  liveChat.finishLiveChat(runKey, 'stopped');
   res.end();
   return;
   }
@@ -1867,7 +1895,7 @@ promptSize: resolvedProfileId,
     const errClientId = persistStreamError(errPayload);
     if (errClientId) errPayload.clientId = errClientId;
     try { emit('error', errPayload); } catch { /* socket closed */ }
-    liveChat.finishLiveChat(runKey);
+    liveChat.finishLiveChat(runKey, liveOutcome);
     sendChatPush('error', {
       title: (chat && chat.title) || 'mouaif',
       // An error is a fact set too: the message, then whatever usage and
@@ -1914,7 +1942,7 @@ promptSize: resolvedProfileId,
           runningChatCancels.delete(runKey);
           lastToolName = '';
           turnStartedAt = 0;
-          liveChat.finishLiveChat(runKey);
+          liveChat.finishLiveChat(runKey, 'stopped');
           res.end();
           return;
         }
@@ -1963,7 +1991,7 @@ promptSize: resolvedProfileId,
   // The turn is over, so its status facts stop applying to the next one.
   lastToolName = '';
   turnStartedAt = 0;
-  liveChat.finishLiveChat(runKey);
+  liveChat.finishLiveChat(runKey, liveOutcome);
   // `turn.end` after the turn is saved and the chat is free; a hook may
   // start one follow-up turn (src/hookTurns.js).
   // The whole answer: `assistantContent` only holds the text after the last

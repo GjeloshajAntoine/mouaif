@@ -39,15 +39,39 @@ function setSegment(runKey, text, reasoning) {
   r.segment = { text: text || '', reasoning: reasoning || '' };
 }
 
-function pushLive(runKey, name, data) {
+// setUsage(runKey, patch)
+//
+// The usage of the round in flight (model id, prompt and output tokens), so
+// a follower can draw the same info line under its streaming bubble that the
+// owner's stream draws. Kept as one merged snapshot: connected followers get
+// it as a `live_usage` frame, and a follower that joins mid-segment gets it
+// with `live_segment`. `null` clears it at a segment boundary — the saved
+// row carries the final numbers.
+function setUsage(runKey, patch) {
   const r = runs.get(runKey);
   if (!r) return;
+  if (!patch) { r.usage = null; return; }
+  const next = Object.assign({}, r.usage || {});
+  for (const k of Object.keys(patch)) {
+    const v = patch[k];
+    if (typeof v === 'string' ? v : (typeof v === 'number' && Number.isFinite(v) && v > 0)) next[k] = v;
+  }
+  r.usage = next;
+  pushTransient(runKey, 'live_usage', next);
+}
+
+function pushLive(runKey, name, data) {
+  const r = runs.get(runKey);
+  if (!r) return null;
   const ev = { liveSeq: r.nextLiveSeq++, name, data };
   r.buffer.push(ev);
   const frame = sseFrame(name, Object.assign({ liveSeq: ev.liveSeq }, data || {}));
   for (const sub of r.subscribers) {
     try { sub.write(frame); } catch { /* socket closed */ }
   }
+  // The owner stream stamps its own copy with this cursor, so a handoff to
+  // the replay stream resumes after it instead of from 0.
+  return { liveSeq: ev.liveSeq, liveRunId: r.runId };
 }
 
 // replaceLive(runKey, name, data, key)
@@ -67,12 +91,12 @@ function pushLive(runKey, name, data) {
 // consumed a superseded frame is not asked to rewind.
 function replaceLive(runKey, name, data, key) {
   const r = runs.get(runKey);
-  if (!r) return;
+  if (!r) return null;
   const id = String(key == null ? '' : key);
   if (id && r.buffer.length) {
     r.buffer = r.buffer.filter((e) => !(e.name === name && progressKey(e.data) === id));
   }
-  pushLive(runKey, name, data);
+  return pushLive(runKey, name, data);
 }
 
 // pushTransient(runKey, name, data)
@@ -201,7 +225,9 @@ function addSubscriber(runKey, req, res, options) {
   // reconnect's `fromLiveSeq` has to stay comparable with them.
   const seg = r.segment || { text: '', reasoning: '' };
   if (seg.text || seg.reasoning) {
-    try { res.write(sseFrame('live_segment', { text: seg.text, reasoning: seg.reasoning })); } catch { /* closed */ }
+    const snapshot = { text: seg.text, reasoning: seg.reasoning };
+    if (r.usage) snapshot.usage = r.usage;
+    try { res.write(sseFrame('live_segment', snapshot)); } catch { /* closed */ }
   }
   r.subscribers.add(res);
   const onClose = () => { r.subscribers.delete(res); };
@@ -210,11 +236,11 @@ function addSubscriber(runKey, req, res, options) {
   return res;
 }
 
-function finishLiveChat(runKey) {
+function finishLiveChat(runKey, outcome) {
   const r = runs.get(runKey);
   if (!r) return;
   runs.delete(runKey);
-  const frame = sseFrame('run_end', { nextLiveSeq: r.nextLiveSeq });
+  const frame = sseFrame('run_end', { nextLiveSeq: r.nextLiveSeq, outcome: outcome || 'done' });
   for (const sub of r.subscribers) {
     try { sub.write(frame); } catch { /* socket closed */ }
     try { sub.end(); } catch { /* already closed */ }
@@ -225,6 +251,7 @@ function finishLiveChat(runKey) {
 module.exports = {
   ensureLiveChat,
   setSegment,
+  setUsage,
   hasSubscribers,
   pushLive,
   pushTransient,
