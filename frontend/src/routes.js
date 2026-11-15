@@ -121,11 +121,13 @@ const ROUTES = [
   exact('settings/pricing', () => ({ name: 'settingsPricing' })),
   exact('settings/about', () => ({ name: 'settingsAbout' })),
 
-  // ---- Hooks (docs/features/hooks.md) -------------------------------
-  exact('settings/hooks', () => ({ name: 'settingsHooks' })),
-
   // ---- Extensions (docs/features/extensions.md) -----------------------
   exact('settings/extensions', () => ({ name: 'settingsExtensions' })),
+  // Hooks (docs/features/hooks.md) are a page of Settings → Extensions.
+  // `#/settings/hooks` was the page's hash while it had its own row in
+  // Settings, so it stays as an alias for bookmarks and old links.
+  exact('settings/extensions/hooks', () => ({ name: 'settingsHooks' })),
+  exact('settings/hooks', () => ({ name: 'settingsHooks' })),
   // An extension's settings page: settings/extensions/<id>/<surface>.
   prefix('settings/extensions/', (m) => {
     const [ext, surface] = String(m.id || '').split('/');

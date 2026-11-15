@@ -8,7 +8,7 @@
 //     "description": "…",
 //     "server": { "ref": "<configured MCP server id or slug>" } | { inline MCP server },
 //     "permissions": ["chat.read", "composer.insert", "chat.message", "storage", "model.context"],
-//     "hooks": [ hook entries, as in Settings → Hooks; kind "mcp" calls the server ],
+//     "hooks": [ hook entries, as in Settings → Extensions → Hooks; kind "mcp" calls the server ],
 //     "ui": [ { "id", "slot", "title", "resourceUri" | "html", … } ] }
 //
 // Unknown top-level keys are kept (a newer file imports into an older

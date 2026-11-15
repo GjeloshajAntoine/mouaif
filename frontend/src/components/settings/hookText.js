@@ -1,5 +1,5 @@
 // Shared text for hooks (docs/features/hooks.md): labels and one-line
-// summaries used by Settings → Hooks and the chat's hooks panel.
+// summaries used by Settings → Extensions → Hooks and the chat's hooks panel.
 import { h } from 'preact';
 
 export const EVENT_LABELS = {

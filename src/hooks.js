@@ -956,7 +956,7 @@ function hasHooks(event, ctx) {
 
 // ---- Run log -----------------------------------------------------------------
 //
-// The last KEEP_RUNS hook runs app-wide, for Settings → Hooks. Logging is
+// The last KEEP_RUNS hook runs app-wide, for Settings → Extensions → Hooks. Logging is
 // best-effort: a broken store never fails a hook.
 
 const RUN_TABLE = `

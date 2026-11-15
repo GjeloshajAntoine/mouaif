@@ -466,7 +466,7 @@ const TYPES = [
     field: { type: 'boolean' },
     label: 'Hooks on', description: 'Pause or resume every app hook.',
     keywords: ['hook', 'pause'],
-    group: 'Automation', page: 'settings/hooks',
+    group: 'Automation', page: 'settings/extensions/hooks',
     approval: true, writers: { ui: true, tool: 'hook_create', share: false }
   },
   {
@@ -475,7 +475,7 @@ const TYPES = [
     fields: HOOK_FIELDS,
     label: 'Hooks', itemNoun: 'Hook', description: 'Commands that check prompts and tool calls, in every project.',
     keywords: ['hook', 'command', 'script', 'before', 'after', 'block'],
-    group: 'Automation', page: 'settings/hooks',
+    group: 'Automation', page: 'settings/extensions/hooks',
     searchFields: ['id', 'name', 'event', 'handler.command', 'handler.script'],
     approval: true, writers: { ui: true, tool: 'hook_create', share: false }
   },
@@ -485,7 +485,7 @@ const TYPES = [
     fields: HOOK_FIELDS,
     label: 'Hooks', itemNoun: 'Hook', description: 'Commands that check prompts and tool calls in this project. They run once you trust them.',
     keywords: ['hook', 'command', 'script', 'before', 'after', 'block', 'trust'],
-    group: 'Automation', page: 'settings/hooks',
+    group: 'Automation', page: 'settings/extensions/hooks',
     searchFields: ['id', 'name', 'event', 'handler.command', 'handler.script'],
     approval: true, writers: { ui: true, tool: 'hook_create', share: false }
   },

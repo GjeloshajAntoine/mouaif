@@ -55,7 +55,7 @@ What is my default prompt size, and switch this project to agentFiles off.
 | `webhook_delete` | Delete this chat's webhook. |
 | `hook_create` | Add a [hook](./hooks.md) to this chat, or to every chat if you allow it. Always shows the approval card, even when Allow. |
 | `hook_list` | List the hooks that apply to this chat, with their last decision. |
-| `hook_delete` | Delete one of this chat's own hooks. App hooks are deleted in **Settings → Hooks** only. |
+| `hook_delete` | Delete one of this chat's own hooks. App hooks are deleted in **Settings → Extensions → Hooks** only. |
 
 ### Where the model's data comes from
 

@@ -7,7 +7,7 @@
 //                when the tool is Allow or a session grant exists.
 //   hook_list    the hooks that apply to this chat, with their last decision.
 //   hook_delete  remove one of this chat's hooks. App hooks are removed in
-//                Settings → Hooks only.
+//                Settings → Extensions → Hooks only.
 //
 // Rules from the spec: command or script handlers only (no network handlers),
 // scope `chat` by default, the card can only lower the scope, subagents get
@@ -68,7 +68,7 @@ const SPECS = Object.freeze({
     }, required: [], additionalProperties: false } } },
   hook_delete: { type: 'function', function: {
     name: 'hook_delete',
-    description: 'Delete one of this chat\'s own hooks by id (from hook_list). App hooks can only be removed by the user in Settings → Hooks.',
+    description: 'Delete one of this chat\'s own hooks by id (from hook_list). App hooks can only be removed by the user in Settings → Extensions → Hooks.',
     parameters: { type: 'object', properties: {
       hookId: { type: 'string', description: 'The hook id.' }
     }, required: ['hookId'], additionalProperties: false } } }
@@ -185,7 +185,7 @@ const runners = {
       hook.id = id;
       const written = hooks.writeConfig({ enabled: config.enabled, list: config.list.concat(hook) }, { via: 'hook_create' });
       return { ok: true, hookId: id, scope: 'app', status: 'active', requestedScope: requested, changes: written.changes,
-        note: config.enabled ? undefined : 'Hooks are paused app-wide (Settings → Hooks); this hook runs once they are turned back on.' };
+        note: config.enabled ? undefined : 'Hooks are paused app-wide (Settings → Extensions → Hooks); this hook runs once they are turned back on.' };
     }
     const row = chatHooks.add(projectDir, chatId, hook, 'model');
     return { ok: true, hookId: row.hook.id, scope: 'chat', status: row.status,
@@ -220,10 +220,10 @@ const runners = {
     const id = String(args.hookId || '');
     if (chatHooks.remove(projectDir, chatId, id)) return { ok: true, deleted: true, hookId: id };
     if (hooks.getConfig().list.some((h) => h.id === id)) {
-      throw err('EAPP_HOOK', 'Hook "' + id + '" applies to every chat; only the user can delete it, in Settings → Hooks.');
+      throw err('EAPP_HOOK', 'Hook "' + id + '" applies to every chat; only the user can delete it, in Settings → Extensions → Hooks.');
     }
     if (require('../projectHooks.js').status(projectDir).hooks.some((h) => h.id === id)) {
-      throw err('EPROJECT_HOOK', 'Hook "' + id + '" is a project hook; only the user can delete it, in the project\'s settings file or Settings → Hooks.');
+      throw err('EPROJECT_HOOK', 'Hook "' + id + '" is a project hook; only the user can delete it, in the project\'s settings file or Settings → Extensions → Hooks.');
     }
     throw err('ENOTARGET', 'This chat has no hook "' + id + '"');
   }

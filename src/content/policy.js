@@ -44,7 +44,9 @@ function checkKey({ key, scope, actor = 'ui', remote = false }) {
   const types = registry.typesForRoot(key);
   const dedicated = types.map(registry.dedicatedTool).find(Boolean);
   if (dedicated) {
-    const label = types[0].label || key;
+    // Hooks are a page of Settings → Extensions (registry `page`).
+    const under = String(types[0].page || '').startsWith('settings/extensions/') ? 'Extensions → ' : '';
+    const label = under + (types[0].label || key);
     throw refusal(actor === 'tool'
       ? key + ' are not written through update_settings — use ' + dedicated
       : key + ' are not written through settings — use Settings → ' + label);

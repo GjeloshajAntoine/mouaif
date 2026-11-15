@@ -97,7 +97,9 @@ function check(name, fn) {
   // ---- Themes ---------------------------------------------------------
 
   check('hooks settings', () => {
-    eq('#/settings/hooks', { name: 'settingsHooks' });
+    eq('#/settings/extensions/hooks', { name: 'settingsHooks' });
+    eq('#/settings/hooks', parseHash('#/settings/extensions/hooks'));
+    eq('#/settings/extensions/hooks/page', { name: 'settingsExtensionPage', extensionId: 'hooks', surfaceId: 'page' });
   });
   check('themes list, new theme (optionally from a theme) and editor', () => {
     eq('#/settings/themes', { name: 'settingsThemes' });

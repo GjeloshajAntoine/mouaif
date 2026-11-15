@@ -79,7 +79,7 @@ check('approval: reported for the tool on permission keys only', () => {
 });
 check('content written by its own tool: hooks refused here, naming the way in', () => {
   refused(() => project({ hooks: [] }, 'tool'), /use hook_create/);
-  refused(() => project({ hooks: [] }, 'ui'), /Settings → Hooks/);
+  refused(() => project({ hooks: [] }, 'ui'), /Settings → Extensions → Hooks/);
   refused(() => project({ hooks: [] }, 'share'));
   refused(() => service.applyPatch({ scope: 'project', projectDir: proj, unset: ['hooks'], actor: 'ui' }), /hooks/);
   refused(() => app({ hooks: [] }, 'ui'), /hooks/);

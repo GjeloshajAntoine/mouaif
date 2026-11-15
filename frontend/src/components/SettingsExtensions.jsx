@@ -6,6 +6,8 @@
 // on/off switch, "Off in this project", Export (the same file back) and
 // Delete. The active project's own extensions (.mouaif/extensions/) are
 // listed with their review state: they run only once trusted.
+// The page starts with a row to the hooks you add yourself
+// (SettingsHooks.jsx, #/settings/extensions/hooks).
 import { h, Fragment } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson, activeProject } from '../api.js';
@@ -109,6 +111,10 @@ export function SettingsExtensionsView() {
   const [refresh, setRefresh] = useState(0);
   const fileRef = useRef(null);
   const projectDir = (activeProject.value && activeProject.value.dir) || '';
+  const [hooks, setHooks] = useState(null); // { enabled, list, disabledByEnv }
+
+  // The Hooks row's summary. Without it the row still links to the page.
+  useEffect(() => { api('GET', '/api/hooks').then(setHooks, () => {}); }, []);
 
   useEffect(() => {
     api('GET', '/api/extensions' + (projectDir ? '?projectDir=' + encodeURIComponent(projectDir) : ''))
@@ -154,6 +160,10 @@ export function SettingsExtensionsView() {
 
   const app = data ? data.app : [];
   const project = data ? data.project : [];
+  const hookCount = hooks && Array.isArray(hooks.list) ? hooks.list.length : 0;
+  const hooksDetail = !hooks ? 'commands that check prompts & tool calls'
+    : hooks.disabledByEnv ? 'off · MOUAIF_NO_HOOKS=1'
+      : (hookCount ? hookCount + (hookCount === 1 ? ' hook' : ' hooks') : 'none yet') + (hooks.enabled === false ? ' · paused' : '');
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
@@ -162,6 +172,14 @@ export function SettingsExtensionsView() {
     h('section', { class: 'settings-hooks' },
       h('p', { class: 'hint settings-hooks__intro' },
         'An extension is one .mouaif-extension.json file. It can add hooks, a small UI in the chat or in Settings, and the MCP server behind them. Its UI runs sandboxed and can only do what you allow here. Its hooks and server run on this computer with your permissions.'),
+
+      h('div', { class: 'group' },
+        h('ul', { class: 'group__list' },
+          h('li', null,
+            h('a', { href: '#/settings/extensions/hooks', class: 'group__row', 'aria-label': 'Hooks' },
+              h('span', { class: 'group__row-label' }, 'Hooks'),
+              h('span', { class: 'group__row-detail' }, hooksDetail),
+              h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›'))))),
 
       pending ? h('div', { class: 'group' },
         h('div', { class: 'group__title' }, 'Turn on ' + pending.extension.name + '?'),

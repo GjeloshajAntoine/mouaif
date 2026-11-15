@@ -12,6 +12,8 @@ An extension packs several things into **one file**, `<id>.mouaif-extension.json
 
 Open **Settings → App defaults → Extensions** (`#/settings/extensions`).
 
+- **Hooks** at the top opens the [hooks](hooks.md) you add yourself (`#/settings/extensions/hooks`): the list, the editor, **Run hooks** and recent runs. The row shows how many there are and whether they are paused.
+
 - **Import file** reads a `.mouaif-extension.json` file and shows the permission screen. It lists what the extension's UI may do, the MCP server it uses or registers, every hook as written, and where its UI appears. The extension stays **off** until you tap **Turn on**. **Not now** keeps it imported but off, and **Remove** deletes it.
 - Each installed extension has these controls:
   - an on/off switch,
@@ -129,7 +131,7 @@ An extension's hooks run under the id `<extension>/<hook>` (shown that way on to
 4. project extensions,
 5. the chat's own hooks.
 
-**Run hooks** in Settings → Hooks and `MOUAIF_NO_HOOKS=1` cover extension hooks too. A command hook from an extension sees `MOUAIF_EXTENSION_ID`.
+**Run hooks** in Settings → Extensions → Hooks and `MOUAIF_NO_HOOKS=1` cover extension hooks too. A command hook from an extension sees `MOUAIF_EXTENSION_ID`.
 
 For the module surface, storage and REST routes, see the implementation notes that ship with the repository (`docs/agent/features/extensions.md`).
 

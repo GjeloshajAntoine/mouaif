@@ -4,7 +4,7 @@
 // their content hash (src/projectHooks.js). This lists every hook verbatim —
 // command, script, URL or module source — plus the project files a command
 // runs, and offers "Trust and turn on" (for exactly the hash shown) or
-// "Turn off". Used by Settings → Hooks and by the banner in a project's chats.
+// "Turn off". Used by Settings → Extensions → Hooks and by the banner in a project's chats.
 import { h } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../../api.js';

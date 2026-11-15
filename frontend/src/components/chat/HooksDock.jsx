@@ -164,8 +164,8 @@ export function HooksDock({ projectDir, chatId }) {
   const panel = open ? h('div', { class: 'webhook-panel hooks-panel', role: 'group', 'aria-label': 'This chat’s hooks' },
     h('div', { class: 'webhook-panel__section' },
       h('div', { class: 'webhook-panel__label' }, 'Hooks in this chat'),
-      h('div', { class: 'webhook-panel__hint' }, 'They run after the app’s hooks (Settings → Hooks), only in this chat.'),
-      !hooksOn ? h('div', { class: 'webhook-panel__hint webhook-panel__hint--error' }, 'Hooks are paused app-wide in Settings → Hooks; none run.') : null,
+      h('div', { class: 'webhook-panel__hint' }, 'They run after the app’s hooks (Settings → Extensions → Hooks), only in this chat.'),
+      !hooksOn ? h('div', { class: 'webhook-panel__hint webhook-panel__hint--error' }, 'Hooks are paused app-wide in Settings → Extensions → Hooks; none run.') : null,
       items,
       editing && editing.isNew
         ? h('div', { class: 'hook-card hook-card--new' }, h('div', { class: 'hook-card__title' }, 'New hook for this chat'), editor('new', BLANK, true, ''))

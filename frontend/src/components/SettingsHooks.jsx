@@ -1,5 +1,7 @@
-// mouaif web — Settings → Hooks (docs/features/hooks.md)
+// mouaif web — Settings → Extensions → Hooks (docs/features/hooks.md)
 //
+// A page of Settings → Extensions (#/settings/extensions/hooks), linked from
+// its Hooks row.
 // Commands that run when a prompt is sent, around each tool call, when a turn
 // starts, ends or fails, and before a notification. A hook can block, ask for
 // approval, rewrite a tool's arguments, add context for the model, start one
@@ -382,7 +384,7 @@ export function SettingsHooksView() {
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '←'),
+      h('a', { href: '#/settings/extensions', class: 'view-back', 'aria-label': 'Back to extensions' }, '←'),
       h('h2', { class: 'view-title' }, 'Hooks')
     ),
     h('section', { class: 'settings-hooks' },

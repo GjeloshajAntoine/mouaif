@@ -11,7 +11,7 @@ Hooks are commands mouaif runs at fixed points of a chat turn: when you send a p
 - **start one more turn** when a turn finishes, for example until the tests pass,
 - **silence a notification**.
 
-Hooks live in **Settings → Hooks** (every chat), in a project's settings (every chat of that project, once you have reviewed them) or on one chat. You add them yourself, or the model adds them when you allow its approval card.
+Hooks live in **Settings → Extensions → Hooks** (every chat), in a project's settings (every chat of that project, once you have reviewed them) or on one chat. You add them yourself, or the model adds them when you allow its approval card.
 
 Hooks only add checks. A hook cannot approve a call, skip the approval card or run a tool that is Off. The tool permissions in **Settings → Project** stay the only place that grants anything.
 
@@ -19,7 +19,7 @@ Hooks run on the computer that runs mouaif, with its user's permissions, like a 
 
 ## Usage
 
-Open **Settings → App defaults → Hooks** (`#/settings/hooks`).
+Open **Settings → App defaults → Extensions** and tap **Hooks** (`#/settings/extensions/hooks`). The row shows how many hooks you have and whether they are paused. The older address `#/settings/hooks` opens the same page.
 
 - **Run hooks** pauses or resumes every hook at once.
 - **New hook** opens an empty editor. **Start from an example** fills it with a working hook: block force pushes, ask before `rm -rf`, add the git branch to prompts, keep going until the tests pass, no notifications at night, or log every tool call.
@@ -208,7 +208,7 @@ While a chat has hooks, a **Hooks · N in this chat** bar sits above the compose
 
 - **Pause** / **Resume**,
 - **Edit**, which opens the same editor as Settings,
-- **All chats** (tap twice), which moves the hook into **Settings → Hooks** so it runs in every chat,
+- **All chats** (tap twice), which moves the hook into **Settings → Extensions → Hooks** so it runs in every chat,
 - **Project** (tap twice), which moves it into the project's settings (see [Project hooks](#project-hooks)),
 - **Delete** (tap twice).
 
