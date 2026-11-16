@@ -19,6 +19,7 @@ import { consumePendingNotificationClick } from './notification-click.js';
 import { refreshProjectsOnVisible, startPushPageBridge } from './push-page-bridge.js';
 import { syncPushState } from './components/push.js';
 import { bootTheme } from './theme/runtime.js';
+import { prefetchChatFromHash } from './chatPrefetch.js';
 import './style.css';
 import './router.js';
 
@@ -27,6 +28,10 @@ import './router.js';
 // Repaint the last theme's tokens and CSS from the local cache before the
 // first render, so a themed app does not flash the default palette.
 bootTheme();
+
+// Start the opened chat's two transcript requests now, in parallel with the
+// access gate, instead of after the app mounts (chatPrefetch.js).
+prefetchChatFromHash(window.location.hash);
 
 const root = document.getElementById('app');
 if (root) render(h(AccessGate, null, h(App, null)), root);

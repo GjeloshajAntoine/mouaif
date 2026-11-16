@@ -16,6 +16,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import { fetchJson, loadModels, loadApp } from '../../api.js';
+import { takePrefetchedChat, chatUrl, chatMessagesUrl } from '../../chatPrefetch.js';
 import { nav, back as goBack } from '../../router.js';
 import {
   refreshActiveProvider, refreshAllProviders, activeProviderId, touchRecent,
@@ -23,7 +24,7 @@ import {
   migrateProjectScopedBookmarks
 } from './modelPicker.js';
 import {
-renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender, reconcileTranscript
+renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender, reconcileTranscript, refreshHeaderCards
 } from './transcript.js';
 import { buildToolsCard, toggleTool, toggleToolGroup, toggleAgentFiles, toggleAgentFile, toggleSkills, toggleSkill } from './cards.js';
 import { jumpToSeq as jumpToSeqRow, flashRow, findToolCard } from './jumpToRun.js';
@@ -996,11 +997,18 @@ await sendTurn(state, refs, {
     async function load() {
       if (!projectDir || !chatId) return;
       try {
-        const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys, rMcp, rAgents, rActions, app] = await Promise.all([
-fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
+        // Only the chat record and its first page of messages are needed to
+        // draw rows, so the transcript paints as soon as those two arrive.
+        // Everything else (models, prompts, system prompt, MCP servers,
+        // authorization, …) is requested in parallel and fills the header
+        // cards and the composer controls when it lands. The two transcript
+        // requests may already be in flight from boot (chatPrefetch.js).
+        const prefetched = takePrefetchedChat(projectDir, chatId);
+        const pChat = prefetched ? prefetched.chat : fetchJson(chatUrl(projectDir, chatId));
+        const pMsgs = prefetched ? prefetched.messages : fetchJson(chatMessagesUrl(projectDir, chatId));
+        const pRest = Promise.all([
 loadModels(projectDir),
 fetchJson('/api/ai/models/providers'),
-fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir) + '&limit=100'),
 fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir)),
 fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/system-prompt?projectDir=' + encodeURIComponent(projectDir)),
 fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir)),
@@ -1008,16 +1016,22 @@ fetchJson('/api/agents?projectDir=' + encodeURIComponent(projectDir)),
 fetchJson('/api/actions?projectDir=' + encodeURIComponent(projectDir)),
 loadApp({ force: true }).catch(() => null)
 ]);
+        // Fetch the authorization view for THIS CHAT: the effective modes
+        // (chat override → project → app) plus the raw per-chat maps, which
+        // the tools card and the tool popup use to label a row as pinned by
+        // this chat. A project-scoped read would show the project modes and
+        // silently misreport every chat-level override.
+        const pAuth = fetchJson(chatAuthUrl(projectDir, chatId)).catch(() => null);
+        // An early return below (chat not found, chat switched) must not
+        // leave this rejection unhandled.
+        pRest.catch(() => {});
+        const [rChat, rMsgs] = await Promise.all([pChat, pMsgs]);
         // The tool catalog is the ONE chat-load request that is not fast
         // to resolve: GET /api/tools/list auto-starts every configured MCP
         // server that isn't already running (see docs/features/mcp.md), which
         // on a cold start spawns child processes and can take seconds on the
-        // first chat open after a restart. Awaiting it inside the Promise.all
-        // above would hold back the transcript + model picker (which only need
-        // the fast requests) behind a blank chat on every cold open. So the
-        // catalog is fetched in the background: the chat renders immediately
-        // with the fast data, then the tools card swaps in once the (slow)
-        // catalog resolves below.
+        // first chat open after a restart. It is fetched in the background
+        // further down, and the tools card swaps in once it resolves.
         if (cancelled) return;
         if (rChat.status !== 200) {
           if (status.current) status.current.textContent = 'chat not found';
@@ -1026,16 +1040,6 @@ loadApp({ force: true }).catch(() => null)
         }
         const c = rChat.body.chat;
         state.chat = c;
-        // Composer keyboard default comes from the app-level Chat defaults
-        // setting (default true = Enter inserts a newline). Falls back to true
-        // when the app settings fetch failed or the key is absent.
-const appSettings = (app && app.app) || {};
-state.enterForNewline = typeof appSettings.enterForNewline === 'boolean' ? appSettings.enterForNewline : true;
-state.autoRetry = typeof c.autoRetry === 'boolean'
-? c.autoRetry
-: (typeof appSettings.autoRetry === 'boolean' ? appSettings.autoRetry : true);
-setFileOrb(fileOrbFromApp(app));
-setComposerTools(composerToolsFromApp(app));
 persistedModelPair.current = (c.providerId || '') + '|' + (c.modelId || '');
 // Seed THIS chat's session from the first page. `cancelled` was checked
 // above, so the session on the ref is the one this load belongs to.
@@ -1059,6 +1063,36 @@ sess.transcriptNextSeq = rMsgs.status === 200 && rMsgs.body && typeof rMsgs.body
 ? rMsgs.body.nextSeq
 : nextServerMessageIndex(state);
 sess.nextLiveSeq = 0;
+        // Tool catalog starts empty; the background fetch below fills it
+        // in so the initial transcript render is never blocked on MCP
+        // cold-start. filter comes straight off the chat.
+        tools.current = {
+          catalog: [],
+          filter: Array.isArray(c.tools) ? c.tools.slice() : null
+        };
+        if (chatName.current) chatName.current.textContent = c.title || chatId;
+        // First paint: the rows, with whatever header data is known so far.
+        renderTranscriptBound();
+
+        const [rModels, rProviders, rPrompts, rSys, rMcp, rAgents, rActions, app] = await pRest;
+        const authRes = await pAuth;
+        // The awaits above are the last before we start writing per-chat UI
+        // state. If the user switched chat/project while they were in flight
+        // the cleanup has already set `cancelled`; without this re-check the
+        // block below would clobber the newly loaded chat's composer,
+        // thinking level, meta line, credit and picker with this stale
+        // load's values.
+        if (cancelled) return;
+        // Composer keyboard default comes from the app-level Chat defaults
+        // setting (default true = Enter inserts a newline). Falls back to true
+        // when the app settings fetch failed or the key is absent.
+const appSettings = (app && app.app) || {};
+state.enterForNewline = typeof appSettings.enterForNewline === 'boolean' ? appSettings.enterForNewline : true;
+state.autoRetry = typeof c.autoRetry === 'boolean'
+? c.autoRetry
+: (typeof appSettings.autoRetry === 'boolean' ? appSettings.autoRetry : true);
+setFileOrb(fileOrbFromApp(app));
+setComposerTools(composerToolsFromApp(app));
 models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [];
         state.providers = rProviders.status === 200 ? (rProviders.body.providers || []) : [];
         // Seed the per-provider live cache with the project-level
@@ -1074,14 +1108,6 @@ models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [
         pickerFilter.current = { q: '', provider: 'all' };
         prompts.current = rPrompts.status === 200 ? (rPrompts.body.prompts || []) : [];
         systemPrompt.current = rSys.status === 200 ? rSys.body : null;
-        // Tool catalog starts empty; the background fetch below fills it
-        // in so the initial transcript render (which happens below) is
-        // never blocked on MCP cold-start. filter comes straight off the
-        // chat.
-        tools.current = {
-          catalog: [],
-          filter: Array.isArray(c.tools) ? c.tools.slice() : null
-        };
         // Seed the agent-files card from the chat record and project
         // gate. The project-level setting is the master switch: when
         // the project has it `false` the per-chat toggle cannot enable.
@@ -1104,23 +1130,7 @@ models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [
         agents.current = rAgents.status === 200 && Array.isArray(rAgents.body.agents) ? rAgents.body.agents : [];
 setCustomActions(rActions.status === 200 && Array.isArray(rActions.body.actions) ? rActions.body.actions : []);
 
-        // Fetch the authorization view for THIS CHAT: the effective modes
-        // (chat override → project → app) plus the raw per-chat maps, which
-        // the tools card and the tool popup use to label a row as pinned by
-        // this chat. A project-scoped read would show the project modes and
-        // silently misreport every chat-level override.
-        try {
-        const authRes = await fetchJson(chatAuthUrl(projectDir, chatId));
-        if (authRes.status === 200) applyChatAuthResponse(authRes.body);
-        } catch { /* keep empty auth */ }
-
-        // The authorization fetch above is the last await before we start
-        // writing per-chat UI state. If the user switched chat/project
-        // while it was in flight the cleanup has already set `cancelled`;
-        // without this re-check the block below would clobber the newly
-        // loaded chat's composer, thinking level, meta line, credit and
-        // picker with this stale load's values.
-        if (cancelled) return;
+        if (authRes && authRes.status === 200) applyChatAuthResponse(authRes.body);
 
         if (promptInput.current && !promptInput.current.value && typeof c.draft === 'string' && c.draft) {
 
@@ -1132,7 +1142,6 @@ setCustomActions(rActions.status === 200 && Array.isArray(rActions.body.actions)
 if (Array.isArray(c.draftAttachments) && c.draftAttachments.length) {
   setImageAttachments(c.draftAttachments);
 }
-        if (chatName.current) chatName.current.textContent = c.title || chatId;
         state.thinkingLevel = c.thinkingLevel || '';
         state.maxOutputTokens = c.maxOutputTokens || '';
         // A custom entry belongs to the chat it was typed in: clear it
@@ -1149,16 +1158,13 @@ if (Array.isArray(c.draftAttachments) && c.draftAttachments.length) {
         refreshProviderCredit(state, refs);
         syncPickerState();
 
-        // Render the transcript and model picker immediately with the
-        // project-level model list. Then fire live model fetches in the
-        // background — they update the picker when they arrive, but must
-        // not block the initial render (the upstream can take up to 8 s).
-        if (cancelled) return;
         // Tool catalog, MCP servers, agent files, skills, and authorization
         // live in refs for the imperative transcript renderer. Notify Preact
-        // once after loading so ToolPopup receives those populated values.
+        // once after loading so ToolPopup receives those populated values,
+        // and refresh the header cards in place (the rows are already up).
         setToolDataStamp((value) => value + 1);
-        renderTranscriptBound();
+        refreshHeaderCards(state, refs);
+        updateSwitch(activeProfileId(state), refs);
         // Eager backward pagination: after the first (newest) page paints,
         // keep fetching older pages in the background until the WHOLE
         // transcript is in memory, so the user can scroll to any point without

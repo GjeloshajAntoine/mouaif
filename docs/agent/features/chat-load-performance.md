@@ -47,7 +47,7 @@ When the SSE socket dies but the run survives on the server, a **reloaded** page
 
 ### Latest-first progressive render (`frontend/src/components/chat/transcript.js` → `renderTranscriptChunked` / `renderTranscriptBackfill`)
 
-A long transcript (≥ `TRANSCRIPT_CHUNK_THRESHOLD`, 120 rows) used to render top-down from row 0 and only reveal the newest turn once the **whole** transcript had been built — so a big chat opened slow, scrolled up from the top, and appeared to "load from the beginning". The chunked render is now **tail-first**:
+A long transcript (≥ `TRANSCRIPT_CHUNK_THRESHOLD`, 50 rows, kept below the 100-row first page so a chat open always takes this path) used to render top-down from row 0 and only reveal the newest turn once the **whole** transcript had been built — so a big chat opened slow, scrolled up from the top, and appeared to "load from the beginning". The chunked render is now **tail-first**:
 
 1. **Phase 1 (synchronous, bounded).** Compute the render order (skipping empty assistant turns), then append only the newest `TRANSCRIPT_CHUNK_ROWS` (40) rows at the bottom and pin. The first paint cost is fixed regardless of transcript length, and the latest message is on screen on frame one.
 2. **Phase 2 (rAF chunks).** Backfill older rows **above** an insertion anchor (`refs._insertAnchor`, honored by `transcriptInsert`). Walking backwards and inserting each older row before the current first backfilled row keeps the net order chronological. After each chunk the scroll position is compensated by the height the inserted rows added above the viewport, so the view never jumps while history fills in behind the tail.
@@ -108,3 +108,8 @@ When a known cost is appended to an assistant message, the same write path incre
   phase, the backfill loop and `prependOlderTranscript` are wrapped in
   `try/finally`: a throw inside a row renderer would otherwise leave scroll
   pinning disabled for the rest of the session.
+
+### Open order (`useChatState.js` → `load()`, `frontend/src/chatPrefetch.js`)
+
+- **Boot prefetch.** `main.jsx` calls `prefetchChatFromHash` before the first render, so on a cold `#/chat/<id>?projectDir=…` open the chat record and its first 100-message page are requested in parallel with AccessGate's `/api/access/status`, not after the app mounts. `load()` claims them once with `takePrefetchedChat`; a non-200 or stale (>15 s) prefetch is re-fetched.
+- **Rows first.** `load()` renders the transcript as soon as the chat record and messages arrive. Models, providers, prompts, system prompt, MCP servers, agents, actions, app settings and the chat's authorization view are requested at the same time and, when they land, fill the composer controls and the header cards through `refreshHeaderCards`, which re-syncs only the header cards and leaves the rows alone.

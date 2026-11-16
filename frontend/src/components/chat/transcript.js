@@ -2682,7 +2682,9 @@ function snapshotExpandedState(root) {
 // growing. The finalize step re-pins once at the end.
 
 const TRANSCRIPT_CHUNK_ROWS = 40;   // rows appended per animation frame
-const TRANSCRIPT_CHUNK_THRESHOLD = 120; // render progressively above this many rows
+// Must stay below the 100-row first page the chat load fetches, or an open
+// never takes the chunked path and the whole page is built in one task.
+const TRANSCRIPT_CHUNK_THRESHOLD = 50; // render progressively above this many rows
 let _renderToken = 0;
 
 // ---- Tool-card index ------------------------------------------------
@@ -3944,6 +3946,24 @@ function syncHeaderCards(state, refs, empty) {
   // already out of place is moved, so a settled pass performs no mutation.
   orderHeaderCards(refs);
   ensureEmptyState(refs, empty);
+}
+
+// refreshHeaderCards(state, refs)
+//
+// Re-sync only the header cards, leaving every message row alone. The chat
+// load paints the transcript as soon as the chat record and its messages
+// arrive, then calls this once the slower header inputs (system prompt,
+// MCP servers, authorization, agent files, skills) land. Falls back to a
+// full render when this chat's transcript has not been drawn yet.
+export function refreshHeaderCards(state, refs) {
+  const el = refs.transcript.current;
+  if (!el) return;
+  if (refs._transcriptKey !== chatTranscriptKey(state)) {
+    renderTranscript(state, refs);
+    return;
+  }
+  syncHeaderCards(state, refs, !state.messages.length);
+  reanchorOverlayCards(refs);
 }
 
 // reconcileTranscript(state, refs)
