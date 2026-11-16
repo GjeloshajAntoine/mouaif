@@ -9,7 +9,7 @@
 
 import { renderMarkdown } from '../../markdown.js';
 import { mountMcpApp, deliverMcpAppMessage, reloadMcpApp } from './McpAppFrame.jsx';
-import { findToolRenderer, mountToolRenderer } from './extensionRenderer.js';
+import { findToolRenderer, mountToolRenderer, appendMessageActions } from './extensionRenderer.js';
 import { authorizationCard } from './cards.js';
 import { afterTranscriptAppend, scrollToolBodyToBottomSoon, cancelToolBodyScroll, pinTranscriptAfterSettle } from './scroll.js';
 import {
@@ -521,6 +521,8 @@ export function appendMessageToTranscript(m, isLive, refs, state) {
     if (!isLive) return m;
     return { role: m.role, content: row._content || '', reasoning: row._reasoning || '' };
     }));
+    // message.action views of active extensions (saved rows only).
+    if (!isLive && refs.mcpAppContext) appendMessageActions(actions, refs.mcpAppContext.projectDir, m);
     row.appendChild(actions);
   }
   transcriptInsert(refs, row);

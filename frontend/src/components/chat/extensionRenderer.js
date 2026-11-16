@@ -8,6 +8,7 @@
 // evicted one leaves a "Show view" button.
 import { mountMcpApp } from './McpAppFrame.jsx';
 import { claimSurface, touchSurface } from './appHostContext.js';
+import { openExtensionSheet } from './extensionEvents.js';
 
 const byProject = new Map(); // projectDir -> [surface]
 
@@ -63,4 +64,83 @@ export function mountToolRenderer(body, { projectDir, chatId, callId, renderer, 
       onAuthorize });
   }
   mount();
+}
+
+// ---- message.action -------------------------------------------------------
+//
+// Actions under saved chat messages: a small puzzle button in the row's
+// actions. One matching action opens directly; several open a short menu.
+// Opening goes through openExtensionSheet with the message's seq, so the
+// sheet mounts the view with that message (src/server-handlers-mcp-apps.js).
+const messageActionsByProject = new Map(); // projectDir -> [surface]
+
+export function setMessageActions(projectDir, list) {
+  messageActionsByProject.set(projectDir, Array.isArray(list) ? list : []);
+  // Rows drawn before the list arrived (or after it changed) catch up.
+  for (const wrap of document.querySelectorAll('.chat-msg__ext')) {
+    if (wrap._extProject === projectDir) fillMessageActions(wrap);
+  }
+}
+
+function messageActionsFor(projectDir, role) {
+  return (messageActionsByProject.get(projectDir) || []).filter((s) => ((s.match && s.match.role) || 'assistant') === role);
+}
+
+const PUZZLE_D = 'M10 3a2 2 0 0 1 4 0v2h4a1 1 0 0 1 1 1v4h-2a2 2 0 0 0 0 4h2v4a1 1 0 0 1-1 1h-4v-2a2 2 0 0 0-4 0v2H6a1 1 0 0 1-1-1v-4h2a2 2 0 0 0 0-4H5V6a1 1 0 0 1 1-1h4V3Z';
+
+// appendMessageActions(actionsEl, projectDir, m) — no-op without a saved seq.
+// The row always gets an (empty) slot so a later setMessageActions can fill
+// it; the list is read again on click, so a stale entry never mounts.
+export function appendMessageActions(actionsEl, projectDir, m) {
+  if (!projectDir || !m || !Number.isSafeInteger(m.seq)) return;
+  const wrap = document.createElement('span');
+  wrap.className = 'chat-msg__ext';
+  wrap._extProject = projectDir;
+  wrap._extRole = m.role;
+  wrap._extSeq = m.seq;
+  actionsEl.appendChild(wrap);
+  fillMessageActions(wrap);
+}
+
+function fillMessageActions(wrap) {
+  const projectDir = wrap._extProject;
+  const role = wrap._extRole;
+  const seq = wrap._extSeq;
+  const has = messageActionsFor(projectDir, role).length > 0;
+  if (!has) { wrap.textContent = ''; wrap.hidden = true; return; }
+  wrap.hidden = false;
+  if (wrap.firstChild) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'icon-btn chat-msg__ext-btn';
+  btn.setAttribute('aria-label', 'Extension actions');
+  btn.title = 'Extension actions';
+  btn.setAttribute('aria-haspopup', 'menu');
+  btn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="' + PUZZLE_D + '"/></svg>';
+  let menu = null;
+  const close = () => { if (menu) { menu.remove(); menu = null; document.removeEventListener('pointerdown', away, true); } };
+  const away = (e) => { if (!wrap.contains(e.target)) close(); };
+  const open = (s) => { close(); openExtensionSheet({ extensionId: s.extensionId, surfaceId: s.surfaceId, messageSeq: seq }); };
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (menu) { close(); return; }
+    const list = messageActionsFor(projectDir, role);
+    if (!list.length) return;
+    if (list.length === 1) { open(list[0]); return; }
+    menu = document.createElement('div');
+    menu.className = 'ext-menu__list';
+    menu.setAttribute('role', 'menu');
+    for (const s of list) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'ext-menu__item';
+      item.setAttribute('role', 'menuitem');
+      item.textContent = s.title;
+      item.addEventListener('click', (ev) => { ev.stopPropagation(); open(s); });
+      menu.appendChild(item);
+    }
+    wrap.appendChild(menu);
+    document.addEventListener('pointerdown', away, true);
+  });
+  wrap.appendChild(btn);
 }

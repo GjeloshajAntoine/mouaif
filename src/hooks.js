@@ -46,7 +46,7 @@ const { Worker } = require('node:worker_threads');
 const settings = require('./settings.js');
 
 const STORE_KEY = 'hooks';
-const EVENTS = Object.freeze(['prompt.submit', 'tool.before', 'tool.after', 'turn.start', 'turn.end', 'turn.error', 'subagent.end', 'attention']);
+const EVENTS = Object.freeze(['prompt.submit', 'tool.before', 'tool.after', 'turn.start', 'turn.end', 'turn.error', 'subagent.end', 'attention', 'chat.create', 'chat.delete', 'model.change']);
 const TOOL_EVENTS = Object.freeze(['tool.before', 'tool.after']);
 // Events whose `block` stops something; elsewhere a block is just a note.
 const BLOCKING_EVENTS = Object.freeze(['prompt.submit', 'tool.before']);
@@ -57,7 +57,10 @@ const EVENT_FIELDS = Object.freeze({
   'turn.end': ['text', 'usage', 'cost', 'toolCount', 'followUpDepth'],
   'turn.error': ['code', 'message', 'stopped'],
   'subagent.end': ['callId', 'agent', 'task', 'background', 'state', 'ok', 'text', 'error', 'model', 'depth', 'parentCallId', 'groupId', 'memberId', 'durationMs'],
-  attention: ['kind', 'tool']
+  attention: ['kind', 'tool'],
+  'chat.create': ['title'],
+  'chat.delete': ['title'],
+  'model.change': ['from', 'to', 'provider']
 });
 // The model's hook tools (src/tools/hooks.js). Tool hooks never match them,
 // so a hook cannot lock the user out of cleanup or rewrite another hook.

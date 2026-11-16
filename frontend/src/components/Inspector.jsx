@@ -19,6 +19,7 @@ import { selectionAcrossModes } from './inspector/targetBar.js';
 import { IntentPanel } from './inspector/IntentPanel.jsx';
 import { buildIntentPrompt } from './inspector/intent.js';
 import { activeProject } from '../api.js';
+import { ExtensionMenu } from './chat/ExtensionMenu.jsx';
 import { summarizeReceipt, recordChange, undoPlan, undoOrder } from './inspector/scope.js';
 import { settlePick, pickBannerText } from './inspector/pickMode.js';
 import { createEventHandlers } from './inspector/events.js';
@@ -2190,6 +2191,8 @@ onPick: () => { const acts = stylesHandlesRef.current; if (acts && acts.togglePi
     h('div', { class: 'view-head inspector__viewhead' },
       h('a', { href: '#/inspector', class: 'view-back', 'aria-label': 'Back to targets', onClick: (e) => { e.preventDefault(); disconnect(); setPhase('targets'); rerender(); } }, '←'),
       h('h2', { class: 'view-title inspector__title' }, t && (t.title || t.url || 'target')),
+      // inspector.panel views (docs/features/extensions.md): project-level, no chat.
+      h(ExtensionMenu, { projectDir: (activeProject.value && activeProject.value.dir) || '', slot: 'inspector.panel' }),
       h(InspectActionsMenu, {
         onReload: reloadAttachedTarget,
         onOpenInNewTab: openAttachedPageInNewTab,

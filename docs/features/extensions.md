@@ -63,7 +63,7 @@ A repository can ship extensions as `.mouaif/extensions/<id>.mouaif-extension.js
 | `server` | `{ "ref": "<server id or slug>" }`: an MCP server set up in Settings → MCP (or the project's `.mcp.json`). Or an inline server (`name`, then `command` + `args` + `env`, or `url`), registered app-wide while the extension is on and removed when it is turned off or deleted. |
 | `permissions` | what its UI may do: `chat.read` (read the chat's recent messages as text), `composer.insert` (put text in your message box, never send), `chat.message` (send a message), `storage` (its own 64 KB of settings), `model.context` (add context the model sees on the next turns) |
 | `hooks` | hook entries as in [Hooks](hooks.md). One more kind, `{ "kind": "mcp", "tool": "<name>" }`, calls a tool on the extension's server with the event as its arguments and reads the answer from `structuredContent` (or the first text block). |
-| `ui` | surfaces: `id`, `slot` (`chat.dock`, `chat.sheet`, `settings.page`, `tool.renderer` with `match.tool`, `project.card`), `title`, and `resourceUri` (a `ui://` resource on the server) or `html` (a single-file page, up to 512 KB). Optional `collapsed` (`chip` or `open`) and `events`. |
+| `ui` | surfaces: `id`, `slot` (`chat.dock`, `chat.sheet`, `settings.page`, `tool.renderer` with `match.tool`, `project.card`, `composer.action` with an optional `command`, `message.action` with an optional `match.role`, `files.action`, `git.action`, `inspector.panel`, `app.panel`), `title`, and `resourceUri` (a `ui://` resource on the server) or `html` (a single-file page, up to 512 KB). Optional `collapsed` (`chip` or `open`) and `events`. |
 
 The whole file is at most 1 MiB. Keys mouaif does not know are kept, so a newer file still imports, and **Export** writes the file back unchanged plus `exportedAt`.
 
@@ -76,6 +76,13 @@ Each `ui` entry is a **view**: a small web page (an MCP App) that mouaif runs sa
 - **`tool.renderer`** (with `"match": { "tool": ["shell", "mcp__github__*"] }`): replaces the body of matching tool cards, built when you expand the card. The view receives the call's arguments and result through the standard MCP Apps notifications, so an existing MCP App works as a renderer unchanged. A native tool's JSON result arrives as `structuredContent`. The ordinary result stays under **Raw result**. A renderer sees the arguments and results of the tools it matches, and the permission screen lists those tools (or says **Every tool call** for `*`).
 - **`settings.page`**: a page at `#/settings/extensions/<id>/<surface>`, linked from the extension's card in Settings → Extensions. It runs in the active project, with no chat.
 - **`project.card`**: a chip under the chats of every project where the extension is on. Tapping it opens the view in a sheet, with no chat.
+- **`composer.action`**: a small button in the message box, next to the image and mic buttons, that opens the view in a sheet. With `"command": "ticket"`, sending `/ticket` alone opens it instead of sending a message. A command belongs to the first active extension that claims it. Another extension that claims the same command keeps its button but gets no command.
+- **`message.action`** (with `"match": { "role": "assistant" }`, the default, or `"user"`): a puzzle button under each saved message of that role. One action opens directly, several show a short menu. The view opens in a sheet and gets the message as `structuredContent.mouaif`: `{ type: "message", role, messageSeq }`, plus the message's `text` (up to 32 KB) when the extension has `chat.read`.
+- **`files.action`**: a puzzle button in the file editor's header, just before Close. The view opens in a sheet that runs in the project, with no chat.
+- **`git.action`**: the same, in the Git sheet's header.
+- **`inspector.panel`**: the same, in the Inspector's header while a page is attached.
+- **`app.panel`**: a small puzzle button at the right of the app header, available on every screen, for the active project and with no chat.
+- When several views share one of these buttons, it opens a menu. When none are active, it isn't shown.
 - Only **two** docked views or renderers run at once in a tab: opening a third closes the one you used least recently (a renderer then shows **Show …** to bring it back). A view also closes when the tab is hidden and offers **Retry** when you come back. Each view is a browser process, and mouaif's host is small.
 - Views load through the app's own port, so a Docker install has nothing extra to publish.
 - `?safe` in the address shows no extension views.
@@ -113,11 +120,12 @@ A view of an extension with the `model.context` permission can set context the m
 
 ### Events
 
-A view that lists `"events": ["turn.start", "turn.end", "tool.after"]` in its `ui` entry receives those chat events while it is open (nothing is queued for a closed view). They arrive as a tool-result notification whose `structuredContent` is `{ "mouaif": { "type": "event", "event": "turn.end", "payload": { … } } }`. The payloads are:
+A view that lists `"events": ["turn.start", "turn.end", "tool.after", "model.change"]` in its `ui` entry receives those chat events while it is open (nothing is queued for a closed view). They arrive as a tool-result notification whose `structuredContent` is `{ "mouaif": { "type": "event", "event": "turn.end", "payload": { … } } }`. The payloads are:
 
 - `turn.start`: `{ model }`
 - `tool.after`: `{ tool, ok, callId }`, plus the capped `result` with `chat.read`
 - `turn.end`: `{ toolCount }`, plus the answer `text` with `chat.read`
+- `model.change`: `{ from, to }`, sent before `turn.start` when the turn uses a different model than the chat's previous answer
 
 Events reach every open tab of the chat. mouaif only sends them while some active view asked for them.
 

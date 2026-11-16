@@ -160,6 +160,8 @@ function samplePayload(hook) {
     case 'turn.error': return { code: 'EUPSTREAM', message: 'Test error from Settings', stopped: false };
     case 'subagent.end': return { callId: 'test', agent: null, task: 'Test task from Settings', background: false, state: 'completed', ok: true, text: 'Test result from Settings.', error: null, model: 'test-model', depth: 1, parentCallId: null, groupId: null, memberId: null, durationMs: 1200 };
     case 'attention': return { kind: 'tool_authorization', tool: 'shell' };
+    case 'chat.create': case 'chat.delete': return { title: 'Test chat from Settings' };
+    case 'model.change': return { from: 'old-model', to: 'test-model', provider: 'test' };
     default: {
       const tool = (hook.match && hook.match.tool && hook.match.tool[0] && !hook.match.tool[0].includes('*')) ? hook.match.tool[0] : 'shell';
       return { tool, args: { cmd: 'echo test' }, ...(hook.event === 'tool.after' ? { ok: true, result: { stdout: 'test\n', exitCode: 0 } } : {}) };

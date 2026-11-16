@@ -13,7 +13,13 @@ export const SLOT_LABELS = {
   'chat.sheet': 'A sheet opened from the chat’s file menu',
   'settings.page': 'A page in Settings → Extensions',
   'tool.renderer': 'A view inside matching tool cards (it sees those calls’ arguments and results)',
-  'project.card': 'A chip on the project card that opens it'
+  'project.card': 'A chip on the project card that opens it',
+  'composer.action': 'A button in the message box tools',
+  'message.action': 'An action under chat messages (it sees that message with chat.read)',
+  'files.action': 'An entry in the Files menu',
+  'git.action': 'An entry in the Git sheet',
+  'inspector.panel': 'A button in the Inspector’s header',
+  'app.panel': 'An entry in the app header’s Extensions menu'
 };
 
 export function ExtensionSummary({ summary }) {
@@ -54,6 +60,8 @@ export function ExtensionSummary({ summary }) {
           ? h('div', { class: 'hint hint--compact' },
             u.tools.includes('*') ? h('strong', null, 'Every tool call') : 'Tools: ',
             u.tools.includes('*') ? null : h('code', null, u.tools.join(', ')))
-          : null)))
+          : null,
+        u.role ? h('div', { class: 'hint hint--compact' }, u.role === 'user' ? 'Your messages' : 'Assistant answers') : null,
+        u.command ? h('div', { class: 'hint hint--compact' }, 'Command: ', h('code', null, '/' + u.command)) : null)))
       : h('p', { class: 'hint hint--compact' }, 'No UI.'));
 }

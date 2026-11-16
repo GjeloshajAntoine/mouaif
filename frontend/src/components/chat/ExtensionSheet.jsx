@@ -1,6 +1,7 @@
 // mouaif web — an extension's sheet (docs/features/extensions.md)
 //
-// The `chat.sheet` slot: a bottom sheet opened from the chat's file menu
+// The `chat.sheet` slot (and every slot that opens as a sheet:
+// composer.action, message.action, files.action, git.action, app.panel): a bottom sheet opened from the chat's file menu
 // (next to custom actions) or by the extension's own view
 // (mouaif/chat.open_sheet). It mounts the view when it opens and unmounts it
 // when it closes. Full height on a phone; the view's own Fullscreen works too.
@@ -40,8 +41,9 @@ export function ExtensionSheet({ projectDir, chatId, surface, onClose, onAuthori
         surface.extensionName !== surface.title ? h('span', { class: 'ext-sheet__ext' }, surface.extensionName) : null),
       h('button', { type: 'button', class: 'btn ext-sheet__close', onClick: onClose, 'aria-label': 'Close ' + surface.title }, 'Close')),
     h('div', { class: 'ext-sheet__body' },
-      h(McpAppFrame, { projectDir, chatId, callId: 'sheet:' + id,
-      surface: { extensionId: surface.extensionId, surfaceId: surface.surfaceId, slot: 'chat.sheet',
+      h(McpAppFrame, { projectDir, chatId, callId: 'sheet:' + id + (Number.isSafeInteger(surface.messageSeq) ? ':' + surface.messageSeq : ''),
+      surface: { extensionId: surface.extensionId, surfaceId: surface.surfaceId, slot: surface.slot || 'chat.sheet',
+      ...(Number.isSafeInteger(surface.messageSeq) ? { messageSeq: surface.messageSeq } : {}),
       projectName: (activeProject.value && activeProject.value.name) || '' },
       onAuthorize,
       onBridge: (b) => { bridge.current = b; } }))));

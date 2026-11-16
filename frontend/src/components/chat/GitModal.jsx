@@ -15,6 +15,7 @@
 // commits and section toggles survive a Stage / Commit / Pull.
 
 import { h, Fragment } from 'preact';
+import { ExtensionMenu } from './ExtensionMenu.jsx';
 import { useReducer, useState, useEffect, useCallback, useRef } from 'preact/hooks';
 import { useModal } from '../../hooks/useModal.js';
 import { fetchJson } from '../../api.js';
@@ -586,6 +587,8 @@ export function GitModal(props) {
           disabled: state.status === 'loading' || state.refreshing || !!busy, onClick: load,
           path: 'M12 4V1L7 6l5 5V7c3.31 0 6 2.69 6 6 0 1-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 13c0-4.42-3.58-8-8-8Zm-5.3 7.7A7.93 7.93 0 0 0 4 13c0 4.42 3.58 8 8 8v3l5-5-5-5v3c-3.31 0-6-2.69-6-6 0-1 .25-1.97.7-2.8L5.24 10.24Z'
         }),
+        // git.action views (docs/features/extensions.md).
+        h(ExtensionMenu, { projectDir, slot: 'git.action', class: 'gm__ext' }),
         h(HeadButton, {
           label: 'Close', title: 'Close', size: 16, extraClass: ' icon-btn--close',
           onClick: onClose,

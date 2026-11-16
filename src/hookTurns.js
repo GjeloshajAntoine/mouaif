@@ -30,6 +30,23 @@ function fireTurnStart(t) {
   }, { projectDir: t.projectDir, chatId: t.chatId, cwd: t.cwd }).catch(() => null);
 }
 
+// fireModelChange({ projectDir, chatId, cwd, origin, from, to, provider }) -> Promise
+// Fired before turn.start when this turn's model differs from the model of
+// the chat's previous answer (the model is chosen per turn, not per chat).
+function fireModelChange(t) {
+  if (!t.from || !t.to || t.from === t.to) return Promise.resolve(null);
+  return hooks.runHooks('model.change', {
+    origin: hookOriginOf(t.origin), from: t.from, to: t.to, provider: t.provider || ''
+  }, { projectDir: t.projectDir, chatId: t.chatId, cwd: t.cwd }).catch(() => null);
+}
+
+// fireChatLifecycle(event, { projectDir, chatId, title }) -> Promise
+// chat.create / chat.delete: watch-only, never awaited by the request.
+function fireChatLifecycle(event, t) {
+  return hooks.runHooks(event, { origin: { kind: 'user' }, title: t.title || '' },
+    { projectDir: t.projectDir, chatId: t.chatId, cwd: t.projectDir }).catch(() => null);
+}
+
 // fireTurnError({ projectDir, chatId, cwd, origin, code, message, stopped }) -> Promise
 function fireTurnError(t) {
   return hooks.runHooks('turn.error', {
@@ -106,4 +123,4 @@ async function fireTurnEnd(t, { startTurn, isRunning } = {}) {
   return { followUp: 'failed' };
 }
 
-module.exports = { MAX_FOLLOW_UPS, fireTurnStart, fireTurnError, fireSubagentEnd, fireTurnEnd };
+module.exports = { MAX_FOLLOW_UPS, fireTurnStart, fireModelChange, fireChatLifecycle, fireTurnError, fireSubagentEnd, fireTurnEnd };

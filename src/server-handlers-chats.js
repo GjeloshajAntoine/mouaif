@@ -189,6 +189,7 @@ return sendJSON(res, 400, { error: 'Unknown promptId' });
 const safeCreate = Object.assign({}, body || {});
 delete safeCreate.promptSnapshot;
 const chat = chats.createChat(dir, safeCreate);
+      try { require('./hookTurns.js').fireChatLifecycle('chat.create', { projectDir: dir, chatId: chat.id, title: chat.title }); } catch { /* non-fatal */ }
       return sendJSON(res, 201, { chat });
     } catch (e) {
       return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
@@ -258,8 +259,11 @@ const chat = chats.updateChat(dir, id, safeBody);
     const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
+      let doomedTitle = '';
+      try { const c = chats.getChat(dir, id); doomedTitle = (c && c.title) || ''; } catch { /* unknown chat */ }
       const removed = chats.deleteChat(dir, id);
       if (!removed) return sendJSON(res, 404, { error: 'Chat not found', id });
+      try { require('./hookTurns.js').fireChatLifecycle('chat.delete', { projectDir: dir, chatId: id, title: doomedTitle }); } catch { /* non-fatal */ }
       // Chat storage and trace export are independent. Deleting a chat
       // removes its transcript, but deliberately keeps the user-owned trace
       // file so it can remain committed with the project (decision §5).
@@ -949,6 +953,13 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
   try { hookCwd = require('./chatWorkingFolder.js').resolveForCall(projectDir, chatId); } catch { /* project folder */ }
   const turnHookBase = { projectDir, chatId, cwd: hookCwd, origin: internal.origin || hookOrigin };
   const fireTurnError = (code, message, stopped) => { hookTurns.fireTurnError(Object.assign({ code, message, stopped }, turnHookBase)); };
+  // model.change: the previous answer's model, from the stored history.
+  let previousModel = '';
+  for (let i = history.length - 1; i >= 0; i--) {
+    const row = history[i];
+    if (row && row.role === 'assistant' && typeof row.modelId === 'string' && row.modelId) { previousModel = row.modelId; break; }
+  }
+  hookTurns.fireModelChange(Object.assign({ from: previousModel, to: model.id, provider: model.providerId || providerId }, turnHookBase));
   hookTurns.fireTurnStart(Object.assign({ model: model.id, provider: model.providerId || providerId,
     thinkingLevel: thinkingLevel || chat.thinkingLevel || '' }, turnHookBase));
   let turnToolCount = 0;
@@ -972,6 +983,7 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
     liveChat.pushTransient(runKey, 'host_event', data);
   }
   const capJson = (v) => { try { const t = JSON.stringify(v); return t.length > 4096 ? t.slice(0, 4096) + '…' : t; } catch { return ''; } };
+  if (previousModel && previousModel !== model.id) hostEvent('model.change', { from: previousModel, to: model.id });
   hostEvent('turn.start', { model: model.id });
 
   // What `prompt.submit` hooks did to this prompt, for the user bubble.

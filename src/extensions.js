@@ -47,10 +47,12 @@ const PERMISSIONS = Object.freeze({
   storage: 'Keep its own small settings (64 KB)',
   'model.context': 'Add context the model sees on the next turns'
 });
-const SLOTS = Object.freeze(['chat.dock', 'chat.sheet', 'settings.page', 'tool.renderer', 'project.card']);
+const SLOTS = Object.freeze(['chat.dock', 'chat.sheet', 'settings.page', 'tool.renderer', 'project.card',
+  'composer.action', 'message.action', 'files.action', 'git.action', 'inspector.panel', 'app.panel']);
 // Slots that live in a chat (a mount needs a chat id).
-const CHAT_SLOTS = Object.freeze(['chat.dock', 'chat.sheet', 'tool.renderer']);
-const UI_EVENTS = Object.freeze(['turn.start', 'turn.end', 'tool.after']);
+const CHAT_SLOTS = Object.freeze(['chat.dock', 'chat.sheet', 'tool.renderer', 'composer.action', 'message.action']);
+const COMMAND_RE = /^[a-z][a-z0-9-]{0,30}$/;
+const UI_EVENTS = Object.freeze(['turn.start', 'turn.end', 'tool.after', 'model.change']);
 // Path words under /api/extensions/ that are not extension ids.
 const RESERVED_IDS = Object.freeze(['surfaces', 'context']);
 const SERVER_KEYS = Object.freeze(['name', 'command', 'args', 'env', 'cwd', 'url', 'transport', 'headers']);
@@ -129,6 +131,15 @@ function normalizeUi(raw, hasServer) {
         throw fail(at + '.match.tool (tool names, * for any) is required for a tool.renderer');
       }
       out.match = { tool: tools };
+    }
+    if (u.slot === 'composer.action' && u.command !== undefined) {
+      if (typeof u.command !== 'string' || !COMMAND_RE.test(u.command)) throw fail(at + '.command must be lowercase letters, digits and - (max 31), starting with a letter');
+      out.command = u.command;
+    } else if (u.command !== undefined) throw fail(at + '.command is only for a composer.action');
+    if (u.slot === 'message.action') {
+      const role = u.match && u.match.role !== undefined ? u.match.role : 'assistant';
+      if (role !== 'assistant' && role !== 'user') throw fail(at + '.match.role must be assistant or user');
+      out.match = { role };
     }
     return out;
   });
@@ -232,7 +243,9 @@ function summary(ext) {
     hooks: ext.hooks,
     // A renderer's tool patterns: it sees those calls' arguments and results.
     ui: ext.ui.map((u) => Object.assign({ id: u.id, slot: u.slot, title: u.title, source: u.resourceUri || 'inline html' },
-      u.match ? { tools: u.match.tool.slice() } : {}))
+      u.match && u.match.tool ? { tools: u.match.tool.slice() } : {},
+      u.match && u.match.role ? { role: u.match.role } : {},
+      u.command ? { command: u.command } : {}))
   };
 }
 
@@ -484,6 +497,7 @@ function surface(projectDir, extensionId, surfaceId) {
 // active extension's surface (no HTML or URIs: mounts resolve those server-side).
 function surfaces(projectDir, slot) {
   const out = [];
+  const commands = new Map();
   for (const { ext, scope } of active(projectDir)) {
     for (const ui of ext.ui) {
       if (slot && ui.slot !== slot) continue;
@@ -492,6 +506,11 @@ function surfaces(projectDir, slot) {
       if (ui.collapsed) item.collapsed = ui.collapsed;
       if (ui.events) item.events = ui.events.slice();
       if (ui.match) item.match = ui.match;
+      if (ui.command) {
+        // One command name per project: the first active extension keeps it.
+        if (commands.has(ui.command)) item.commandTaken = commands.get(ui.command);
+        else { commands.set(ui.command, ext.id); item.command = ui.command; }
+      }
       out.push(item);
     }
   }

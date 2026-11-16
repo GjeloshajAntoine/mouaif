@@ -10,7 +10,10 @@ export const EVENT_LABELS = {
   'turn.end': 'Turn finished',
   'turn.error': 'Turn failed or stopped',
   'subagent.end': 'Subagent finished',
-  attention: 'Before a notification'
+  attention: 'Before a notification',
+  'chat.create': 'Chat created',
+  'chat.delete': 'Chat deleted',
+  'model.change': 'Model changed'
 };
 export const TOOL_EVENTS = ['tool.before', 'tool.after'];
 // Events where a block (or a failure with "block on failure") stops something.
@@ -31,6 +34,8 @@ export function matchSummary(hook) {
   if (hook.event === 'prompt.submit') return 'every prompt';
   if (hook.event === 'attention') return 'every notification';
   if (hook.event === 'subagent.end') return 'every subagent';
+  if (hook.event === 'chat.create' || hook.event === 'chat.delete') return 'every chat';
+  if (hook.event === 'model.change') return 'every model switch';
   return TOOL_EVENTS.includes(hook.event) ? 'every tool' : 'every turn';
 }
 

@@ -27,10 +27,10 @@ import { RunDock } from './RunDock.jsx';
 import { WebhookDock } from './WebhookDock.jsx';
 import { HooksDock } from './HooksDock.jsx';
 import { ProjectHooksBar } from './ProjectHooksBar.jsx';
-import { ExtensionDocks, useExtensionSurfaces } from './ExtensionDocks.jsx';
+import { ExtensionDocks, useExtensionSurfaces, PuzzleIcon } from './ExtensionDocks.jsx';
 import { ExtensionSheet } from './ExtensionSheet.jsx';
 import { registerSheetOpener, COMPOSER_INSERT, ARTIFACTS_CHANGED } from './extensionEvents.js';
-import { setToolRenderers } from './extensionRenderer.js';
+import { setToolRenderers, setMessageActions } from './extensionRenderer.js';
 import { AppContextBar } from './AppContextBar.jsx';
 import { PreviewUrlPrompt } from './PreviewUrlPrompt.jsx';
 import { authorizationCard } from './cards.js';
@@ -93,12 +93,42 @@ const extensionSheets = useExtensionSurfaces(projectDir, 'chat.sheet');
 // Extension tool renderers, read by the transcript when a card builds its body.
 const extensionRenderers = useExtensionSurfaces(projectDir, 'tool.renderer');
 useEffect(() => { setToolRenderers(projectDir, extensionRenderers); }, [projectDir, extensionRenderers]);
+// composer.action buttons (and their /commands), message.action entries under messages.
+const composerActions = useExtensionSurfaces(projectDir, 'composer.action');
+const messageActions = useExtensionSurfaces(projectDir, 'message.action');
+useEffect(() => { setMessageActions(projectDir, messageActions); }, [projectDir, messageActions]);
 const [openSheet, setOpenSheet] = useState(null);
-useEffect(() => registerSheetOpener(({ extensionId, surfaceId }) => {
-  const found = extensionSheets.find((s) => s.extensionId === extensionId && s.surfaceId === surfaceId);
-  if (found) setOpenSheet(found);
+useEffect(() => registerSheetOpener(({ extensionId, surfaceId, messageSeq }) => {
+  const same = (s) => s.extensionId === extensionId && s.surfaceId === surfaceId;
+  // A message action opens only with the message it was picked on.
+  const found = Number.isSafeInteger(messageSeq)
+    ? messageActions.find(same)
+    : (extensionSheets.find(same) || composerActions.find(same));
+  if (found) setOpenSheet(Number.isSafeInteger(messageSeq) ? Object.assign({}, found, { messageSeq }) : found);
   return !!found;
-}), [extensionSheets]);
+}), [extensionSheets, composerActions, messageActions]);
+// `/command` alone in the composer opens that composer.action instead of sending.
+const commandAction = (text) => {
+  const m = /^\/([a-z][a-z0-9-]{0,30})\s*$/.exec(String(text || '').trim());
+  return m ? composerActions.find((s) => s.command === m[1]) || null : null;
+};
+const runCommandAction = (action) => {
+  if (refs.promptInput.current) refs.promptInput.current.value = '';
+  setComposerText('');
+  setOpenSheet(action);
+};
+const sendOrCommand = () => {
+  const action = commandAction(refs.promptInput.current ? refs.promptInput.current.value : composerText);
+  if (action && !imageAttachments.length) { runCommandAction(action); return undefined; }
+  return send();
+};
+const onComposerKeyOrCommand = (e) => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    const action = commandAction(e.currentTarget.value);
+    if (action && !imageAttachments.length) { e.preventDefault(); runCommandAction(action); return; }
+  }
+  onComposerKey(e);
+};
 useEffect(() => { setOpenSheet(null); }, [projectDir, chatId]);
 // mouaif/composer.insert from an extension view: text into the message box
 // at the caret, never sent (extensionEvents.js performHostAction).
@@ -797,14 +827,20 @@ onRefreshCustomActions: refreshCustomActions
         composerTools.dictation
         ? h(MicButton, { projectDir, chatId, promptRef: refs.promptInput, onTranscript, onStatus: onMicStatus, onProgress: onMicProgress })
         : null,
-        h('textarea', { ref: refs.promptInput, class: 'input chat-view__textarea', id: 'chatComposer', rows: 1, placeholder: imageAttachments.length ? 'Add a caption or send' : 'Type a message', 'aria-label': 'Message', onKeydown: onComposerKey, onPaste: onComposerPaste, onInput: onComposerInput }),
+        composerActions.length
+        ? h('span', { class: 'ext-composer-actions' }, composerActions.map((s) => h('button', {
+          key: s.extensionId + '/' + s.surfaceId, type: 'button', class: 'glyph-btn chat-view__iconbtn--round ext-composer-actions__btn',
+          onClick: () => setOpenSheet(s), 'aria-label': s.title, title: s.title + (s.command ? ' (/' + s.command + ')' : '')
+        }, h(PuzzleIcon, { size: 18 }))))
+        : null,
+        h('textarea', { ref: refs.promptInput, class: 'input chat-view__textarea', id: 'chatComposer', rows: 1, placeholder: imageAttachments.length ? 'Add a caption or send' : 'Type a message', 'aria-label': 'Message', onKeydown: onComposerKeyOrCommand, onPaste: onComposerPaste, onInput: onComposerInput }),
         runningVisible
           ? h('button', { ref: refs.stopBtn, class: 'btn btn--primary chat-view__send', type: 'button', onClick: onCancelRunning, 'aria-label': 'Stop' },
               h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
                 h('path', { d: 'M6 6h12v12H6Z', fill: 'currentColor' })
               )
             )
-          : h('button', { ref: refs.sendBtn, class: 'btn btn--primary chat-view__send', type: 'button', onClick: send, disabled: !composerText.trim() && !imageAttachments.length, 'aria-label': 'Send' },
+          : h('button', { ref: refs.sendBtn, class: 'btn btn--primary chat-view__send', type: 'button', onClick: sendOrCommand, disabled: !composerText.trim() && !imageAttachments.length, 'aria-label': 'Send' },
               h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
                 h('path', { d: 'M3.4 20.6 21 12 3.4 3.4 3 10l13 2-13 2 .4 6.6Z', fill: 'currentColor' })
               )

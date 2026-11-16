@@ -35,6 +35,7 @@ import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'preac
 import { fetchJson } from '../api.js';
 import { useBackClose } from '../hooks/useBackClose.js';
 import { ARTIFACTS_CHANGED } from './chat/extensionEvents.js';
+import { ExtensionMenu } from './chat/ExtensionMenu.jsx';
 import { EditorState } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, placeholder } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -701,11 +702,14 @@ export function FileEditorView(props) {
       )
     )
   );
-  const closeBtn = h('button', { class: 'icon-btn icon-btn--close fe__iconbtn', type: 'button', onClick: handleClose, 'aria-label': 'Close', title: 'Close' },
-    h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
-      h('path', { d: 'M18.3 5.71 12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71 2.88 18.3 9.17 12 2.88 5.71 4.3 4.3l6.29 6.29 6.3-6.29 1.41 1.41Z', fill: 'currentColor' })
-    )
-  );
+  // files.action views (docs/features/extensions.md) sit just before Close.
+  const closeBtn = h(Fragment, null,
+    h(ExtensionMenu, { projectDir, slot: 'files.action', class: 'fe__ext' }),
+    h('button', { class: 'icon-btn icon-btn--close fe__iconbtn', type: 'button', onClick: handleClose, 'aria-label': 'Close', title: 'Close' },
+      h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
+        h('path', { d: 'M18.3 5.71 12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71 2.88 18.3 9.17 12 2.88 5.71 4.3 4.3l6.29 6.29 6.3-6.29 1.41 1.41Z', fill: 'currentColor' })
+      )
+    ));
   const hasPane = !!(openFile || openMedia);
   // Full editor with a file or image open: the top bar would only carry
   // the toggle and Close, so they move to the end of the file's own row

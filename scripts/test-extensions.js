@@ -489,6 +489,101 @@ async function testRenderersAndPages() {
   }
 }
 
+
+// The added extension points: composer/message/files/git/inspector/app
+// slots, `/command` names, message mounts, and the watch-only lifecycle hooks.
+async function testMoreSlotsAndLifecycle() {
+  const chats = require('../src/chats.js');
+  const messages = require('../src/messages.js');
+  assert.throws(() => extensions.validate(manifest({ ui: [{ id: 'a', slot: 'chat.dock', title: 'A', html: 'x', command: 'go' }] })), /only for a composer\.action/);
+  assert.throws(() => extensions.validate(manifest({ ui: [{ id: 'a', slot: 'composer.action', title: 'A', html: 'x', command: 'Go!' }] })), /command/);
+  assert.throws(() => extensions.validate(manifest({ ui: [{ id: 'a', slot: 'message.action', title: 'A', html: 'x', match: { role: 'tool' } }] })), /match\.role/);
+  const v = extensions.validate(manifest({ ui: [{ id: 'a', slot: 'message.action', title: 'A', html: 'x' }] }));
+  assert.deepEqual(v.ui[0].match, { role: 'assistant' }, 'a message action defaults to answers');
+  for (const slot of ['files.action', 'git.action', 'inspector.panel', 'app.panel']) {
+    assert.equal(extensions.validate(manifest({ ui: [{ id: 'a', slot, title: 'A', html: 'x' }] })).ui[0].slot, slot);
+  }
+
+  const marks = path.join(root, 'lifecycle.log');
+  const append = (tag) => node + ' -e ' + JSON.stringify('let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const e=JSON.parse(d);require("fs").appendFileSync(' + JSON.stringify(marks) + ',"' + tag + ' "+e.event+" "+(e.title||e.from+">"+e.to)+"\\n")})');
+  extensions.importApp(manifest({ id: 'more-slots', permissions: [],
+    hooks: [
+      { id: 'c', event: 'chat.create', handler: { kind: 'command', command: append('C') } },
+      { id: 'd', event: 'chat.delete', handler: { kind: 'command', command: append('D') } },
+      { id: 'blk', event: 'chat.create', handler: { kind: 'command', command: say({ decision: 'block', reason: 'no' }) } }
+    ],
+    ui: [
+      { id: 'tool', slot: 'composer.action', title: 'Tool', html: '<p>t</p>', command: 'ticket' },
+      { id: 'ans', slot: 'message.action', title: 'Explain', html: '<p>m</p>' },
+      { id: 'mine', slot: 'message.action', title: 'Mine', html: '<p>u</p>', match: { role: 'user' } },
+      { id: 'files', slot: 'files.action', title: 'Files', html: '<p>f</p>' },
+      { id: 'panel', slot: 'app.panel', title: 'Panel', html: '<p>p</p>' }
+    ] }));
+  extensions.setAppEnabled('more-slots', true);
+  extensions.importApp(manifest({ id: 'other-cmd', hooks: [], permissions: ['chat.read'],
+    ui: [{ id: 'tool', slot: 'composer.action', title: 'Other', html: '<p>o</p>', command: 'ticket' },
+      { id: 'ans', slot: 'message.action', title: 'Read', html: '<p>r</p>' }] }));
+  extensions.setAppEnabled('other-cmd', true);
+  const composer = extensions.surfaces(projectDir, 'composer.action');
+  assert.equal(composer.find((s) => s.extensionId === 'more-slots').command, 'ticket');
+  const loser = composer.find((s) => s.extensionId === 'other-cmd');
+  assert.equal(loser.command, undefined, 'a taken command is not given twice');
+  assert.equal(loser.commandTaken, 'more-slots');
+
+  const { createServer } = require('../src/index.js');
+  const app = createServer(0);
+  await new Promise((r) => app.listen(0, '127.0.0.1', r));
+  const base = 'http://127.0.0.1:' + app.address().port;
+  const post = async (route, body = {}) => {
+    const res = await fetch(base + route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    return { status: res.status, body: await res.json() };
+  };
+  try {
+    // Lifecycle hooks: create goes through even though a hook "blocks" (watch-only).
+    const created = await post('/api/chats', { projectDir, title: 'Lifecycle' });
+    assert.equal(created.status, 201);
+    const chatId = created.body.chat.id;
+    messages.appendMessage(projectDir, chatId, { role: 'user', content: 'hello' });
+    messages.appendMessage(projectDir, chatId, { role: 'assistant', content: 'the answer' });
+    const rows = messages.listMessages(projectDir, chatId);
+    const userSeq = rows.find((r) => r.role === 'user').seq;
+    const answerSeq = rows.find((r) => r.role === 'assistant').seq;
+
+    // Message actions: the role must match; the text only with chat.read.
+    let r = await post('/api/mcp/apps/mount', { projectDir, chatId, extensionId: 'more-slots', surfaceId: 'ans', messageSeq: answerSeq });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.result.structuredContent.mouaif.role, 'assistant');
+    assert.equal(r.body.result.structuredContent.mouaif.text, undefined, 'no chat.read, no text');
+    r = await post('/api/mcp/apps/mount', { projectDir, chatId, extensionId: 'other-cmd', surfaceId: 'ans', messageSeq: answerSeq });
+    assert.equal(r.body.result.structuredContent.mouaif.text, 'the answer');
+    assert.equal((await post('/api/mcp/apps/mount', { projectDir, chatId, extensionId: 'more-slots', surfaceId: 'ans', messageSeq: userSeq })).status, 403);
+    assert.equal((await post('/api/mcp/apps/mount', { projectDir, chatId, extensionId: 'more-slots', surfaceId: 'mine', messageSeq: userSeq })).status, 200);
+    assert.equal((await post('/api/mcp/apps/mount', { projectDir, chatId, extensionId: 'more-slots', surfaceId: 'ans' })).status, 400, 'a message action needs its message');
+    assert.equal((await post('/api/mcp/apps/mount', { projectDir, chatId, extensionId: 'more-slots', surfaceId: 'ans', messageSeq: 99999 })).status, 404);
+    assert.equal((await post('/api/mcp/apps/mount', { projectDir, extensionId: 'more-slots', surfaceId: 'tool' })).status, 400, 'a composer action lives in a chat');
+    assert.equal((await post('/api/mcp/apps/mount', { projectDir, extensionId: 'more-slots', surfaceId: 'files' })).status, 200, 'files.action needs no chat');
+    assert.equal((await post('/api/mcp/apps/mount', { projectDir, extensionId: 'more-slots', surfaceId: 'panel' })).status, 200, 'app.panel needs no chat');
+
+    const del = await fetch(base + '/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir), { method: 'DELETE' });
+    assert.equal(del.status, 200);
+    const until = Date.now() + 10000;
+    let log = '';
+    while (Date.now() < until) {
+      log = fs.existsSync(marks) ? fs.readFileSync(marks, 'utf8') : '';
+      if (log.includes('C chat.create Lifecycle') && log.includes('D chat.delete Lifecycle')) break;
+      await new Promise((res) => setTimeout(res, 50));
+    }
+    assert.match(log, /C chat\.create Lifecycle/);
+    assert.match(log, /D chat\.delete Lifecycle/, 'chat.delete carries the title it had');
+    assert.equal(chats.getChat(projectDir, chatId), null);
+  } finally {
+    extensions.removeApp('more-slots');
+    extensions.removeApp('other-cmd');
+    await new Promise((res) => app.close(res));
+    await mcp.stopAll();
+  }
+}
+
 // Phase 9: model context from extension views (model.context): bounded,
 // labelled, sent once per change with the next prompt, never a turn.
 async function testModelContext() {
@@ -605,6 +700,7 @@ async function main() {
   await testHostToolsAndEvents();
   await testRenderersAndPages();
   await testModelContext();
+  await testMoreSlotsAndLifecycle();
   finished = true;
   console.log('test-extensions: ok');
 }

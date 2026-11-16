@@ -12,6 +12,7 @@ import { ProjectsView } from './Projects.jsx';
 import { ProjectPickerView } from './ProjectPicker.jsx';
 import { SharedWithMeView } from './SharedWithMe.jsx';
 import { ChatView } from './chat/Chat.jsx';
+import { ExtensionMenu } from './chat/ExtensionMenu.jsx';
 import { ThemeMockupView } from './ThemeMockup.jsx';
 import { ChatReviewMockupView } from './ChatReviewMockup.jsx';
 // Lazy-load every heavyweight, rarely-opened settings sub-page so its
@@ -196,7 +197,9 @@ function Header() {
     h('div', { class: 'app__brand' },
       h('span', { class: 'app__logo', 'aria-hidden': 'true' }, BrandMark),
       h('h1', { class: 'app__title' }, 'mouaif')
-    )
+    ),
+    // app.panel views (docs/features/extensions.md): app-wide, no chat.
+    h(ExtensionMenu, { projectDir: (activeProject.value && activeProject.value.dir) || '', slot: 'app.panel' })
   );
 }
 

@@ -2429,7 +2429,7 @@ asks the model to recapture the same URL. */
 .wp__sheet {
   --sheet-width: 960px;
   --sheet-max-width: 1120px;
-  --sheet-height: min(86vh, 860px);
+  --sheet-height: min(82vh, 820px);
   --sheet-shadow: rgba(0, 0, 0, 0.55);
 }
 
@@ -2439,10 +2439,10 @@ asks the model to recapture the same URL. */
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 6px 2px 10px;
+  padding: 4px 6px 4px 12px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border);
-  min-height: 44px;
+  min-height: 40px;
 }
 .wp__head-text {
   flex: 1 1 auto;
@@ -2488,9 +2488,9 @@ align-items: center;
   mirrored Refresh buttons now centre their glyphs the same way. */
 justify-content: center;
 gap: 4px;
-min-width: 44px;
-min-height: 44px;
-padding: 4px 10px;
+min-width: 30px;
+min-height: 30px;
+padding: 0 8px;
   font-size: 0.74rem;
   font-weight: 600;
   color: var(--fg-soft);
@@ -2562,12 +2562,19 @@ cursor: default;
 .wp__action--fs {
 color: var(--fg-soft);
 }
+/* Refresh and Full are icon-only at every width; the title attribute names them. */
+.wp__sheet:not(.wp__prompt-sheet) .wp__action--refresh,
+.wp__sheet:not(.wp__prompt-sheet) .wp__action--fs { width: 30px; padding: 0; }
+.wp__sheet:not(.wp__prompt-sheet) .wp__action--refresh span,
+.wp__sheet:not(.wp__prompt-sheet) .wp__action--fs span { display: none; }
+.wp__mode-btn--on { box-shadow: none; }
 /* A native select keeps capture-size controls compact and uses the phone's
 own touch picker instead of maintaining a custom popover. */
 .wp__size-select {
 flex: 0 1 7.5rem;
 min-width: 0;
-min-height: 44px;
+height: 30px;
+min-height: 30px;
 padding: 0 0.5rem;
 font: inherit;
 font-size: 0.72rem;
@@ -2584,28 +2591,30 @@ border-radius: var(--r-sm);
 .wp__custom-size {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
-  align-items: end;
+  grid-template-columns: minmax(0, 6rem) auto minmax(0, 6rem) auto;
+  justify-content: end;
+  align-items: center;
   gap: 0.5rem;
-  padding: 0.625rem;
+  padding: 4px 8px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border);
 }
 .wp__custom-field {
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.375rem;
   color: var(--muted);
   font-size: 0.68rem;
 }
 .wp__custom-input {
   width: 100%;
   min-width: 0;
-  min-height: 44px;
-  padding: 0 0.625rem;
+  height: 28px;
+  padding: 0 0.5rem;
   font: inherit;
-  font-size: 1rem;
+  font-size: 0.8rem;
   color: var(--fg);
   background: var(--surface);
   border: 1px solid var(--border);
@@ -2616,14 +2625,14 @@ border-radius: var(--r-sm);
   outline: 0;
 }
 .wp__custom-times {
-  min-height: 44px;
+  min-height: 28px;
   display: inline-flex;
   align-items: center;
   color: var(--muted);
 }
 .wp__custom-apply {
-  min-height: 44px;
-  padding: 0 0.875rem;
+  height: 28px;
+  padding: 0 0.75rem;
   font: inherit;
   font-size: 0.78rem;
   font-weight: 600;
@@ -2643,10 +2652,10 @@ border-radius: var(--r-sm);
 .wp__close,
 .mcp-err__close {
   flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
   border: 0;
   background: transparent;
   color: var(--fg-soft);
@@ -2701,13 +2710,12 @@ border-radius: var(--r-sm);
 .wp__sheet:not(.wp__prompt-sheet) .wp__head {
 align-items: center;
 flex-wrap: nowrap;
-gap: 6px;
-padding: 2px 6px;
+gap: 4px;
+padding: 4px 4px 4px 10px;
 }
 .wp__sheet:not(.wp__prompt-sheet) .wp__head-text {
 flex: 1 1 auto;
 min-width: 0;
-min-height: 44px;
 justify-content: center;
 }
 .wp__sheet:not(.wp__prompt-sheet) .wp__head-actions {
@@ -2715,10 +2723,7 @@ flex: 0 0 auto;
 width: auto;
 gap: 6px;
 }
-.wp__sheet:not(.wp__prompt-sheet) .wp__action--refresh {
-min-width: 44px;
-padding: 4px;
-}
+
 .wp__sheet:not(.wp__prompt-sheet) .wp__action--refresh span {
 display: none;
 }
@@ -2769,7 +2774,7 @@ position: static;
    scaled down with a transform to fit the body. The box reserves the scaled
    size so the flex centring and scrolling stay correct. */
 .wp__body--live {
-  padding: 8px;
+  padding: 6px;
   background: var(--surface-2);
 }
 .wp__frame-box {
@@ -2794,8 +2799,8 @@ position: static;
   overflow: hidden;
 }
 .wp__mode-btn {
-  min-height: 44px;
-  min-width: 44px;
+  height: 24px;
+  min-width: 0;
   padding: 0 0.625rem;
   font: inherit;
   font-size: 0.72rem;
@@ -2827,10 +2832,10 @@ position: static;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 3px 8px;
   background: var(--surface-2);
   border-top: 1px solid var(--border);
-  min-height: 36px;
+  min-height: 32px;
 }
 .wp__foot-meta {
   flex: 1 1 auto;
@@ -2850,8 +2855,9 @@ position: static;
   background: transparent;
   border: 1px solid var(--accent);
   border-radius: var(--r-sm);
-  padding: 5px 10px;
-  min-height: 30px;
+  padding: 0 8px;
+  height: 24px;
+  font-size: 0.7rem;
   display: inline-flex;
   align-items: center;
   text-decoration: none;

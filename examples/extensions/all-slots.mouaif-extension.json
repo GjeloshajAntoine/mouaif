@@ -1,0 +1,20 @@
+{
+  "mouaifExtension": 1,
+  "id": "all-slots",
+  "name": "All slots",
+  "version": "0.1.0",
+  "description": "One small inline view in every extension slot, to see where each one shows.",
+  "permissions": ["chat.read", "composer.insert"],
+  "hooks": [
+    { "id": "log-create", "event": "chat.create", "handler": { "kind": "module", "source": "export default (e, ctx) => { ctx.log('created ' + e.title); }" } },
+    { "id": "log-model", "event": "model.change", "handler": { "kind": "module", "source": "export default (e, ctx) => { ctx.log(e.from + ' -> ' + e.to); }" } }
+  ],
+  "ui": [
+    { "id": "composer", "slot": "composer.action", "title": "Snippet", "command": "snippet", "html": "<!doctype html><meta charset=utf-8><p>Composer action.</p><button id=b>Insert a snippet</button><script type=module>window.mouaifAppReady.then(()=>{b.onclick=()=>window.mouaifApp.callServerTool({name:'mouaif/composer.insert',arguments:{text:'Hello from an extension'}})})</script>" },
+    { "id": "answer", "slot": "message.action", "title": "Word count", "html": "<!doctype html><meta charset=utf-8><p id=o>…</p><script type=module>window.mouaifApp.ontoolresult=(r)=>{const m=r.structuredContent&&r.structuredContent.mouaif;o.textContent=m&&m.text!==undefined?m.text.split(/\\s+/).filter(Boolean).length+' words':'No text'}</script>" },
+    { "id": "files", "slot": "files.action", "title": "Files view", "html": "<!doctype html><meta charset=utf-8><p>files.action</p>" },
+    { "id": "git", "slot": "git.action", "title": "Git view", "html": "<!doctype html><meta charset=utf-8><p>git.action</p>" },
+    { "id": "inspector", "slot": "inspector.panel", "title": "Inspector view", "html": "<!doctype html><meta charset=utf-8><p>inspector.panel</p>" },
+    { "id": "app", "slot": "app.panel", "title": "App view", "html": "<!doctype html><meta charset=utf-8><p>app.panel</p>", "events": ["model.change"] }
+  ]
+}

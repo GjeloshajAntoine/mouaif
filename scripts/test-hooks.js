@@ -1147,6 +1147,33 @@ process.on('exit', (code) => {
   if (code === 0 && !finished) { console.error('test-hooks: stopped before the end (a promise never settled)'); process.exitCode = 1; }
 });
 
+// Watch-only events: chat.create / chat.delete / model.change. A block is
+// recorded, never acted on, and context is dropped.
+async function testLifecycleEvents() {
+  const hookTurns = require('../src/hookTurns.js');
+  const projectDir = fs.mkdtempSync(path.join(root, 'life-'));
+  setHooks([
+    { id: 'mc', event: 'model.change', handler: { kind: 'module', source: 'export default (e) => ({ decision: "block", reason: e.from + ">" + e.to, context: "x" })' } },
+    { id: 'cc', event: 'chat.create', handler: { kind: 'module', source: 'export default (e) => "ctx " + e.title' } }
+  ]);
+  try {
+    let out = await hooks.runHooks('model.change', { from: 'a', to: 'b', provider: 'p' }, { projectDir, chatId: 'c1', cwd: projectDir });
+    assert.equal(out.decision, 'continue', 'model.change cannot block');
+    assert.equal(out.context, undefined, 'model.change adds no context');
+    assert.equal(out.notes[0].hook, 'mc');
+    out = await hooks.runHooks('chat.create', { title: 'T' }, { projectDir, chatId: 'c1', cwd: projectDir });
+    assert.equal(out.decision, 'continue');
+    assert.equal(out.context, undefined);
+    // Same model, or no previous answer: nothing fires.
+    assert.equal(await hookTurns.fireModelChange({ projectDir, chatId: 'c1', cwd: projectDir, from: 'a', to: 'a' }), null);
+    assert.equal(await hookTurns.fireModelChange({ projectDir, chatId: 'c1', cwd: projectDir, from: '', to: 'a' }), null);
+    const fired = await hookTurns.fireModelChange({ projectDir, chatId: 'c1', cwd: projectDir, from: 'a', to: 'b' });
+    assert.equal(fired.notes.length, 1);
+  } finally {
+    setHooks([]);
+  }
+}
+
 async function main() {
   await testValidation();
   await testParseOutput();
@@ -1165,6 +1192,7 @@ async function main() {
   await testTrustCoverage();
   await testFailClosedGaps();
   await testSubagentEnd();
+  await testLifecycleEvents();
   finished = true;
   console.log('test-hooks: ok');
 }

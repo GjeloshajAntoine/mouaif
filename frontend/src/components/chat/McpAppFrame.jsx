@@ -126,7 +126,8 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
     setFailed(false); setUnavailable(false); setStatus('Loading app…'); setMount(null);
     const mountBody = surface
       ? { projectDir, chatId: chatId || undefined, extensionId: surface.extensionId, surfaceId: surface.surfaceId,
-        ...(surface.slot === 'tool.renderer' ? { callId } : {}) }
+        ...(surface.slot === 'tool.renderer' ? { callId } : {}),
+        ...(surface.slot === 'message.action' && Number.isSafeInteger(surface.messageSeq) ? { messageSeq: surface.messageSeq } : {}) }
       : { projectDir, chatId, callId };
     fetchJson('/api/mcp/apps/mount', { method: 'POST', signal: ctl.signal,
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mountBody)

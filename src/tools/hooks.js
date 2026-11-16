@@ -32,14 +32,17 @@ const EVENT_TEXT = Object.freeze({
   'turn.end': 'when a turn finishes',
   'turn.error': 'when a turn fails or is stopped',
   'subagent.end': 'when a subagent finishes',
-  attention: 'before a notification'
+  attention: 'before a notification',
+  'chat.create': 'when a chat is created',
+  'chat.delete': 'when a chat is deleted',
+  'model.change': 'when a turn uses a different model than the last answer'
 });
 
 const SPECS = Object.freeze({
   hook_create: { type: 'function', function: {
     name: 'hook_create',
     description: 'Add a hook: a command or script mouaif runs at a fixed point of this chat\'s turns, so a rule keeps applying without you remembering it ("from now on block force pushes here", "keep going until npm test passes"). The user always sees an approval card with the command verbatim and picks where it applies; it may lower the scope you ask for. '
-      + 'Events: prompt.submit (before a prompt is saved: block, add context), tool.before (before a tool call: block, ask for approval, rewrite arguments, add context), tool.after (add context), turn.start / turn.error (watch), turn.end (may start one follow-up turn, max 3 in a row), subagent.end (after a delegated run, foreground or background: add context), attention (may silence a notification). '
+      + 'Events: prompt.submit (before a prompt is saved: block, add context), tool.before (before a tool call: block, ask for approval, rewrite arguments, add context), tool.after (add context), turn.start / turn.error (watch), turn.end (may start one follow-up turn, max 3 in a row), subagent.end (after a delegated run, foreground or background: add context), attention (may silence a notification), chat.create / chat.delete / model.change (watch). '
       + 'The hook gets the event as JSON on stdin and runs in the chat\'s working folder; a project hook runs in the project folder and finds the working folder in $MOUAIF_WORKING_DIR. It answers by exit code (0 = carry on, 2 = block with stderr as the reason) or JSON on stdout: {"decision":"block"|"ask"|"continue","reason","updatedArgs","context","followUp","suppress"}. Plain text on stdout becomes context for you. '
       + 'Hooks can only add checks: none can approve a call. Not available to subagents.',
     parameters: { type: 'object', properties: {

@@ -143,7 +143,22 @@ function createMcpAppsHost(lifecycle = {}) {
     let callArgs = {};
     let callResult = { content: [], structuredContent: { mouaif: { type: 'mounted', slot: found.ui.slot } } };
     let callId = null;
-    if (found.ui.slot === 'tool.renderer') {
+    let messageSeq = null;
+    if (found.ui.slot === 'message.action') {
+      // One saved message: its role must match; the text only with chat.read.
+      const seq = Number(body.messageSeq);
+      if (!Number.isSafeInteger(seq)) throw err('EBADINPUT', 'messageSeq is required for a message action');
+      const row = messages.listMessages(projectDir, chatId).find(r => r.seq === seq);
+      if (!row || (row.role !== 'user' && row.role !== 'assistant')) throw err('EMCP_NOTFOUND', 'Message not found');
+      if (row.role !== found.ui.match.role) throw err('EMCP_VISIBILITY', 'This action does not handle ' + row.role + ' messages');
+      messageSeq = seq;
+      const info = { type: 'message', slot: found.ui.slot, role: row.role, messageSeq: seq };
+      if (found.ext.permissions.includes('chat.read')) {
+        const text = String(row.content || '');
+        info.text = text.length > 32 * 1024 ? text.slice(0, 32 * 1024) + '…' : text;
+      }
+      callResult = { content: info.text !== undefined ? [{ type: 'text', text: info.text }] : [], structuredContent: { mouaif: info } };
+    } else if (found.ui.slot === 'tool.renderer') {
       if (typeof body.callId !== 'string' || !body.callId) throw err('EBADINPUT', 'callId is required for a tool renderer');
       const rows = messages.listMessages(projectDir, chatId);
       const call = rows.find(r => r.role === 'tool' && r.phase === 'call' && r.toolCallId === body.callId);
@@ -197,7 +212,7 @@ function createMcpAppsHost(lifecycle = {}) {
       extensionId, surfaceId, slot: found.ui.slot, scope: found.scope,
       permissions: found.ext.permissions.slice(), events: (found.ui.events || []).slice(),
       serverId: server ? server.id : null, serverSlug: server ? server.slug : null, session, uri: found.ui.resourceUri || null,
-      html: found.ui.html || null, epoch, callId,
+      html: found.ui.html || null, epoch, callId, messageSeq,
       title: found.ext.name + ' · ' + found.ui.title, ticket,
       expires: Date.now() + 30 * 60 * 1000, lease: Date.now() + 20000, requests: new Map() };
     mounts.set(id, mount);

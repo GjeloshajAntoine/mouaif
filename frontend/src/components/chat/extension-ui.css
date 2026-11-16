@@ -99,3 +99,44 @@
 /* The App context bar's entries (AppContextBar.jsx). */
 .app-context__entry + .app-context__entry { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
 .app-context__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ExtensionMenu.jsx: one small button per slot, a list when several views share it. */
+.ext-menu { position: relative; display: inline-flex; }
+.ext-menu__list {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 70;
+  min-width: 12rem;
+  max-width: min(20rem, calc(100vw - 32px));
+  margin-top: 4px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+}
+.ext-menu__item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--r-sm, 6px);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ext-menu__item:hover, .ext-menu__item:focus-visible { background: var(--accent-soft); }
+.ext-menu__ext { color: var(--muted); font-size: 0.85em; }
+/* In the app header the row is only as tall as the status bar inset. */
+.app__header .ext-menu { margin-left: auto; }
+.app__header .ext-menu__btn { padding: 0; min-height: 0; height: 16px; width: 16px; }
+
+/* composer.action buttons and message.action menu. */
+.ext-composer-actions { display: inline-flex; gap: 2px; }
+.chat-msg__ext { position: relative; display: inline-flex; }

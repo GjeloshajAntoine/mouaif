@@ -42,6 +42,9 @@ The hooks in Settings are app-wide: they apply to every project and every chat. 
 | `turn.error` | when a turn failed, or you stopped it | watch |
 | `subagent.end` | when a delegated run finished, at any depth, whether the model waited for it or ran it in the background | add context |
 | `attention` | before a push notification: a tool waiting for approval, a question for you, a finished turn | silence it |
+| `chat.create` | after a chat was created from the app (`POST /api/chats`; not for imported chats) | watch |
+| `chat.delete` | after a chat was deleted | watch |
+| `model.change` | before `turn.start`, when the turn uses a different model than the chat's previous answer | watch |
 
 `turn.start`, `turn.end` and `turn.error` hooks run beside the chat: the chat never waits for them. `attention` hooks delay the notification by as long as they take. A subagent stays *running* until its `subagent.end` hooks answer, so their context arrives with its result. A cancelled subagent does not wait: its hooks still run, but what they add goes nowhere.
 
@@ -119,6 +122,8 @@ The other events send their own fields instead of `tool`, `args` and `content`:
 | `turn.error` | `code`, `message`, `stopped` (true when you pressed Stop) |
 | `subagent.end` | `callId`, `agent`, `task`, `background`, `state` (`completed`, `failed`, `cancelled` or `blocked`), `ok`, `text` (its answer, cut to 16 KB), `error`, `model`, `depth` (1 for a subagent of the chat itself), `parentCallId`, `groupId`, `memberId`, `durationMs` |
 | `attention` | `kind` (`tool_authorization`, `ask_user` or `completion`), `tool` |
+| `chat.create` / `chat.delete` | `title` (for a delete, the title the chat had) |
+| `model.change` | `from` (the previous answer's model), `to`, `provider` |
 
 `decision` is `continue` (the default), `block` or `ask`. `ask` and `updatedArgs` only count in `tool.before`; `prompt.submit` can only block; `tool.after` can only add context. `updatedArgs` is merged into the call's arguments, and the approval gate, the card and the tool all see the new ones.
 
@@ -261,12 +266,14 @@ There is no `allow` decision. A hook can block a call, force its approval card, 
 | `turn.end` | one follow-up prompt (max 3 in a chain) | run on a failed or stopped turn |
 | `subagent.end` | add context to the run's result | change its answer, start a turn |
 | `attention` | silence the push | change what is pushed, add a push |
+| `chat.create` / `chat.delete` | watch | stop the create or delete, change the chat |
+| `model.change` | watch | pick another model |
 
 An inline view of an [extension](extensions.md) covers part of the `updateModelContext` gap: it can add context the model sees, not transform the request.
 
 ### Events that do not exist
 
-Nothing fires on chat create, fork or delete, on settings, provider or model changes, on MCP server start or stop, on file or shell activity outside a chat, or on the outgoing model request. A plugin that needs those has to poll through its own view's tools, or needs a core change.
+Nothing fires on a chat fork (mouaif has none), on settings or provider changes, on MCP server start or stop, on file or shell activity outside a chat, or on the outgoing model request. A plugin that needs those has to poll through its own view's tools, or needs a core change.
 
 ### Calls that run no hooks
 
