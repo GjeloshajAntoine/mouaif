@@ -454,6 +454,10 @@ const COPILOT_MODEL_CATALOG = [
 ];
 
 const ANTHROPIC_MODEL_CATALOG = [
+  { id: 'claude-fable-5-2', label: 'Claude Fable 5.2',            contextWindow: 1000000 },
+  { id: 'claude-opus-5-5',  label: 'Claude Opus 5.5',             contextWindow: 1000000 },
+  { id: 'claude-sonnet-5-5',label: 'Claude Sonnet 5.5',           contextWindow: 1000000 },
+  { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5',            contextWindow: 1000000 },
   { id: 'claude-opus-4',    label: 'Claude Opus 4',               contextWindow: 200000 },
   { id: 'claude-opus-4.1',  label: 'Claude Opus 4.1',             contextWindow: 200000 },
   { id: 'claude-opus-4.5',  label: 'Claude Opus 4.5',             contextWindow: 200000 },

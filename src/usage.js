@@ -61,6 +61,10 @@ const BUILTIN_PRICING = Object.freeze({
   // scripts/test-model-pricing-coverage.js, which fails when a catalog id
   // has no price here.
   'claude-sonnet-5':         { inputPer1K: 0.00200, outputPer1K: 0.01000 },
+  'claude-sonnet-5-5':       { inputPer1K: 0.00200, outputPer1K: 0.01000 },
+  'claude-opus-5-5':         { inputPer1K: 0.00400, outputPer1K: 0.02000 },
+  'claude-haiku-5-5':        { inputPer1K: 0.00010, outputPer1K: 0.00050 },
+  'claude-fable-5-2':        { inputPer1K: 0.00800, outputPer1K: 0.04000 },
   'claude-opus-4.5':         { inputPer1K: 0.00500, outputPer1K: 0.02500 },
   // Haiku 4.5 is $1/$5, not $0.8/$4 — the latter is Haiku 3.5 (the
   // `claude-3-5-haiku-*` rows above), and the two were conflated here.
