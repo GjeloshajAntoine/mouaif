@@ -86,6 +86,21 @@ server.listen(0, '127.0.0.1', () => {
       }
       console.log('GET /api/tools/list (no projectDir) ->', namesNoProject.length, 'native tools');
 
+      // 1c. The project's simplified tool view rides along with the catalog
+      // (docs/features/simplified-tool-view.md): null until the project
+      // saves one, then the stored value; never present without a project.
+      if (r1.body.toolView !== null) throw new Error('toolView should be null before it is saved: ' + JSON.stringify(r1.body.toolView));
+      if (r1b0.body.toolView !== null) throw new Error('toolView should be null without a projectDir');
+      const savedView = { enabled: true, categories: [{ name: 'Read', tools: ['read_file', 'search_files'] }] };
+      const rView = await req('PUT', '/api/settings/project', { projectDir: projDir, toolView: savedView });
+      if (rView.status !== 200) throw new Error('saving toolView failed: HTTP ' + rView.status);
+      const r1c = await req('GET', '/api/tools/list?projectDir=' + encodeURIComponent(projDir));
+      if (JSON.stringify(r1c.body.toolView) !== JSON.stringify(savedView)) {
+        throw new Error('toolView not returned with the catalog: ' + JSON.stringify(r1c.body.toolView));
+      }
+      if (r1c.body.tools.length !== r1.body.tools.length) throw new Error('toolView changed the advertised catalog');
+      console.log('GET /api/tools/list toolView round trip -> ok');
+
       // On-demand lifecycle: opening a chat (tools/list) never cold-starts
       // a configured MCP server. The server here is enabled (default ask)
       // but not running, so its tools are absent until started explicitly.

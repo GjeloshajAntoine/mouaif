@@ -73,6 +73,7 @@ ToolAuthSeg: 'auth-seg',
 TOOL_MODE_CHOICES: [{ value: 'off', label: 'Off' }, { value: 'ask', label: 'Ask' }, { value: 'allow', label: 'Allow' }],
 ASK_USER_MODE_CHOICES: [{ value: 'off', label: 'Off' }, { value: 'ask', label: 'Ask' }],
 segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
+    ToolViewEditor: 'tool-view-editor',
     AgentFilePicker: 'file-picker', WebpreviewModal: 'preview-modal', PreviewUrlPrompt: 'preview-prompt',
     useState: (initial) => {
       const i = cursor++;
@@ -130,6 +131,8 @@ segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
   const AGENT_NAV = source('settings/agentNavigation.js');
   vm.runInContext(AGENT_NAV, context);
   vm.runInContext(modelSource(), context);
+  // The simplified tool view helpers (frontend/src/toolView.js), outside components/ too.
+  vm.runInContext(stripModule(fs.readFileSync(new URL('../frontend/src/toolView.js', import.meta.url), 'utf8')), context);
   vm.runInContext(source('ToolTree.jsx'), context);
   vm.runInContext(source('settingsProjectUi.js'), context);
   vm.runInContext(source('SettingsProject.jsx'), context);

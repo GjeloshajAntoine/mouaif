@@ -11,7 +11,9 @@ import { h, Fragment } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson, setActiveProject, activeProject, projectsReload, getProjectStorage, setProjectStorage, requestWebpreview } from '../api.js';
 import { nav, back } from '../router.js';
-import { ToolTree, shortDesc } from './ToolTree.jsx';
+import { ToolTree, shortDesc, buildToolGroups } from './ToolTree.jsx';
+import { ToolViewEditor } from './settings/ToolViewEditor.jsx';
+import { normalizeToolView, toolViewSummary } from '../toolView.js';
 import { TOOL_GROUPS, GROUP_BY_ID, isBinaryTool, isFamilyLeaf, toolGroupId } from '../toolGroups.js';
 import { sectionIcon, toolModeSegs } from './settingsProjectUi.js';
 import { shellReviewFromResolved } from './chat/shellReview.js';
@@ -86,6 +88,16 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     setToolStatus((current) => Object.assign({}, current, { [key]: text }));
   }
 const [toolsCatalog, setToolsCatalog] = useState([]);
+  // Simplified chat view (docs/features/simplified-tool-view.md): the
+  // project's own categories for the chat's Tools list.
+  const [toolView, setToolView] = useState(() => normalizeToolView(null));
+  const [toolViewStatusMsg, setToolViewStatusMsg] = useState('');
+  async function saveToolView(next) {
+    const prev = toolView;
+    const value = normalizeToolView(next);
+    setToolView(value);
+    if (!(await patchProject({ toolView: value }, setToolViewStatusMsg, 'saved'))) setToolView(prev);
+  }
 // Web preview page state — the dedicated "Web preview" sub-page captures
 // a URL and shows the result in the same full-screen viewer the chat uses.
 const [previewUrl, setPreviewUrl] = useState('');
@@ -180,6 +192,8 @@ return withChat + (ctxFrom ? '&from=' + encodeURIComponent(ctxFrom) : '');
 
     setPromptSize((cp.promptSize && String(cp.promptSize)) || '');
     setPromptSizeStatusMsg('');
+    setToolView(normalizeToolView(cp.toolView));
+    setToolViewStatusMsg('');
 
     const resolved = (resolvedRes.status === 200 && resolvedRes.body && resolvedRes.body.resolved) || {};
     // The link row's detail: name the consequence, not the fields.
@@ -1203,6 +1217,21 @@ h('h2', { class: 'view-title' }, 'Web preview')
 : null
 )
 ;
+if (page === 'toolView') return h(Fragment, null,
+  h('div', { class: 'view-head' },
+    h('a', { href: settingsLink('settings/project', navContext()), class: 'view-back', 'aria-label': 'Back to project settings' }, '←'),
+    h('h2', { class: 'view-title' }, 'Chat tool list')
+  ),
+  h('section', { class: 'settings-project' },
+    h(ToolViewEditor, {
+      view: toolView,
+      groups: buildToolGroups(toolsCatalog, mcpServers, null),
+      loading: !toolsCatalog.length,
+      status: toolViewStatusMsg,
+      onChange: saveToolView
+    })
+  )
+);
 if (page === 'agentFiles') return h(Fragment, null,
   h('div', { class: 'view-head' },
     h('a', { href: settingsLink('settings/project', navContext()), class: 'view-back', 'aria-label': 'Back to project settings' }, '←'),
@@ -1469,6 +1498,18 @@ class: 'view-back',
                 onReloadServer: onReloadMcpServer
               })
             : h('div', { class: 'settings-project__item-note' }, 'Loading tools…')
+        ),
+        h('a', {
+        class: 'group__row settings-project__link-row settings-project__options-link',
+        'aria-label': 'Chat tool list',
+        href: settingsLink('settings/project/tool-view', navContext())
+        },
+        h('span', { class: 'group__row-body' },
+        h('span', { class: 'group__row-label' }, 'Chat tool list'),
+        h('span', { class: 'settings-project__link-sub' }, 'Group the chat’s Tools list into your own short categories')
+        ),
+        h('span', { class: 'group__row-detail' }, toolViewSummary(toolView)),
+        h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
         ),
         h('a', {
         class: 'group__row settings-project__link-row settings-project__options-link',

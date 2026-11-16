@@ -201,6 +201,14 @@ const ROUTES = [
     chatId: m.params.get('chatId') || '',
     from: fromParam(m.params)
   })),
+  // `Chat tool list`: the simplified tool view's own categories
+  // (docs/features/simplified-tool-view.md).
+  exactOrQuery('settings/project/tool-view', (m) => ({
+    name: 'settingsProjectToolView',
+    projectDir: m.params.get('projectDir') || '',
+    chatId: m.params.get('chatId') || '',
+    from: fromParam(m.params)
+  })),
   // `Agent files`: project-wide gate and file names to look for.
   exactOrQuery('settings/project/agent-files', (m) => ({
     name: 'settingsProjectAgentFiles',

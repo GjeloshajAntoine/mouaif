@@ -12,6 +12,7 @@ import { h } from 'preact';
 import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import { ToolTree, buildToolGroups, groupToolNames, childToolName } from '../ToolTree.jsx';
 import { groupAuthKey, isBinaryTool, toolPermission } from '../../toolGroups.js';
+import { applyToolView, isToolViewActive } from '../../toolView.js';
 import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from '../settings/toolAuth.js';
 import { useClickOutside } from '../../hooks/useClickOutside.js';
 import { useBackClose } from '../../hooks/useBackClose.js';
@@ -123,7 +124,10 @@ export function ToolPopup(props) {
   const filter = tools && tools.filter;
   const used = usedTools || new Set();
   const servers = mcpServers || [];
-  const groups = buildToolGroups(catalog, servers, filter, used, { native: toolAuth || {}, mcp: mcpAuth || {} });
+  let groups = buildToolGroups(catalog, servers, filter, used, { native: toolAuth || {}, mcp: mcpAuth || {} });
+  // Simplified tool view (docs/features/simplified-tool-view.md): the
+  // project's own categories, with a switch back to every tool.
+  const simplified = isToolViewActive(tools && tools.view);
 
   // Inject auth segments on known groups and their child tools
   const auth = toolAuth || {};
@@ -250,6 +254,10 @@ export function ToolPopup(props) {
     if (onToggleTool) onToggleTool(childToolName(group, toolId), checked);
   }
 
+  // Regroup after the controls are attached; the handlers above read
+  // `groups` when they run. Agent files and Skills below stay as they are.
+  if (simplified) groups = applyToolView(groups, tools.view);
+
   // If agent files are available, add a synthetic group for them
   const af = agentFiles || { files: [], disabled: [], enabled: true, projectLocked: false };
   if (af.files.length) {
@@ -334,13 +342,13 @@ export function ToolPopup(props) {
         style: popupStyle
       },
         h('div', { class: 'tool-popup__head' },
-          h('span', { class: 'tool-popup__title' }, 'Tools'),
-          h('button', {
-            class: 'glyph-btn tool-popup__close',
-            type: 'button',
-            onClick: () => setOpen(false),
-            'aria-label': 'Close'
-          }, '\u00D7')
+        h('span', { class: 'tool-popup__title' }, 'Tools'),
+        h('button', {
+        class: 'glyph-btn tool-popup__close',
+        type: 'button',
+        onClick: () => setOpen(false),
+        'aria-label': 'Close'
+        }, '\u00D7')
         ),
         h('div', { class: 'tool-popup__body' },
           h(ToolTree, {
@@ -348,6 +356,8 @@ export function ToolPopup(props) {
             onToggleGroup: handleToggleGroup,
             onToggleTool: handleToggleTool,
             onReloadServer: handleReloadServer,
+            // Remount on a view switch so each view starts collapsed.
+            key: simplified ? 'view' : 'all',
             collapsedByDefault: true,
             class: 'tool-popup__tree'
           })

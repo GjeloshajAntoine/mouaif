@@ -139,6 +139,7 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Tool feedback compaction](tool-feedback-compaction.md) — large results stay complete in the chat but are trimmed for the model.
 - [Agent feature prompt](agent-feature-prompt.md) — how the model learns which features are enabled.
 - [Tool groups](tool-groups.md) — which tool belongs to which group, defined once for every tool list.
+- [Simplified tool view](simplified-tool-view.md) — your own tool categories for the chat's Tools list, set per project.
 - [Native chat and app tools](mouaif-tool.md) — the Chats and mouaif families: chats, models, images, settings, and projects.
 - [Chat model tools](chat-model-tools.md) — search models, pick one for a chat, and start a background response.
 

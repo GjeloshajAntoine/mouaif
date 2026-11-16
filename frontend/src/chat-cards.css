@@ -231,3 +231,72 @@ flex-wrap: wrap;
   border-top-left-radius: 0;
   border-top-right-radius: 0;
 }
+
+/* Simplified tool view: the "Simplified (N) | All (M)" segmented pill in the
+   Tools card head, tools popup head, and Settings preview, plus the scope bar
+   explaining that unpicked tools stay active for the AI. */
+.chat-tools-view-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  flex: 0 0 auto;
+}
+.chat-view__tools-card-head .chat-tools-view-seg,
+.tool-popup__view-seg {
+  margin-left: auto;
+}
+.chat-tools-view-seg__btn {
+  padding: 2px 8px;
+  min-height: 22px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-pill);
+  font: inherit;
+  font-size: 0.64rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.chat-tools-view-seg__btn.is-active {
+  background: var(--accent);
+  color: var(--on-accent, #fff);
+}
+.chat-tools-view-seg__btn:not(.is-active):hover {
+  color: var(--fg);
+}
+.chat-view__tools-card-view-note,
+.tool-popup__view-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 3px 6px;
+  background: var(--surface-3);
+  border-radius: var(--r-sm);
+  font-size: 0.62rem;
+  color: var(--muted);
+  line-height: 1.3;
+}
+.tool-popup__view-note {
+  margin: 0 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+}
+.chat-view__tools-card-view-link {
+  padding: 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+}

@@ -951,7 +951,7 @@ await sendTurn(state, refs, {
     ]);
     if (rSrv.status === 200 && Array.isArray(rSrv.body.servers)) mcpServers.current = rSrv.body.servers;
     if (rTools.status === 200 && Array.isArray(rTools.body.tools)) {
-      tools.current = Object.assign({}, tools.current, { catalog: rTools.body.tools });
+      tools.current = Object.assign({}, tools.current, { catalog: rTools.body.tools, view: rTools.body.toolView || null });
     }
     setToolDataStamp((v) => v + 1);
     if (state._updateToolsCard) state._updateToolsCard();
@@ -1190,7 +1190,9 @@ if (Array.isArray(c.draftAttachments) && c.draftAttachments.length) {
             // the old selection while the PATCH had saved the new one.
             tools.current = {
             catalog: rTools.status === 200 && Array.isArray(rTools.body.tools) ? rTools.body.tools : [],
-            filter: tools.current ? tools.current.filter : (Array.isArray(c.tools) ? c.tools.slice() : null)
+            filter: tools.current ? tools.current.filter : (Array.isArray(c.tools) ? c.tools.slice() : null),
+            // The project's simplified tool view (categories for this list).
+            view: (rTools.status === 200 && rTools.body.toolView) || null
             };
             setToolDataStamp((value) => value + 1);
             if (state._updateToolsCard) state._updateToolsCard();

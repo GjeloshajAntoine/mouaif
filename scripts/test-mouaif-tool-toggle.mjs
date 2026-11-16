@@ -147,7 +147,8 @@ const cardsContext = vm.createContext({
 });
 const rendered = [];
 vm.runInContext(
-  cardsSource
+  // The simplified tool view helpers the card imports (frontend/src/toolView.js).
+  (fs.readFileSync('frontend/src/toolView.js', 'utf8') + '\n' + cardsSource)
     .replace(/^import .*;$/gm, '')
     .replace(/^export \{.*?\};$/gms, '')
     .replace(/^export /gm, '')

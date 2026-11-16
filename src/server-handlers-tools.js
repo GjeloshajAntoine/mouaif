@@ -476,7 +476,13 @@ async function handleTools(req, res, parsed, sessionToken = '') {
     // (docs/features/share-project.md).
     const shareGate = require('./share-gate.js');
     const visible = shareGate.currentCaller() ? shareGate.filterToolList(tools) : tools;
-    return sendJSON(res, 200, { tools: visible });
+    // The project's simplified tool view (docs/features/simplified-tool-view.md)
+    // rides along so the chat regroups the catalog without a second request.
+    let toolView = null;
+    if (projectDir) {
+      try { toolView = settings.getResolved(projectDir).toolView || null; } catch { toolView = null; }
+    }
+    return sendJSON(res, 200, { tools: visible, toolView });
   }
 
   // POST /api/tools/shell/review  body: { projectDir, cmd, cwd?, chatId? }

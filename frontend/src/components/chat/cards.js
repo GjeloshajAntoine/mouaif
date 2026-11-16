@@ -9,6 +9,7 @@ import { afterTranscriptAppend } from './scroll.js';
 import { h, render } from 'preact';
 import { ToolTree, buildToolGroups, groupToolNames, childToolName, toolPermission } from '../ToolTree.jsx';
 import { groupAuthKey, isBinaryTool, FAMILY_OF, TOOL_GROUPS } from '../../toolGroups.js';
+import { applyToolView, isToolViewActive } from '../../toolView.js';
 import { approvalTitle, approvalText, permissionExplanation } from './approvalDetails.js';
 import { hookNotesElement } from './hookNotes.js';
 import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from '../settings/toolAuth.js';
@@ -74,16 +75,20 @@ function buildToolsCard(state) {
   note.textContent = (t.filter == null)
 ? 'all permitted tools — tap to change'
 : 'applies next turn';
-head.appendChild(title); head.appendChild(note);
-// Which rows carry this chat's own Off/Ask/Allow override, so the scope of
-// the segments is visible at a glance (decisions §17).
-const chatAuth = state._chatAuthOverrides || null;
-if (chatAuth && (Object.keys(chatAuth.native || {}).length || chatAuth.mcp)) {
-const scoped = document.createElement('span');
-scoped.className = 'chat-view__tools-card-scope';
-scoped.textContent = 'Off / Ask / Allow apply to this chat only';
-head.appendChild(scoped);
-}
+  head.appendChild(title); head.appendChild(note);
+  // Simplified tool view is configured in Settings and applies to chats.
+  // Chat view intentionally has no mode toggle; changing the mode belongs in
+  // the project tool-list settings.
+  const simplified = isToolViewActive(t.view);
+  // Which rows carry this chat's own Off/Ask/Allow override, so the scope of
+  // the segments is visible at a glance (decisions §17).
+  const chatAuth = state._chatAuthOverrides || null;
+  if (chatAuth && (Object.keys(chatAuth.native || {}).length || chatAuth.mcp)) {
+    const scoped = document.createElement('span');
+    scoped.className = 'chat-view__tools-card-scope';
+    scoped.textContent = 'Off / Ask / Allow apply to this chat only';
+    head.appendChild(scoped);
+  }
   card.appendChild(head);
 
   if (!t.catalog.length) {
@@ -97,7 +102,7 @@ head.appendChild(scoped);
   // Build hierarchical groups from the catalog + MCP servers.
   // The tree shows: Shell, Subagent, Ask user, File tools, then one
   // group per MCP server. Used tools are auto-checked and badged.
-  const groups = buildToolGroups(
+  let groups = buildToolGroups(
     t.catalog,
     state.mcpServers || [],
     t.filter,
@@ -205,6 +210,10 @@ head.appendChild(scoped);
       });
     }
   }
+
+  // Regroup into the project's categories once every row carries its
+  // controls; the handlers below read `groups` when they run.
+  if (simplified) groups = applyToolView(groups, t.view);
 
   // Render the Preact ToolTree into a container div.
   const treeHost = document.createElement('div');
