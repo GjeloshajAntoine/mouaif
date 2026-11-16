@@ -360,7 +360,87 @@ function writePreviewPage(dir) {
   fs.writeFileSync(path.join(dir, 'index.html'), PREVIEW_HTML);
 }
 
+// ---- showcase chats (newer features) -------------------------------------
+//
+// seedShowcase(projectDir, chats, messages) -> { networkChatId, recurringChatId }
+//
+// Two more chats for the landing captures of newer features:
+//   - a delegation run (a lead agent that hands work to a reviewer and a
+//     tester, the tester handing on to a fuzzer), which the agent network
+//     dock draws as a graph from the persisted rows;
+//   - a recurring task (every weekday at 09:00) whose chat keeps the report
+//     each run wrote as chat artifacts.
+function seedShowcase(projectDir, chats, messages) {
+  const sub = (id, agent, task, text, chat) => ([
+    { role: 'tool', phase: 'call', toolCallId: id, name: 'subagent', args: { agent, task }, content: j({ agent, task }) },
+    { role: 'tool', phase: 'result', toolCallId: id, name: 'subagent', ok: true,
+      content: j({ ok: true, agent, model: { id: 'claude-sonnet-5-5' }, text, chat: chat || [{ role: 'user', content: task }, { role: 'assistant', content: text }] }) }
+  ]);
+  const net = chats.createChat(projectDir, { title: 'Release check for v2.4' });
+  const netRows = [
+    { role: 'user', content: 'Get v2.4 ready to ship: review the diff, run the full test matrix and fuzz the parser.' },
+    { role: 'assistant', content: 'Splitting this three ways: a reviewer on the diff, a tester on the matrix, and the tester hands the parser to a fuzzer.',
+      usage: usage(5210, 140), cost: cost(0.02084, 0.0028), modelId: 'claude-opus-5-5', streamingMs: 2100 },
+    ...sub('call_net_review', 'reviewer', 'Review the v2.4 diff for regressions', 'Two nits, no blockers. The migration is reversible.'),
+    ...sub('call_net_test', 'tester', 'Run the test matrix on Node 20, 22 and 24', '312 tests pass on all three. Fuzzer found nothing in 50k inputs.', [
+      { role: 'user', content: 'Run the test matrix on Node 20, 22 and 24' },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'call_net_fuzz', function: { name: 'subagent', arguments: j({ agent: 'fuzzer', task: 'Fuzz src/parser.js for 50k inputs' }) } }] },
+      { role: 'tool', tool_call_id: 'call_net_fuzz', name: 'subagent', content: j({ agent: 'fuzzer', text: 'No crashes in 50,000 inputs.' }) },
+      { role: 'assistant', content: '312 tests pass on all three. Fuzzer found nothing in 50k inputs.' }
+    ]),
+    ...sub('call_net_docs', 'writer', 'Draft the v2.4 release notes', 'Release notes drafted in CHANGELOG.md.'),
+    { role: 'assistant', content: 'v2.4 is ready: review clean, 312/312 tests on three Node versions, no fuzzer crashes, and the release notes are drafted.',
+      usage: usage(6120, 96), cost: cost(0.02448, 0.00192), modelId: 'claude-opus-5-5', streamingMs: 1700 }
+  ];
+  for (const row of netRows) messages.appendMessage(projectDir, net.id, row);
+  chats.updateChat(projectDir, net.id, { modelId: 'claude-opus-5-5', providerId: 'anthropic' });
+
+  const rec = chats.createChat(projectDir, { title: 'Morning dependency report' });
+  const recRows = [
+    { role: 'user', content: 'Every weekday at 9, check for outdated or vulnerable dependencies and save a short report.' },
+    { role: 'tool', phase: 'call', toolCallId: 'call_rec_sched', name: 'schedule_wake',
+      args: { message: 'Check outdated and vulnerable dependencies; save the report as deps-report.md', time: '09:00', days: ['mon', 'tue', 'wed', 'thu', 'fri'] },
+      content: j({ time: '09:00', days: ['mon', 'tue', 'wed', 'thu', 'fri'] }) },
+    { role: 'tool', phase: 'result', toolCallId: 'call_rec_sched', name: 'schedule_wake', ok: true,
+      content: j({ ok: true, repeat: 'weekdays at 09:00' }) },
+    { role: 'assistant', content: 'Scheduled: every weekday at 09:00 I will check the dependencies and save **deps-report.md** in this chat.',
+      usage: usage(2410, 62), cost: cost(0.00964, 0.00124), modelId: 'claude-opus-5-5', streamingMs: 900 },
+    { role: 'user', content: 'Check outdated and vulnerable dependencies; save the report as deps-report.md' },
+    { role: 'assistant', content: '3 packages are behind, none vulnerable. `esbuild` has a minor update worth taking. Report saved as @deps-report.md.',
+      usage: usage(4020, 118), cost: cost(0.01608, 0.00236), modelId: 'claude-opus-5-5', streamingMs: 1600 }
+  ];
+  for (const row of recRows) messages.appendMessage(projectDir, rec.id, row);
+  chats.updateChat(projectDir, rec.id, { modelId: 'claude-opus-5-5', providerId: 'anthropic' });
+  try {
+    const artifacts = require('../../src/artifacts.js');
+    artifacts.save(projectDir, rec.id, 'deps-report.md', Buffer.from('# Dependencies — weekday report\n\n| Package | Current | Latest |\n| --- | --- | --- |\n| esbuild | 0.23.0 | 0.24.2 |\n| preact | 10.24.1 | 10.25.0 |\n| vitest | 2.1.1 | 2.1.4 |\n\nNo known vulnerabilities.\n'), { mimeType: 'text/markdown', description: 'Latest dependency report' });
+    artifacts.save(projectDir, rec.id, 'outdated.json', Buffer.from(j({ esbuild: ['0.23.0', '0.24.2'], preact: ['10.24.1', '10.25.0'], vitest: ['2.1.1', '2.1.4'] })), { mimeType: 'application/json', description: 'Raw npm outdated output' });
+  } catch (e) { console.error('[shots] artifacts seed failed: ' + e.message); }
+  // Through the real schedule_wake tool, so the chat gets its recurring
+  // run (the dock above the composer) exactly as a live call makes it.
+  const scheduled = require('../../src/tools/schedule.js').runScheduleTool('schedule_wake', {
+    message: 'Check outdated and vulnerable dependencies; save the report as deps-report.md',
+    time: '09:00', days: ['mon', 'tue', 'wed', 'thu', 'fri'], timezone: 'Europe/Brussels'
+  }, { projectDir, chatId: rec.id });
+  return { networkChatId: net.id, recurringChatId: rec.id, scheduled };
+}
+
+// The docked extension for the extension capture: a release checklist that
+// sits above the composer of every chat (slot `chat.dock`).
+const SHOWCASE_EXTENSION = {
+  mouaifExtension: 1,
+  id: 'release-checklist',
+  name: 'Release checklist',
+  version: '1.0.0',
+  description: 'A small checklist docked above the composer while you ship.',
+  permissions: ['chat.read'],
+  ui: [{ id: 'dock', slot: 'chat.dock', title: 'Release checklist',
+    html: '<!doctype html><meta charset=utf-8><style>body{font:14px system-ui;margin:0;padding:8px 12px;color:#1d2330;background:#fff}li{list-style:none;margin:6px 0}b{color:#1a8a4a}i{color:#c27c00;font-style:normal}</style><ul style="padding:0;margin:0"><li><b>✓</b> Diff reviewed</li><li><b>✓</b> Tests on Node 20 / 22 / 24</li><li><b>✓</b> Parser fuzzed</li><li><i>●</i> Tag v2.4 and publish</li></ul>' }]
+};
+
 module.exports = {
+  seedShowcase,
+  SHOWCASE_EXTENSION,
   CHAT_ID,
   CHAT_TITLE,
   PROVIDERS,

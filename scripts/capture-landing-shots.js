@@ -438,6 +438,79 @@ const SHOTS = [
       await new Promise((r) => setTimeout(r, 500));
     })()`,
     waitFor: '.fe__draft-craft'
+  },
+  {
+    // The agent network dock, opened: the graph of who delegated to whom in
+    // a release check (lead -> reviewer, tester -> fuzzer, writer). The dock
+    // remembers its open state in localStorage, so set it and reload.
+    file: 'agent-network.png',
+    hash: () => `#/chat/${state.networkChatId}?projectDir=${encodeURIComponent(state.projectDir)}`,
+    alt: 'The agent network dock at 390 px over a release-check chat: the main agent with reviewer, tester and writer subagents, the tester delegating to a fuzzer, and the message feed under the graph.',
+    recipe: `(async () => {
+      if (localStorage.getItem('mouaif.agentNetwork.expanded') !== '1') {
+        localStorage.setItem('mouaif.agentNetwork.expanded', '1');
+        location.reload();
+        await new Promise((r) => setTimeout(r, 2500));
+      }
+    })()`,
+    waitFor: '.agent-net__svg',
+    settle: 1500
+  },
+  {
+    // A recurring task: the run dock above the composer names the schedule,
+    // and the chat keeps every run's prompt and answer.
+    file: 'recurring.png',
+    hash: () => `#/chat/${state.recurringChatId}?projectDir=${encodeURIComponent(state.projectDir)}`,
+    alt: 'A recurring task at 390 px: the chat that set up a weekday 09:00 dependency check, the last run with its report, and the Recurring task dock above the composer.',
+    recipe: `(() => { const t = document.querySelector('.chat-view__transcript'); if (t) t.scrollTop = t.scrollHeight; })()`,
+    waitFor: '.run-dock[aria-label="Recurring task"]',
+    settle: 1200
+  },
+  {
+    // The chat's artifacts sheet, opened from the file tools menu.
+    file: 'artifacts.png',
+    hash: () => `#/chat/${state.recurringChatId}?projectDir=${encodeURIComponent(state.projectDir)}`,
+    alt: 'The artifacts sheet of a chat at 390 px: deps-report.md and outdated.json with their descriptions.',
+    recipe: `(async () => {
+      document.querySelector('.file-toolbar__trigger')?.click();
+      await new Promise((r) => setTimeout(r, 400));
+      document.querySelector('.file-toolbar__menu-item--artifacts')?.click();
+    })()`,
+    waitFor: '[aria-label="Artifacts of this chat"]',
+    settle: 1500
+  },
+  {
+    // A one-file extension docked above the composer, opened.
+    file: 'extension-dock.png',
+    // Switched on for this frame only, so the dock is not in the other shots.
+    before: () => require(path.join(ROOT, 'src/extensions.js')).setAppEnabled('release-checklist', true),
+    after: () => require(path.join(ROOT, 'src/extensions.js')).setAppEnabled('release-checklist', false),
+    hash: () => `#/chat/${state.chatId}?projectDir=${encodeURIComponent(state.projectDir)}`,
+    alt: 'A Release checklist extension docked above the composer of the bug-fix chat at 390 px, opened to show its checklist inside the chat.',
+    recipe: `(async () => {
+      localStorage.setItem('mouaif.agentNetwork.expanded', '0');
+      for (let i = 0; i < 20 && !document.querySelector('.ext-dock__bar button'); i++) await new Promise((r) => setTimeout(r, 250));
+      const b = document.querySelector('.ext-dock__bar button');
+      if (b && b.getAttribute('aria-expanded') !== 'true') b.click();
+      (() => { const t = document.querySelector('.chat-view__transcript'); if (t) t.scrollTop = t.scrollHeight; })();
+    })()`,
+    waitFor: '.ext-dock__frame iframe',
+    settle: 2500
+  },
+  {
+    // Themes: the same run in the built-in CRT theme. Shot last, since the
+    // theme is app-wide and cached per browser profile.
+    file: 'theme-crt.png',
+    hash: () => `#/chat/${state.chatId}?projectDir=${encodeURIComponent(state.projectDir)}`,
+    alt: 'The bug-fix chat at 390 px in the built-in CRT theme: green phosphor text on black with scanlines.',
+    recipe: `(async () => {
+      await fetch('/api/themes/active', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 'crt' }) });
+      location.reload();
+      await new Promise((r) => setTimeout(r, 2500));
+      (() => { const t = document.querySelector('.chat-view__transcript'); if (t) t.scrollTop = t.scrollHeight; })();
+    })()`,
+    waitFor: '.chat-view__transcript',
+    settle: 1500
   }
 ];
 
@@ -529,6 +602,15 @@ async function main() {
       const seeded = seed.seedChats(projectDir, chats, messages);
       state.chatId = seeded.chatId;
       state.emptyChatId = seeded.emptyChatId;
+      // Newer features: the delegation graph, a recurring task with chat
+      // artifacts, and a docked extension (imported then switched on).
+      const showcase = seed.seedShowcase(projectDir, chats, messages);
+      const sched = await showcase.scheduled;
+      if (!sched.ok) throw new Error('schedule seed: ' + sched.content);
+      state.networkChatId = showcase.networkChatId;
+      state.recurringChatId = showcase.recurringChatId;
+      const extensions = require(path.join(ROOT, 'src/extensions.js'));
+      extensions.importApp(seed.SHOWCASE_EXTENSION);
       state.projectDir = projectDir;
 
       // The app server. `createServer(0)` then listen(0) keeps the port out of
@@ -624,7 +706,9 @@ async function main() {
     }).catch(() => { /* the field can also be typed by hand */ });
 
     fs.mkdirSync(OUT_DIR, { recursive: true });
+    const ONLY = argValue('--only', '').split(',').filter(Boolean);
     for (const shot of SHOTS) {
+    if (ONLY.length && !ONLY.includes(shot.file)) continue;
     const file = path.join(OUT_DIR, shot.file);
     if (typeof shot.before === 'function') await shot.before();
     try {

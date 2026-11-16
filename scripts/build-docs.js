@@ -1344,6 +1344,22 @@ function buildLandingPage(outDir) {
 // copy are generated from this list, so the page cannot drift from the shots.
 const landingScreens = [
   {
+    id: 'chat',
+    title: 'Watch the whole run, and what it costs',
+    text: 'Runs on the latest models, Claude Opus 5.5 here. Every read, search, edit and test is its own card with its result, and context use, cost per turn and the chat total stay pinned while you scroll.',
+    src: 'features/images/landing/chat-view.png',
+    alt: 'A chat on Claude Opus 5.5 at 390 px: the Context and Total chips across the header, an assistant turn with its per-turn cost line, and the Read, Searched, Wrote and Ran tool cards above the composer.',
+    caption: 'Chat — Claude Opus 5.5 fixing a bug end to end'
+  },
+  {
+    id: 'agent-network',
+    title: 'See your agents work as a team',
+    text: 'When a run splits work across subagents, the chat draws it as a live graph: who delegated to whom, who is still running, and every message passed between them. Tap a node to jump to its card.',
+    src: 'features/images/landing/agent-network.png',
+    alt: 'The agent network dock at 390 px over a release-check chat: the main agent with reviewer, tester and writer subagents, the tester delegating to a fuzzer, and the message feed under the graph.',
+    caption: 'Agent network — a release check split across four agents'
+  },
+  {
     id: 'terminal',
     title: 'Your shell, in your pocket',
     text: 'A persistent shell in the project folder, not a log viewer. Esc, Tab, ^C, arrows and PgUp are one tap away, and Ctrl or Fn turns the next key into any control or function key — so less, vim, htop or a sudo prompt all work from a phone keyboard.',
@@ -1360,20 +1376,36 @@ const landingScreens = [
     caption: 'Inspector — a live page over CDP'
   },
   {
+    id: 'recurring',
+    title: 'Jobs that come back on their own',
+    text: 'Ask for something every weekday at 9 and the chat schedules itself. Each run starts fresh with its own prompt, the dock shows when the next one is due, and you can edit, pause or stop it from there.',
+    src: 'features/images/landing/recurring.png',
+    alt: 'A recurring task at 390 px: the chat that set up a weekday 09:00 dependency check, the last run with its report, and the Recurring dock with Prompt, Pause and Stop above the composer.',
+    caption: 'Recurring task — a weekday dependency report'
+  },
+  {
+    id: 'artifacts',
+    title: 'Files that belong to the chat',
+    text: 'Reports, data and images a run produces are kept with the chat as artifacts. Open them, edit them, or mention one with @ to hand it back to the agent.',
+    src: 'features/images/landing/artifacts.png',
+    alt: 'The artifacts sheet of a chat at 390 px: deps-report.md and outdated.json with their descriptions, plus Upload files and New text.',
+    caption: 'Artifacts — what each run left behind'
+  },
+  {
+    id: 'extensions',
+    title: 'Add your own panels to the chat',
+    text: 'An extension is one file: a sandboxed view, the hooks behind it and an optional MCP server. Dock it above the composer, put it in a sheet or a settings page, and switch it off with one toggle.',
+    src: 'features/images/landing/extension-dock.png',
+    alt: 'A Release checklist extension docked above the composer of the bug-fix chat at 390 px, opened to show its checklist inside the chat.',
+    caption: 'Extensions — a release checklist docked in the chat'
+  },
+  {
     id: 'draft-craft',
     title: "Circle the bug, don't describe it",
     text: 'Draw on a screenshot, drop numbered pins that carry notes, and the marked-up image lands in your draft. Code selections and Inspector entries go in the same way. Nothing is sent until you press send.',
     src: 'features/images/landing/draft-craft.png',
     alt: 'The Draft Craft annotator over an image attached to a chat draft, with one pen stroke and one numbered pin carrying the text "Header wraps here", plus the marker list and toolbar beneath the canvas.',
     caption: 'Draft Craft — mark it up, then ask'
-  },
-  {
-    id: 'chat',
-    title: 'Watch the whole run, and what it costs',
-    text: 'Runs on the latest models, Claude Opus 5.5 here. Every read, search, edit and test is its own card with its result, and context use, cost per turn and the chat total stay pinned while you scroll.',
-    src: 'features/images/landing/chat-view.png',
-    alt: 'A chat on Claude Opus 5.5 at 390 px: the Context and Total chips across the header, an assistant turn with its per-turn cost line, and the Read, Searched, Wrote and Ran tool cards above the composer.',
-    caption: 'Chat — Claude Opus 5.5 fixing a bug end to end'
   },
   {
     id: 'subagent-images',
@@ -1406,6 +1438,14 @@ const landingScreens = [
     src: 'features/images/landing/git.png',
     alt: 'The Git sheet at 390 px: the branch picker with pull, push, refresh and close, one staged file above the commit bar, and unstaged files each with a Stage button.',
     caption: 'Git — stage, diff, commit, push'
+  },
+  {
+    id: 'themes',
+    title: 'Make it look like yours',
+    text: 'Built-in themes go from Parchment and Yellow Paper to a flickering CRT, and your own themes can bring custom CSS and JavaScript effects.',
+    src: 'features/images/landing/theme-crt.png',
+    alt: 'The bug-fix chat at 390 px in the built-in CRT theme: green phosphor text on black with scanlines.',
+    caption: 'Themes — the same chat in CRT'
   },
   {
     id: 'new-chat',
@@ -1452,7 +1492,7 @@ const body = `
 <section class="hero">
 <p class="eyebrow">Mobile Ouaib first</p>
 <h1>mouaif</h1>
-<p class="tagline">A self-hosted coding agent built for your phone. Run the latest models against your own repo, with a real terminal, git, an editor and a touch DevTools beside the chat — on your machine, with your keys.</p>
+<p class="tagline">A self-hosted coding agent built for your phone. Teams of subagents, recurring jobs, extensions, a real terminal and a touch DevTools — all against your own repo, on your own machine.</p>
 <div class="hero-install">
 <pre><code class="language-bash">npx mouaif serve
 npx mouaif serve --auth
@@ -1496,8 +1536,9 @@ mouaif serve --auth</code></pre>
 <p>More than fits in a screenshot:</p>
 <ul>
 <li>Let CI, an alert or a form <strong>start a chat turn</strong> by calling a secret webhook link. <a href="features/webhook-turns.html">Webhook turns</a></li>
-<li>Install <strong>extensions</strong> — one file bundling hooks, a sandboxed UI and its MCP server, with one switch to turn it off. <a href="features/extensions.html">Extensions</a></li>
-<li>Keep <strong>chat artifacts</strong>: files a chat produced or you added, editable and taggable with <code>@</code>. <a href="features/chat-artifacts.html">Chat artifacts</a></li>
+<li>Give a run a <strong>budget and a watchdog</strong> so it can work for hours and stop on its own. <a href="features/long-running-runs.html">Long-running runs</a></li>
+<li>Have a second model <strong>review each shell command</strong> and auto-allow the safe ones. <a href="features/shell-review.html">Shell review</a></li>
+<li><strong>Share a project</strong> with another mouaif instance. <a href="features/share-project.html">Share a project</a></li>
 <li>Connect extra tools through <strong>MCP</strong> — stdio, HTTP or SSE, with OAuth sign-in, from the built-in store or by hand. <a href="features/mcp.html">MCP</a></li>
 <li>Delegate work to named <strong>agents</strong>, each with its own instructions, tool allowlist, model and thinking level. <a href="features/agents.html">Agents</a></li>
 <li>Reusable <strong>custom prompts</strong> and <strong>Agent Skills</strong> that matching chats pull in on their own.</li>
