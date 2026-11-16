@@ -34,6 +34,17 @@ export function toggleLine(ranges, line) {
   });
 }
 
+// Remove one normalized range [start, end] from `ranges`.
+export function removeRange(ranges, target) {
+  let normalized = [];
+  try { normalized = normalizeRanges(ranges); } catch { normalized = Array.isArray(ranges) ? ranges : []; }
+  return normalized.filter((r) => !(r.start === target.start && r.end === target.end));
+}
+
+export function rangeChipLabel({ start, end }) {
+  return start === end ? `Line ${start}` : `Lines ${start}–${end}`;
+}
+
 export function describeRanges(ranges) {
   return ranges.length ? 'Lines ' + ranges.map(({ start, end }) => start === end ? start : `${start}–${end}`).join(', ') : 'No lines selected';
 }
@@ -82,6 +93,29 @@ export function normalizeChars(chars) {
   return merged;
 }
 
+// Check if `span` matches or overlaps any saved character span.
+export function findMatchingCharSpan(chars, span) {
+  if (!isValidCharSpan(span)) return null;
+  const next = normalizeChars(chars);
+  const exact = next.find((s) =>
+    s.startLine === span.startLine && s.endLine === span.endLine && s.startCol === span.startCol && s.endCol === span.endCol);
+  if (exact) return exact;
+  return next.find((s) => {
+    if (span.endLine < s.startLine || span.startLine > s.endLine) return false;
+    if (s.startLine === s.endLine && span.startLine === span.endLine) {
+      return Math.max(s.startCol, span.startCol) <= Math.min(s.endCol, span.endCol);
+    }
+    return true;
+  }) || null;
+}
+
+// Remove one character span from `chars`.
+export function removeCharSpan(chars, target) {
+  if (!target) return normalizeChars(chars);
+  return normalizeChars(chars).filter((s) =>
+    !(s.startLine === target.startLine && s.endLine === target.endLine && s.startCol === target.startCol && s.endCol === target.endCol));
+}
+
 // Add or remove a character span. When a span is already present it is
 // removed (a second tap on the same selection un-hides it); otherwise it
 // is added and merged. Returns the new `chars` array.
@@ -89,8 +123,7 @@ export function toggleChar(chars, span) {
   const next = normalizeChars(chars);
   const present = next.some((s) =>
     s.startLine === span.startLine && s.endLine === span.endLine && s.startCol === span.startCol && s.endCol === span.endCol);
-  if (present) return next.filter((s) =>
-    !(s.startLine === span.startLine && s.endLine === span.endLine && s.startCol === span.startCol && s.endCol === span.endCol));
+  if (present) return removeCharSpan(next, span);
   return normalizeChars([...next, span]);
 }
 
@@ -114,6 +147,47 @@ export function describeHidden({ ranges = [], chars = [] } = {}) {
   if (lines.length) parts.push(describeRanges(lines));
   if (spans.length) parts.push('Text on ' + spans.map(charSpanLabel).join('; '));
   return parts.join(' · ') || 'Nothing hidden';
+}
+
+// Apply a rule's ranges and character spans to `text`, returning the exact
+// string the agent's read_file tool will see (`[hidden]` in place of hidden
+// lines and character spans, preserving line numbers).
+export function previewRedactedText(text, { ranges = [], chars = [] } = {}) {
+  if (typeof text !== 'string') return '';
+  let normRanges = [];
+  try { normRanges = normalizeRanges(ranges); } catch { normRanges = []; }
+  const normChars = normalizeChars(chars);
+  if (!normRanges.length && !normChars.length) return text;
+  const marker = '[hidden]';
+  return text.split('\n').map((line, idx) => {
+    const lineNumber = idx + 1;
+    if (normRanges.some((r) => lineNumber >= r.start && lineNumber <= r.end)) return marker;
+    const selected = normChars.filter((s) => lineNumber >= s.startLine && lineNumber <= s.endLine);
+    if (!selected.length) return line;
+    const codePoints = Array.from(line);
+    const length = codePoints.length;
+    const span = selected.reduce((acc, s) => {
+      let from, to;
+      if (s.startLine === s.endLine) {
+        from = s.startCol - 1;
+        to = s.endCol;
+      } else if (lineNumber === s.startLine) {
+        from = s.startCol - 1;
+        to = length;
+      } else if (lineNumber === s.endLine) {
+        from = 0;
+        to = s.endCol;
+      } else {
+        from = 0;
+        to = length;
+      }
+      from = Math.max(0, Math.min(length, from));
+      to = Math.max(from, Math.min(length, to));
+      return { from: Math.min(acc.from, from), to: Math.max(acc.to, to) };
+    }, { from: length, to: 0 });
+    if (span.to <= span.from) return line;
+    return codePoints.slice(0, span.from).join('') + marker + codePoints.slice(span.to).join('');
+  }).join('\n');
 }
 
 // Count the number of hidden characters across all spans (best-effort for

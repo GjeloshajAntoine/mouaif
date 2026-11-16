@@ -120,11 +120,13 @@ export function SettingsHiddenContentView({ projectDir = '', from = '', chatId =
         h('div', { class: 'group__title settings-project__section-title' },
           sectionIcon('files'),
           h('span', null, 'Hidden files'),
+          Array.isArray(rules) && rules.length > 0 && h('span', { class: 'hidden-content-list__count' }, `${rules.length}`),
           h('details', { class: 'settings-project__info' },
             h('summary', { 'aria-label': 'About hidden file content' }, '?'),
             h('div', { class: 'settings-project__info-body' },
-              h('p', null, 'Choose a file, then tap the line numbers you want hidden, or select text and hide just that span.'),
-              h('p', null, 'Tap a row to change what it hides; Remove un-hides the whole file.')
+              h('p', null, '1. Tap + Add file and pick a project file.'),
+              h('p', null, '2. Tap line numbers to hide whole lines, or select text and tap Hide selection.'),
+              h('p', null, '3. Use "What agent sees" to preview the [hidden] replacement, then tap Save.')
             )
           )
         ),
@@ -141,7 +143,8 @@ export function SettingsHiddenContentView({ projectDir = '', from = '', chatId =
                   h('span', { class: 'group__row-body' },
                     h('span', { class: 'group__row-label hidden-content__path' }, rule.path),
                     h('span', { class: 'hidden-content__muted' }, describeHidden(rule))
-                  )
+                  ),
+                  h('span', { class: 'hidden-content__edit-hint', 'aria-hidden': 'true' }, 'Edit ›')
                 ),
                 h('button', {
                   class: 'btn btn--small btn--danger hidden-content__remove', type: 'button',
@@ -149,7 +152,7 @@ export function SettingsHiddenContentView({ projectDir = '', from = '', chatId =
                   'aria-label': `Stop hiding content in ${rule.path}`,
                   onClick: () => onRemove(rule.path, index)
                 }, removing === rule.path ? 'Removing…' : 'Remove')
-              ))) : h('p', { class: 'hidden-content__empty' }, 'Nothing hidden yet. Add a file to hide whole lines or selected text.'),
+              ))) : h('p', { class: 'hidden-content__empty' }, 'Nothing hidden yet. Add a file to hide whole lines or selected text — the agent will see [hidden] instead.'),
               h('button', { class: 'btn btn--primary hidden-content-list__add', type: 'button', ref: addRef, onClick: () => setPicking(true) }, '+ Add file')
             )
       ),
@@ -158,7 +161,7 @@ export function SettingsHiddenContentView({ projectDir = '', from = '', chatId =
       picking && h(AgentFilePicker, {
         projectDir: dir, onPick: onOpen, onClose: () => setPicking(false),
         label: 'Choose a file to hide lines',
-        description: 'Choose a file to preview its contents and select hidden lines.'
+        description: 'Choose a file to preview its contents and select lines or text to hide.'
       })
     )
   );

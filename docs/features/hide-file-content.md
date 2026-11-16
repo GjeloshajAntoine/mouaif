@@ -10,12 +10,13 @@ This is **not a security boundary**: shell commands and MCP servers can still re
 
 Open **Settings → This project → More settings → Hide file content**. The **?** next to **Hidden files** has a short version of these steps.
 
-1. Tap **+ Add file** and choose a file, or tap a file already on the list.
+1. Tap **+ Add file** and choose a file, or tap a file already on the list (**Edit ›**).
 2. The file opens read-only in a CodeMirror editor with line numbers and syntax highlighting. The header shows the file name and its folder.
-3. **Hide a whole line:** tap its line number. A hidden line's number turns into a filled pill and the line is highlighted. Tap the number again to show the line.
-4. **Hide part of a line:** select the text, then tap **Hide selection** in the footer. To undo, select exactly the same text again; the button then reads **Show selection**. A selection that spans several lines hides everything from its start to its end.
-5. **Type line numbers instead:** tap **Ranges** in the footer, then enter **From** / **To** line numbers (both included). Use this for long blocks, or when the file can't be previewed (for example, files over 1 MiB).
-6. Tap **Save**. The footer shows what will be hidden, for example `Lines 3–5 · Text on line 8, cols 4–9`, with an **Unsaved** badge until you save.
+3. **Hide a whole line:** tap its line number. A hidden line's number turns into a filled pill and the line is highlighted. Tap the number again (or its chip's **×** in the footer) to show the line.
+4. **Hide part of a line:** select the text, then tap **Hide selection** in the footer. An interactive chip (`Text line 8, cols 4–9 ×`) appears in the footer. To undo, tap **×** on that chip, or select overlapping text and tap **Show selection**. A selection that spans several lines hides everything from its start to its end.
+5. **Preview what the agent sees:** tap **What agent sees** at the top of the editor to switch between your original source and the exact `[hidden]` output the agent's file tools receive.
+6. **Type line numbers instead:** tap **Ranges** in the footer, then enter **From** / **To** line numbers (both included). Use this for long blocks, or when the file can't be previewed (for example, files over 1 MiB).
+7. Tap **Save**. The footer shows interactive chips for every hidden range and text span (tap a chip to scroll to that line, **×** to unhide it, or **Clear all** when more than one item is hidden), plus a summary and an **Unsaved** badge until you save.
 
 **Back** keeps your unsaved changes until you return to the same file, but they are lost on a page reload. **Cancel** asks before discarding them.
 
@@ -23,10 +24,10 @@ Open **Settings → This project → More settings → Hide file content**. The 
 
 | To show again | Do this |
 | --- | --- |
-| One line | Tap its line number in the editor, then **Save**. |
-| A typed line range | **Ranges** → **×** on that row → **Save**. |
-| Hidden text | Select the same text, tap **Show selection**, then **Save**. |
-| A whole file | Tap **Remove** on its row in the list, then confirm. |
+| One line or text span | Tap **×** on its chip in the footer (or tap the line number / select the text and tap **Show selection**), then **Save**. |
+| A typed line range | Tap **×** on its chip or under **Ranges**, then **Save**. |
+| Everything in the open file | Tap **Clear all** in the footer, then **Save** and confirm. |
+| A whole file from the list | Tap **Remove** on its row in the list, then confirm. |
 
 The agent can read the content again on its next file-tool call.
 

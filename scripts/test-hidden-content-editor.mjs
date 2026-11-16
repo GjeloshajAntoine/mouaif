@@ -3,16 +3,23 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const source = (file) => fs.readFileSync(new URL('../frontend/src/' + file, import.meta.url), 'utf8');
 const helpers = await import('data:text/javascript;base64,' + Buffer.from(source('components/settings/hiddenRanges.js')).toString('base64'));
-const { normalizeRanges, toggleLine, hiddenContentPath, normalizeChars, toggleChar, isValidCharSpan, charSpanCount } = helpers;
+const {
+  normalizeRanges, toggleLine, hiddenContentPath, normalizeChars, toggleChar,
+  isValidCharSpan, charSpanCount, removeRange, rangeChipLabel,
+  findMatchingCharSpan, removeCharSpan, previewRedactedText
+} = helpers;
 assert.deepEqual(normalizeRanges([{ start: '3', end: '5' }, { start: 1, end: 2 }]), [{ start: 1, end: 5 }]);
 assert.deepEqual(toggleLine([{ start: 1, end: 5 }], 3), [{ start: 1, end: 2 }, { start: 4, end: 5 }]);
 assert.deepEqual(toggleLine([{ start: 1, end: 1 }], 1), []);
 assert.deepEqual(toggleLine([{ start: 2, end: 2 }], 1), [{ start: 1, end: 2 }]);
+assert.deepEqual(removeRange([{ start: 1, end: 2 }, { start: 5, end: 6 }], { start: 1, end: 2 }), [{ start: 5, end: 6 }], 'removeRange drops the chosen range');
+assert.equal(rangeChipLabel({ start: 4, end: 4 }), 'Line 4', 'single-line chip label');
+assert.equal(rangeChipLabel({ start: 4, end: 7 }), 'Lines 4–7', 'multi-line chip label');
 for (const [start, end] of [['', 2], [0, 2], [3, 2], [1.5, 2], [1, ''], [1, Infinity]]) {
   assert.throws(() => normalizeRanges([{ start, end }]));
 }
 // Char-span unit tests: single-line merge, containment drop, toggle add/remove,
-// isValidCharSpan rejections and multi-line span count.
+// overlap match, removeCharSpan, previewRedactedText, isValidCharSpan rejections and multi-line span count.
 assert.deepEqual(
   normalizeChars([{ startLine: 1, endLine: 1, startCol: 5, endCol: 10 }, { startLine: 1, endLine: 1, startCol: 8, endCol: 12 }]),
   [{ startLine: 1, endLine: 1, startCol: 5, endCol: 12 }],
@@ -43,6 +50,21 @@ const afterAdd = toggleChar([], span);
 assert.equal(afterAdd.length, 1, 'toggleChar adds a missing span');
 const afterRemove = toggleChar(afterAdd, span);
 assert.equal(afterRemove.length, 0, 'toggleChar removes an existing span');
+assert.deepEqual(
+  findMatchingCharSpan(afterAdd, { startLine: 1, endLine: 1, startCol: 5, endCol: 7 }),
+  span,
+  'findMatchingCharSpan finds an overlapping saved span even when columns are not identical'
+);
+assert.equal(findMatchingCharSpan(afterAdd, { startLine: 1, endLine: 1, startCol: 12, endCol: 15 }), null, 'disjoint span does not match');
+assert.deepEqual(removeCharSpan(afterAdd, span), [], 'removeCharSpan removes the target span');
+assert.equal(
+  previewRedactedText('const key = "secret";\nconst ok = 1;\nprivateLine();', {
+    ranges: [{ start: 3, end: 3 }],
+    chars: [{ startLine: 1, endLine: 1, startCol: 14, endCol: 19 }]
+  }),
+  'const key = "[hidden]";\nconst ok = 1;\n[hidden]',
+  'previewRedactedText matches agent read_file output'
+);
 assert.equal(charSpanCount([{ startLine: 1, endLine: 1, startCol: 4, endCol: 9 }]), 6, 'single-line span counts characters');
 assert.equal(charSpanCount([{ startLine: 1, endLine: 3, startCol: 4, endCol: 9 }]), 2, 'multi-line span counts boundary lines');
 const routeContext = { projectDir: '/projects/a & b', from: 'settings/projects', filePath: 'src/a #?.js' };
@@ -115,6 +137,28 @@ assert.equal(nodes.find(n => n.attrs.id === 'hidden-content-manual').attrs.hidde
 for (const label of ['Cancel', 'Save']) {
 assert.ok(footerNodes.some(n => n.tag === 'button' && n.children.includes(label)), label + ' lives in the sticky footer');
 }
+// Mode switcher ("Edit selection" / "What agent sees") renders in the toolbar.
+const editModeBtn = button('Edit selection');
+const agentModeBtn = button('What agent sees');
+assert.ok(editModeBtn && agentModeBtn, 'mode switcher buttons render');
+assert.equal(editModeBtn.attrs['aria-pressed'], 'true');
+assert.equal(agentModeBtn.attrs['aria-pressed'], 'false');
+agentModeBtn.attrs.onClick();
+render();
+assert.equal(button('What agent sees').attrs['aria-pressed'], 'true', 'switching to agent preview updates pressed state');
+assert.ok(nodes.some(n => String(n.attrs.class || '').includes('hidden-content__editor--agent')), 'editor host gets agent modifier class');
+button('Edit selection').attrs.onClick();
+render();
+assert.equal(button('Edit selection').attrs['aria-pressed'], 'true', 'switching back to edit mode restores state');
+
+button('+ Add range').attrs.onClick();
+render();
+// Active item chip renders in the footer and can unhide directly with ×.
+const chipRemove = nodes.find(n => n.tag === 'button' && n.attrs['aria-label'] === 'Unhide Line 1');
+assert.ok(chipRemove, 'interactive chip renders for active hidden line');
+chipRemove.attrs.onClick();
+render();
+assert.equal(nodes.some(n => n.tag === 'button' && n.attrs['aria-label'] === 'Unhide Line 1'), false, 'tapping chip × unhides the range');
 button('+ Add range').attrs.onClick();
 render();
 let submit = nodes.find(n => n.tag === 'form').attrs.onSubmit;

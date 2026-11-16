@@ -11,7 +11,7 @@ import { css } from '@codemirror/lang-css';
 import { json } from '@codemirror/lang-json';
 import { markdown } from '@codemirror/lang-markdown';
 import { python } from '@codemirror/lang-python';
-import { describeHidden, isValidCharSpan, normalizeChars, normalizeRanges, toggleChar, toggleLine } from './hiddenRanges.js';
+import { charSpanLabel, describeHidden, findMatchingCharSpan, isValidCharSpan, normalizeChars, normalizeRanges, previewRedactedText, rangeChipLabel, removeCharSpan, removeRange, toggleChar, toggleLine } from './hiddenRanges.js';
 import './hiddenContent.css';
 // Retain only line numbers (never file content) across in-app navigation.
 // Explicit Cancel/Save clears the draft; a reload clears this in-memory cache.
@@ -97,7 +97,7 @@ return null; // Selection rooted in a widget or an unmapped node.
 // Everything CodeMirror-specific lives inside this factory so the module can
 // be loaded (and the component rendered) in a harness without the runtime —
 // the real editor is only created when this is called in the browser.
-function createEditorEngine(doc, filePath, initialRanges, initialChars, onChange, onSelection, parent) {
+function createEditorEngine(doc, filePath, initialRanges, initialChars, onChange, onSelection, parent, interactive = true) {
 const setHidden = StateEffect.define();
 const setChars = StateEffect.define();
 const hiddenRangesField = StateField.define({
@@ -190,7 +190,7 @@ return Decoration.set(deco, true);
     }
     return RangeSet.of(marks, true);
   });
-  const toggleGutter = lineNumbers({
+  const toggleGutter = lineNumbers(interactive ? {
     domEventHandlers: {
       click(view, block) {
         const number = view.state.doc.lineAt(block.from).number;
@@ -200,7 +200,7 @@ return Decoration.set(deco, true);
         return true;
       }
     }
-  });
+  } : {});
 const state = EditorState.create({
 doc,
 extensions: [
@@ -227,6 +227,10 @@ const view = new EditorView({ state, parent });
 // One reporting path for both sources: whatever the browser shows as
 // selected wins, the editor state is the fallback.
 function reportSelection() {
+if (!interactive) {
+  onSelection({ hasSelection: false, span: null });
+  return;
+}
 const span = domSelectionSpan(view) || selectionInfo(view).span;
 onSelection(span ? { hasSelection: true, span } : { hasSelection: false, span: null });
 }
@@ -236,15 +240,20 @@ if (update.selectionSet || update.docChanged) reportSelection();
 }))
 });
 const ownerDoc = view.dom.ownerDocument;
-ownerDoc.addEventListener('selectionchange', reportSelection);
+if (interactive) ownerDoc.addEventListener('selectionchange', reportSelection);
 requestAnimationFrame(() => { if (!view.dom.isConnected) return; view.requestMeasure(); });
 reportSelection();
 return {
 view, setHidden, setChars, hiddenRangesField, hiddenCharsField,
 // The highlighted range right now, without waiting for a re-render.
-selectionSpan: () => domSelectionSpan(view) || selectionInfo(view).span,
+selectionSpan: () => (interactive ? (domSelectionSpan(view) || selectionInfo(view).span) : null),
+scrollToLine(lineNumber) {
+  const n = Math.max(1, Math.min(view.state.doc.lines, Number(lineNumber) || 1));
+  const pos = view.state.doc.line(n).from;
+  view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: 'center' }) });
+},
 destroy() {
-ownerDoc.removeEventListener('selectionchange', reportSelection);
+if (interactive) ownerDoc.removeEventListener('selectionchange', reportSelection);
 view.destroy();
 }
 };
@@ -263,6 +272,7 @@ const [reload, setReload] = useState(0);
 const [error, setError] = useState('');
 const [saving, setSaving] = useState(false);
 const [showManual, setShowManual] = useState(false);
+const [viewMode, setViewMode] = useState('edit'); // 'edit' | 'agent'
 const savingRef = useRef(false);
 const mounted = useRef(true);
 const heading = useRef(null);
@@ -285,11 +295,12 @@ const selectionSummary = (count ? `${count} ${count === 1 ? 'line' : 'lines'}` :
 + (count && charCount ? ', ' : '')
 + (charCount ? `${charCount} ${charCount === 1 ? 'text span' : 'text spans'}` : '')
 || 'Nothing hidden';
-// A selection that exactly matches a saved span un-hides it on tap, so the
+// A selection that matches or overlaps a saved span un-hides it on tap, so the
 // button says so instead of always claiming "Hide".
-const selMatches = !!(sel.hasSelection && sel.span && normalizedChars.some((s) =>
-  s.startLine === sel.span.startLine && s.endLine === sel.span.endLine && s.startCol === sel.span.startCol && s.endCol === sel.span.endCol));
+const matchingSpan = (sel.hasSelection && sel.span) ? findMatchingCharSpan(normalizedChars, sel.span) : null;
+const selMatches = !!matchingSpan;
 const hideLabel = selMatches ? 'Show selection' : 'Hide selection';
+const isAgentView = viewMode === 'agent';
 
   useEffect(() => {
     mounted.current = true;
@@ -326,30 +337,43 @@ const hideLabel = selMatches ? 'Show selection' : 'Hide selection';
     return () => controller.abort();
   }, [projectDir, filePath, reload]);
 
-  // Load the file into the read-only editor once the body arrives.
+  // Load the file into the read-only editor once the body arrives (or when
+  // switching between Edit selection and Agent view).
   useEffect(() => {
     if (!editorHost.current || preview.content === null) return;
     if (engineRef.current) { engineRef.current.destroy(); engineRef.current = null; }
     let seed = [];
     try { seed = normalizeRanges(ranges); } catch (e) { seed = []; }
-    const engine = createEditorEngine(preview.content, filePath, seed, chars, (next) => { setError(''); setRanges(next); }, (info) => setSel(info), editorHost.current);
+    const docText = isAgentView
+      ? previewRedactedText(preview.content, { ranges: seed, chars: normalizeChars(chars) })
+      : preview.content;
+    const engine = createEditorEngine(
+      docText,
+      filePath,
+      seed,
+      isAgentView ? [] : normalizeChars(chars),
+      (next) => { setError(''); setRanges(next); },
+      (info) => setSel(info),
+      editorHost.current,
+      !isAgentView
+    );
     engineRef.current = engine;
     return () => { if (engineRef.current) { engineRef.current.destroy(); engineRef.current = null; } };
-    // Rebuild only when a new file body is loaded; the gutter reads live
-    // ranges through the field, so no rebuild is needed on toggle.
+    // Rebuild when the file body arrives or the view mode changes; in edit
+    // mode the gutter and inline highlights update via StateEffect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preview.content]);
+  }, [preview.content, isAgentView]);
 
   // Push React state (manual range edits, gutter clicks, text selection)
   // into the editor so the gutter and inline highlight stay in sync without
   // re-creating the view.
   useEffect(() => {
     const engine = engineRef.current;
-    if (!engine) return;
+    if (!engine || isAgentView) return;
     let next = [];
     try { next = normalizeRanges(ranges); } catch (e) { next = []; }
     engine.view.dispatch({ effects: [engine.setHidden.of(next), engine.setChars.of(normalizeChars(chars))] });
-  }, [ranges, chars]);
+  }, [ranges, chars, isAgentView]);
 
   // Toggle a character span for the current text selection. Called from the
   // "Hide selected text" action; a non-empty selection adds (or removes, on
@@ -364,7 +388,9 @@ const hideLabel = selMatches ? 'Show selection' : 'Hide selection';
   function hideSpan(span) {
     if (!span) return false;
     setError('');
-    setChars(toggleChar(chars, span));
+    const overlap = findMatchingCharSpan(chars, span);
+    if (overlap) setChars(removeCharSpan(chars, overlap));
+    else setChars(toggleChar(chars, span));
     return true;
   }
   // Act on pointerdown: on touch the same tap dismisses the active selection,
@@ -384,6 +410,16 @@ const hideLabel = selMatches ? 'Show selection' : 'Hide selection';
   }
     pointerActedAt.current = 0;
     hideSpan(currentSpan() || hideSpanRef.current);
+  }
+
+  function jumpToLine(line) {
+    if (engineRef.current) engineRef.current.scrollToLine(line);
+  }
+  function onClearAll() {
+    if (!ranges.length && !chars.length) return;
+    setError('');
+    setRanges([]);
+    setChars([]);
   }
 
   function onRangeField(index, field, value) {
@@ -426,7 +462,8 @@ if (draftVal && draftVal.ranges === ranges && draftVal.chars === chars) drafts.d
   const fileName = slash >= 0 ? filePath.slice(slash + 1) : filePath;
   const fileDir = slash >= 0 ? filePath.slice(0, slash + 1) : '';
   const manualOpen = showManual || !!preview.error;
-  const hideDisabled = saving || !sel.hasSelection;
+  const hideDisabled = saving || isAgentView || !sel.hasSelection;
+  const hasHiddenItems = normalized.length > 0 || normalizedChars.length > 0;
   return h(Fragment, null,
     h('div', { class: 'view-head hidden-content__head' },
       h('button', { class: 'view-back', type: 'button', disabled: saving, onClick: onBack, 'aria-label': 'Back to hidden files' }, '←'),
@@ -436,9 +473,27 @@ if (draftVal && draftVal.ranges === ranges && draftVal.chars === chars) drafts.d
       )
     ),
     h('form', { class: 'hidden-content hidden-content--editor', onSubmit, noValidate: true },
-      h('p', { id: 'hidden-content-editor-help', class: 'hidden-content__hint' },
-        h('span', null, h('strong', null, 'Tap a number'), ' to hide a line. ', h('strong', null, 'Select text'), ' to hide part of it.'),
-        h('span', { class: 'hidden-content__scope-note' }, 'Only read_file and search_files see [hidden]; shell and MCP still read the file. Your file is never edited.')
+      h('div', { class: 'hidden-content__toolbar' },
+        h('p', { id: 'hidden-content-editor-help', class: 'hidden-content__hint' },
+          isAgentView
+            ? h('span', null, h('strong', null, 'Agent preview:'), ' hidden lines and text appear as ', h('code', null, '[hidden]'), '.')
+            : h('span', null, h('strong', null, 'Tap a line number'), ' to hide a line. ', h('strong', null, 'Select text'), ' to hide part of a line.'),
+          h('span', { class: 'hidden-content__scope-note' }, 'Only read_file and search_files see [hidden]; shell and MCP still read the file. Your file is never edited.')
+        ),
+        !preview.error && h('div', { class: 'hidden-content__mode-switch', role: 'group', 'aria-label': 'Preview mode' },
+          h('button', {
+            class: 'hidden-content__mode-btn' + (!isAgentView ? ' is-active' : ''),
+            type: 'button',
+            'aria-pressed': !isAgentView ? 'true' : 'false',
+            onClick: () => setViewMode('edit')
+          }, 'Edit selection'),
+          h('button', {
+            class: 'hidden-content__mode-btn' + (isAgentView ? ' is-active' : ''),
+            type: 'button',
+            'aria-pressed': isAgentView ? 'true' : 'false',
+            onClick: () => setViewMode('agent')
+          }, 'What agent sees')
+        )
       ),
       h('fieldset', { class: 'hidden-content__fields', disabled: saving },
         h('legend', { class: 'hidden-content__sr-only' }, 'Hidden content selection'),
@@ -447,7 +502,13 @@ if (draftVal && draftVal.ranges === ranges && draftVal.chars === chars) drafts.d
               h('p', { role: 'alert' }, preview.error + ' You can still enter line ranges below.'),
               h('button', { class: 'btn', type: 'button', onClick: () => setReload((n) => n + 1) }, 'Retry preview')
             )
-          : h('div', { class: 'hidden-content__editor', ref: editorHost, role: 'region', 'aria-label': 'Numbered file content', 'aria-describedby': 'hidden-content-editor-help' }),
+          : h('div', {
+              class: 'hidden-content__editor' + (isAgentView ? ' hidden-content__editor--agent' : ''),
+              ref: editorHost,
+              role: 'region',
+              'aria-label': isAgentView ? 'Agent redacted file preview' : 'Numbered file content',
+              'aria-describedby': 'hidden-content-editor-help'
+            }),
         h('div', { id: 'hidden-content-manual', class: 'hidden-content__manual', hidden: !manualOpen },
           h('div', { class: 'hidden-content__manual-head' },
             h('strong', null, 'Line ranges'),
@@ -471,6 +532,47 @@ if (draftVal && draftVal.ranges === ranges && draftVal.chars === chars) drafts.d
         )
       ),
       h('footer', { class: 'hidden-content__footer' },
+        hasHiddenItems && !validation && h('div', { class: 'hidden-content__chips', role: 'list', 'aria-label': 'Hidden items' },
+          normalized.map((range) => {
+            const label = rangeChipLabel(range);
+            return h('span', { key: `r-${range.start}-${range.end}`, class: 'hidden-content__chip', role: 'listitem' },
+              h('button', {
+                class: 'hidden-content__chip-jump',
+                type: 'button',
+                onClick: () => jumpToLine(range.start),
+                title: `Scroll to ${label.toLowerCase()}`
+              }, label),
+              h('button', {
+                class: 'hidden-content__chip-remove',
+                type: 'button',
+                'aria-label': `Unhide ${label}`,
+                onClick: () => { setError(''); setRanges(removeRange(ranges, range)); }
+              }, '×')
+            );
+          }),
+          normalizedChars.map((span) => {
+            const label = 'Text ' + charSpanLabel(span);
+            return h('span', { key: `c-${span.startLine}-${span.endLine}-${span.startCol}-${span.endCol}`, class: 'hidden-content__chip hidden-content__chip--text', role: 'listitem' },
+              h('button', {
+                class: 'hidden-content__chip-jump',
+                type: 'button',
+                onClick: () => jumpToLine(span.startLine),
+                title: `Scroll to line ${span.startLine}`
+              }, label),
+              h('button', {
+                class: 'hidden-content__chip-remove',
+                type: 'button',
+                'aria-label': `Unhide text on ${charSpanLabel(span)}`,
+                onClick: () => { setError(''); setChars(removeCharSpan(chars, span)); }
+              }, '×')
+            );
+          }),
+          (normalized.length + normalizedChars.length > 1) && h('button', {
+            class: 'hidden-content__chip-clear',
+            type: 'button',
+            onClick: onClearAll
+          }, 'Clear all')
+        ),
         h('div', { class: 'hidden-content__status' },
           h('div', { class: 'hidden-content__selection', role: 'status' },
             h('strong', null, selectionSummary, dirty && h('span', { class: 'hidden-content__badge' }, 'Unsaved')),
@@ -492,9 +594,9 @@ if (draftVal && draftVal.ranges === ranges && draftVal.chars === chars) drafts.d
             onPointerDown: onHidePointerDown,
             onClick: onHideClick,
             'aria-describedby': 'hidden-content-editor-help'
-          }, sel.hasSelection ? hideLabel : 'Select text to hide'),
+          }, isAgentView ? 'Switch to Edit to select' : (sel.hasSelection ? hideLabel : 'Select text to hide')),
           h('button', { class: 'btn', type: 'button', disabled: saving, onClick: onCancel }, 'Cancel'),
-          h('button', { class: 'btn btn--primary', type: 'submit', disabled: saving || !!validation || (!dirty && !initialRanges.length) }, saving ? 'Saving…' : 'Save')
+          h('button', { class: 'btn btn--primary', type: 'submit', disabled: saving || !!validation || (!dirty && !initialRanges.length && !initialChars.length) }, saving ? 'Saving…' : 'Save')
         )
       )
     )
