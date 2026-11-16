@@ -116,17 +116,27 @@ export function WebpreviewModal({ preview, onClose, onRecapture }) {
     setViewModeState(mode);
     writeViewMode(mode);
     if (mode === 'image' && !thumbnail && url && onRecapture) {
-      captureAt(selectedViewport);
+      // A live-only payload has nothing to show as a screenshot until the
+      // capture lands; if it fails (denied, error), go back to Live instead
+      // of leaving an empty "No preview" body.
+      captureAt(selectedViewport).then((ok) => { if (!ok) setViewModeState('live'); });
     }
   }
   // The agent can switch an open viewer to Live by publishing a live payload
   // (webpreview mode: "live"); follow it and its viewport.
+  // A screenshot payload that replaces it goes back to the user's stored
+  // choice, so an agent-forced Live view does not stick.
   const liveStamp = isLivePayload(preview) ? (preview.capturedAt || preview.url) : '';
+  const firstStamp = useRef(true);
   useEffect(() => {
-    if (!liveStamp) return;
-    setViewModeState('live');
-    setSelectedViewport(viewportValue(preview && preview.viewport));
-    setFrameKey((k) => k + 1);
+    if (firstStamp.current) { firstStamp.current = false; return; }
+    if (liveStamp) {
+      setViewModeState('live');
+      setSelectedViewport(viewportValue(preview && preview.viewport));
+      setFrameKey((k) => k + 1);
+    } else {
+      setViewModeState(readViewMode());
+    }
   }, [liveStamp]);
   // Track the body box so the live frame can be scaled to fit it.
   useEffect(() => {
@@ -145,9 +155,17 @@ export function WebpreviewModal({ preview, onClose, onRecapture }) {
   // toggle never claims the wrong mode.
   useEffect(() => {
     if (typeof document === 'undefined') return undefined;
-    const onChange = () => setFsOpen(document.fullscreenElement === overlayRef.current);
+    // iOS/older Safari only fire the prefixed event and set the prefixed element.
+    const onChange = () => {
+      const el = overlayRef.current;
+      setFsOpen(!!el && (document.fullscreenElement || document.webkitFullscreenElement) === el);
+    };
     document.addEventListener('fullscreenchange', onChange);
-    return () => document.removeEventListener('fullscreenchange', onChange);
+    document.addEventListener('webkitfullscreenchange', onChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onChange);
+      document.removeEventListener('webkitfullscreenchange', onChange);
+    };
   }, []);
   // Mirror the class on the overlay so CSS can drop the phone sheet's
   // safe-area padding / rounded edges while it owns the whole screen. Deriving
@@ -187,16 +205,19 @@ const [recapturing, setRecapturing] = useState(false);
     return captureAt(nextViewport);
   }
   async function captureAt(nextViewport) {
-    if (recapturing || !onRecapture) return;
+    if (recapturing || !onRecapture) return false;
     const previousViewport = selectedViewport;
     const viewport = nextViewport || selectedViewport || 'phone';
     setSelectedViewport(viewport);
     setRecapturing(true);
     try {
       const out = await onRecapture(viewport);
-      if (!out || !out.ok) setSelectedViewport(previousViewport);
+      if (out && out.ok) return true;
+      setSelectedViewport(previousViewport);
+      return false;
     } catch {
       setSelectedViewport(previousViewport);
+      return false;
     } finally {
       setRecapturing(false);
     }
