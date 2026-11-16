@@ -1344,100 +1344,100 @@ function buildLandingPage(outDir) {
 // copy are generated from this list, so the page cannot drift from the shots.
 const landingScreens = [
   {
-    id: 'chat',
-    title: 'One chat, a whole run',
-    text: 'Reads files, searches, edits and runs tests — each call is a card with its own result, and Context, cost and provider balance stay on screen while the transcript scrolls.',
-    src: 'features/images/landing/chat-view.png',
-    alt: 'A chat at 390 px: the Context, Total and Balance chips across the header, an assistant turn with its per-turn cost line, and the Read, Searched, Wrote and Ran tool cards above the composer.',
-    caption: 'Chats — a run reads, searches, edits and tests'
-  },
-  {
     id: 'terminal',
-    title: 'A real terminal on the phone',
-    text: 'Not a log viewer: a persistent shell session in the project directory. Esc, Tab, Ctrl-C, arrows and PgUp/PgDn are small buttons here, and Ctrl and Fn turn the next letter or digit into any control character or function key — so a pager, a full-screen program or a password prompt all work from a phone keyboard.',
+    title: 'Your shell, in your pocket',
+    text: 'A persistent shell in the project folder, not a log viewer. Esc, Tab, ^C, arrows and PgUp are one tap away, and Ctrl or Fn turns the next key into any control or function key — so less, vim, htop or a sudo prompt all work from a phone keyboard.',
     src: 'features/images/landing/terminal.png',
     alt: 'The CLI sheet at 390 px running npm test inside the project directory: the live shell output, suggestion chips for the session command and the project files, the command field, and two rows of small terminal keys (Esc, Tab, ^C, ^D, ^Z, ^L, Ctrl, arrows, Fn, PgUp, PgDn) above the line naming what the modifiers do.',
-    caption: 'CLI — a shell in your project, driven from a phone'
-  },
-  {
-    id: 'git',
-    title: 'Review the diff, then commit',
-    text: 'Stage and unstage per file, open the diff, write the message and commit — the working-tree loop a desktop git client normally owns, without leaving the chat.',
-    src: 'features/images/landing/git.png',
-    alt: 'The Git sheet at 390 px: the branch picker with pull, push, refresh and close, one staged file above the commit bar, and unstaged files each with a Stage button.',
-    caption: 'Git — stage, review, commit'
-  },
-  {
-    id: 'editor',
-    title: 'Edit the file, not a diff of it',
-    text: 'A real code editor on the phone: browse the project tree, open a file with syntax highlighting, select lines and see the change before you save it — or push the selection straight into a chat draft.',
-    src: 'features/images/landing/editor.png',
-    alt: 'The file editor at 390 px showing src/store.js: the folder path and file list above, the Draft Craft, Revert and Save actions, highlighted JavaScript with three lines selected, and the byte count in the footer.',
-    caption: 'Editor — read, select, edit, save'
-  },
-  {
-    id: 'draft-craft',
-    title: 'Draw on the bug instead of describing it',
-    text: 'Annotate an image with pen strokes and numbered pins that carry text, then attach the marked-up picture to any chat draft. It waits in the composer for you to send it — nothing is sent for you.',
-    src: 'features/images/landing/draft-craft.png',
-    alt: 'The Draft Craft annotator over an image attached to a chat draft, with one pen stroke and one numbered pin carrying the text "Header wraps here", plus the marker list and toolbar beneath the canvas.',
-    caption: 'Draft Craft — annotate, then add to a chat draft'
-  },
-  {
-    id: 'approvals',
-    title: 'Nothing sensitive runs unnamed',
-    text: 'A call that needs you pauses the run and shows what it is about to do — the exact command, file or delegated task — and a subagent lets you pick the model for that one run before you allow or deny it.',
-    src: 'features/images/landing/subagent-auth.png',
-    alt: 'A subagent authorization card at 390 px: the delegated task, the per-run model picker and thinking select, and the Allow once / Allow session / Always allow / Deny buttons.',
-    caption: 'Approvals — pick the model before you allow a run'
-  },
-  {
-    id: 'subagent-images',
-    title: 'Share one image, not the whole chat',
-    text: 'The main model chooses which attachments a subagent receives. No images transfer automatically: only selected references enter the delegated task. A vision or image model can inspect or refine that picture, and returned artwork stays visible beside its answer in the parent chat.',
-    src: 'features/images/landing/subagent-images.png',
-    alt: 'Illustrative fixture using the real chat renderer at 390 px: the main model shares only blue-bird.png with Artist, the nested user bubble previews that input, and the image-model reply contains refined artwork and accompanying text.',
-    caption: 'Subagents — selected image in, artwork back (illustrative fixture)'
+    caption: 'Terminal — a real shell, driven by touch'
   },
   {
     id: 'inspector',
-    title: 'A DevTools built for a phone',
-    text: 'Attach over CDP and you get the live page, styles, console and network in a touch-sized UI — inspect, type into the page, and send a marked-up frame straight to a chat draft.',
+    title: 'DevTools, rebuilt for a thumb',
+    text: 'Point it at any Chrome over CDP and you get the live page, the DOM, styles, console and network in panels sized for a phone. Type into the page, catch the failing request, and drop the frame or the log line straight into a chat draft.',
     src: 'features/images/landing/inspector.png',
     alt: 'The Inspector tab at 390 px, attached to a page over CDP: the target bar, the panel chips, the live preview of the inspected page, and the console input.',
-    caption: 'Inspector — attach to a page over CDP'
+    caption: 'Inspector — a live page over CDP'
   },
   {
-    id: 'chats',
-    title: 'Chats belong to a project',
-    text: 'Each project card holds its own scrolling chat list, so a project is a workspace with its own chats, models, agents and instructions rather than a tag on one global list.',
-    src: 'features/images/landing/chats-list.png',
-    alt: 'The Chats tab at 390 px: two project cards, each holding its own scrolling chat list with a New chat button under it.',
-    caption: 'Chats — projects group their own chats'
+    id: 'draft-craft',
+    title: "Circle the bug, don't describe it",
+    text: 'Draw on a screenshot, drop numbered pins that carry notes, and the marked-up image lands in your draft. Code selections and Inspector entries go in the same way. Nothing is sent until you press send.',
+    src: 'features/images/landing/draft-craft.png',
+    alt: 'The Draft Craft annotator over an image attached to a chat draft, with one pen stroke and one numbered pin carrying the text "Header wraps here", plus the marker list and toolbar beneath the canvas.',
+    caption: 'Draft Craft — mark it up, then ask'
+  },
+  {
+    id: 'chat',
+    title: 'Watch the whole run, and what it costs',
+    text: 'Runs on the latest models, Claude Opus 5.5 here. Every read, search, edit and test is its own card with its result, and context use, cost per turn and the chat total stay pinned while you scroll.',
+    src: 'features/images/landing/chat-view.png',
+    alt: 'A chat on Claude Opus 5.5 at 390 px: the Context and Total chips across the header, an assistant turn with its per-turn cost line, and the Read, Searched, Wrote and Ran tool cards above the composer.',
+    caption: 'Chat — Claude Opus 5.5 fixing a bug end to end'
+  },
+  {
+    id: 'subagent-images',
+    title: 'Hand off one picture, not the whole chat',
+    text: 'The main model picks exactly which attachments a subagent sees — nothing transfers by default. A vision or image model works on that one file, and the artwork it returns stays in the parent chat next to its answer.',
+    src: 'features/images/landing/subagent-images.png',
+    alt: 'Illustrative fixture using the real chat renderer at 390 px: the main model shares only blue-bird.png with Artist, the nested user bubble previews that input, and the image-model reply contains refined artwork and accompanying text.',
+    caption: 'Subagents — one image in, artwork back (illustrative fixture)'
+  },
+  {
+    id: 'approvals',
+    title: 'You approve every risky step',
+    text: 'A call that needs you pauses the run and shows the exact command, file or delegated task. For a subagent you choose its model and thinking level for that run, then allow once, for the session, always — or deny.',
+    src: 'features/images/landing/subagent-auth.png',
+    alt: 'A subagent authorization card at 390 px: the delegated task, the per-run model picker and thinking select, and the Allow once / Allow session / Always allow / Deny buttons.',
+    caption: 'Approvals — choose the model, then allow'
+  },
+  {
+    id: 'editor',
+    title: 'A code editor that fits the screen',
+    text: 'Browse the tree, open a file with syntax highlighting, edit and save — or select a few lines and send them to the chat as context instead of pasting.',
+    src: 'features/images/landing/editor.png',
+    alt: 'The file editor at 390 px showing src/store.js: the folder path and file list above, the Draft Craft, Revert and Save actions, highlighted JavaScript with three lines selected, and the byte count in the footer.',
+    caption: 'Editor — open, select, edit, save'
+  },
+  {
+    id: 'git',
+    title: 'Review and commit without a laptop',
+    text: "Stage per file, read the diff, write the message, commit, pull and push. The agent's changes land in your working tree, and you decide what ships.",
+    src: 'features/images/landing/git.png',
+    alt: 'The Git sheet at 390 px: the branch picker with pull, push, refresh and close, one staged file above the commit bar, and unstaged files each with a Stage button.',
+    caption: 'Git — stage, diff, commit, push'
   },
   {
     id: 'new-chat',
-    title: 'A chat that starts configured',
-    text: 'Every tool is listed with its own checkbox and an Off / Ask / Allow control, the project instructions are already loaded, and the model you want is picked — so the first message lands with the context it needs.',
+    title: 'Decide what the agent may touch',
+    text: 'Every tool is listed with Off, Ask or Allow before the first message. Project instructions are already loaded and the model is picked, so the chat starts with the access you chose and no more.',
     src: 'features/images/landing/chat-tools.png',
     alt: 'An empty chat at 390 px: the model picker, then the tools list — Progress updates, File tools with its seven leaf tools, Agent files and Skills — each row carrying an Off / Ask / Allow control, above the "Start the conversation" state.',
-    caption: 'A new chat — every tool, Off / Ask / Allow'
+    caption: 'New chat — Off / Ask / Allow per tool'
   },
   {
     id: 'dictate',
-    title: 'Talk to it from anywhere',
-    text: 'Dictate a message and the text lands in the draft to edit and send — or leave the microphone on and the chat transcribes while you speak, so the words are there when you look up.',
+    title: 'Talk instead of type',
+    text: 'Record a voice note and edit the transcript before it goes in the draft, or keep the mic on and let the chat transcribe while you walk.',
     src: 'features/images/landing/dictation.png',
     alt: 'The Dictate page at 390 px: the model picker with its request-shape summary, the record button with the timer and level meter, and the transcript with its Copy, Insert and Send actions.',
-    caption: 'Dictate — record, edit, then use the text'
+    caption: 'Dictate — speak, edit, send'
+  },
+  {
+    id: 'chats',
+    title: 'One workspace per project',
+    text: 'Each project keeps its own chats, models, agents and instructions, so switching repos switches the whole setup — not just a filter on a single list.',
+    src: 'features/images/landing/chats-list.png',
+    alt: 'The Chats tab at 390 px: two project cards, each holding its own scrolling chat list with a New chat button under it.',
+    caption: 'Chats — grouped by project'
   },
   {
     id: 'providers',
-    title: 'Your keys, your machine',
-    text: 'Connect a provider once and every project can use it: any OpenAI-shaped endpoint (keyless local servers included), Anthropic, Gemini, Ollama, OpenRouter or GitHub Copilot sign-in. The credential stays server-side and never reaches the page.',
+    title: 'Bring any model, keep your keys',
+    text: 'Anthropic, OpenAI-compatible endpoints, Gemini, Ollama, OpenRouter, Mistral, Groq or a GitHub Copilot sign-in. Connect once for every project; keys stay on your server and never reach the browser.',
     src: 'features/images/landing/providers.png',
     alt: 'Settings → Providers at 390 px: seven connected providers, each row naming its endpoint and whether a key is stored.',
-    caption: 'Providers — connect them once, app-wide'
+    caption: 'Providers — connected once, app-wide'
   }
 ];
 
@@ -1452,7 +1452,7 @@ const body = `
 <section class="hero">
 <p class="eyebrow">Mobile Ouaib first</p>
 <h1>mouaif</h1>
-<p class="tagline">A coding agent you run from your phone: a real terminal and git in your project, a DevTools built for touch, an editor, subagents, and Draft Craft — all on your own machine.</p>
+<p class="tagline">A self-hosted coding agent built for your phone. Run the latest models against your own repo, with a real terminal, git, an editor and a touch DevTools beside the chat — on your machine, with your keys.</p>
 <div class="hero-install">
 <pre><code class="language-bash">npx mouaif serve
 npx mouaif serve --auth
@@ -1492,9 +1492,12 @@ mouaif serve --auth</code></pre>
 <p><a href="features/authentication.html">Read the full authentication guide →</a></p>
 </section>
 <section class="section" id="abilities">
-<h2>And it also does</h2>
-<p>Capabilities the sections above do not have room for:</p>
+<h2>Also built in</h2>
+<p>More than fits in a screenshot:</p>
 <ul>
+<li>Let CI, an alert or a form <strong>start a chat turn</strong> by calling a secret webhook link. <a href="features/webhook-turns.html">Webhook turns</a></li>
+<li>Install <strong>extensions</strong> — one file bundling hooks, a sandboxed UI and its MCP server, with one switch to turn it off. <a href="features/extensions.html">Extensions</a></li>
+<li>Keep <strong>chat artifacts</strong>: files a chat produced or you added, editable and taggable with <code>@</code>. <a href="features/chat-artifacts.html">Chat artifacts</a></li>
 <li>Connect extra tools through <strong>MCP</strong> — stdio, HTTP or SSE, with OAuth sign-in, from the built-in store or by hand. <a href="features/mcp.html">MCP</a></li>
 <li>Delegate work to named <strong>agents</strong>, each with its own instructions, tool allowlist, model and thinking level. <a href="features/agents.html">Agents</a></li>
 <li>Reusable <strong>custom prompts</strong> and <strong>Agent Skills</strong> that matching chats pull in on their own.</li>
@@ -1506,11 +1509,11 @@ mouaif serve --auth</code></pre>
 <p><a href="features/app-abilities.html">See all app abilities and safety tips →</a></p>
 </section>
 <section class="section" id="at-a-glance">
-<h2>At a glance</h2>
+<h2>Why mouaif</h2>
 <ul>
 <li><strong>Runs on your machine.</strong> One Node process on port 5732; chats, keys and project files never leave it.</li>
 <li><strong>No account, no cloud.</strong> Bring a provider key, sign in to one you already pay for, or point it at a local model server.</li>
-<li><strong>Built for a phone first.</strong> Every screen above is a 390 px capture; desktop is the same UI with more room.</li>
+<li><strong>Phone first, for real.</strong> Every screen above is a 390 px capture of the actual app; on a desktop it is the same UI with more room.</li>
 <li><strong>Nothing runs unnamed.</strong> File and shell access is off until you turn it on, per tool, per project.</li>
 <li><strong>Your repo stays yours.</strong> Changes land in your working tree for you to review and commit, not in a hosted sandbox.</li>
 </ul>
@@ -1537,9 +1540,9 @@ const blurbHtml = renderInline(escapeHtml(f.blurb || ''), { rewriteMd: true });
 return `<a class="feature-card" href="features/${f.slug}.html"><h3>${escapeHtml(f.title)}</h3><p>${blurbHtml}</p></a>`;
 }).join('\n        ');
 const body = `
-<h1>mouaif user guide</h1>
-<p class="lead">Mobile Ouaib first.</p>
-<p>Everything needed to install, run, authenticate, and use the app.</p>
+<h1>Documentation</h1>
+<p class="lead">Set up mouaif, sign in from your phone, and get the most out of every screen.</p>
+<p>Start with the getting-started guide, then dip into the pages below as you need them.</p>
 <div class="features-grid">
 ${cards}
 </div>

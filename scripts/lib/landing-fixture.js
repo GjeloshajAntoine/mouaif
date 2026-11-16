@@ -28,13 +28,11 @@ const PROVIDERS = [
 ];
 
 const MODELS = [
-  // The transcript chat runs on the OpenAI-compatible model on purpose: its
-  // provider is the one whose account balance the capture script can serve
-  // from a local stub, so the chat head in the landing capture shows the
-  // Context / Total / Balance row the app really renders. The model id has a
-  // built-in price in src/usage.js (`gpt-4o`) so Total is a real total.
-  { id: 'gpt-4o', provider: 'openai-compatible', label: 'GPT-4o', contextWindow: 128000 },
-  { id: 'claude-sonnet-4-6', provider: 'anthropic', label: 'Claude Sonnet 4.6', contextWindow: 200000 },
+  // The transcript chat runs on the newest Claude models so the captures show
+  // what a current setup looks like. Both ids have a built-in price in
+  // src/usage.js, so the per-turn cost line and Total are real totals.
+  { id: 'claude-opus-5-5', provider: 'anthropic', label: 'Claude Opus 5.5', contextWindow: 1000000 },
+  { id: 'claude-sonnet-5-5', provider: 'anthropic', label: 'Claude Sonnet 5.5', contextWindow: 1000000 },
   // The Dictate page (`#/dictation`) lists the project's *transcription* slice,
   // which is a different question from the chat slice: a model id that says it
   // transcribes (`whisper-*`) is what makes the page show a picked model
@@ -159,14 +157,14 @@ function seedChats(projectDir, chats, messages) {
   const main = chats.createChat(projectDir, { title: CHAT_TITLE });
   for (const row of transcript()) messages.appendMessage(projectDir, main.id, row);
   chats.updateChat(projectDir, main.id, {
-    modelId: 'gpt-4o',
-    providerId: 'openai-compatible',
+    modelId: 'claude-opus-5-5',
+    providerId: 'anthropic',
     draft: 'Now add a done toggle to the board view.'
   });
   const empty = chats.createChat(projectDir, { title: 'New chat' });
   chats.updateChat(projectDir, empty.id, {
-    modelId: 'gpt-4o',
-    providerId: 'openai-compatible'
+    modelId: 'claude-opus-5-5',
+    providerId: 'anthropic'
   });
   chats.recomputeProjectTotalCost(projectDir);
   return { chatId: main.id, emptyChatId: empty.id };
@@ -226,7 +224,7 @@ function transcript() {
       role: 'assistant',
       content: "I'll read the store first, then check what happens to the order on load.",
       reasoning: 'Two places can reorder: the in-memory Map, and whatever rebuilds it on load. Read the store before changing anything.',
-      usage: usage(3140, 96), cost: cost(0.01571, 0.00288), modelId: 'gpt-4o', streamingMs: 1840
+      usage: usage(3140, 96), cost: cost(0.01256, 0.00192), modelId: 'claude-opus-5-5', streamingMs: 1840
     },
     {
       role: 'tool', phase: 'call', toolCallId: 'call_demo_read', name: 'read_file',
@@ -242,7 +240,7 @@ function transcript() {
     {
       role: 'assistant',
       content: 'Tasks live in a `Map`, so the order in memory is insertion order. Something rebuilding that map on load must sort it. Let me find the query.',
-      usage: usage(3412, 88), cost: cost(0.01706, 0.00264), modelId: 'gpt-4o', streamingMs: 1520
+      usage: usage(3412, 88), cost: cost(0.01365, 0.00176), modelId: 'claude-opus-5-5', streamingMs: 1520
     },
     {
       role: 'tool', phase: 'call', toolCallId: 'call_demo_search', name: 'search_files',
@@ -262,7 +260,7 @@ function transcript() {
     {
       role: 'assistant',
       content: 'Found it: `src/store.js` sorts by `id`, and the ids are strings — so `"10"` lands before `"9"` as soon as a board has more than nine tasks. I\'ll read that file before changing it.',
-      usage: usage(3624, 104), cost: cost(0.01812, 0.00312), modelId: 'gpt-4o', streamingMs: 1990
+      usage: usage(3624, 104), cost: cost(0.01450, 0.00208), modelId: 'claude-opus-5-5', streamingMs: 1990
     },
     {
       role: 'tool', phase: 'call', toolCallId: 'call_demo_read2', name: 'read_file',
@@ -309,7 +307,7 @@ function transcript() {
     {
       role: 'assistant',
       content: 'All three tests pass, including the restart-ordering case. The board keeps insertion order now; the fix is one line in `src/store.js`.',
-      usage: usage(3980, 121), cost: cost(0.01990, 0.00363), modelId: 'gpt-4o', streamingMs: 2410
+      usage: usage(3980, 121), cost: cost(0.01592, 0.00242), modelId: 'claude-opus-5-5', streamingMs: 2410
     }
   ];
   return rows.map((row) => ({ ...row, ts: ts() }));

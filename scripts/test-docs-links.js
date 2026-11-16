@@ -162,7 +162,7 @@ try {
     for (const line of [
     'Runs on your machine',
     'No account, no cloud',
-    'Built for a phone first',
+    'Phone first, for real',
     'Nothing runs unnamed',
     'Your repo stays yours'
     ]) {
@@ -196,7 +196,7 @@ try {
     const landing = fs.readFileSync(path.join(pub.out, 'index.html'), 'utf8');
     const section = /id="subagent-images">([\s\S]*?)<\/section>/.exec(landing);
     assert.ok(section, 'missing image-sharing presentation section');
-    assert.ok(section[1].includes('No images transfer automatically'));
+    assert.ok(section[1].includes('nothing transfers by default'));
     assert.ok(section[1].includes('features/images/landing/subagent-images.png'));
     for (const slug of ['app-abilities', 'subagent-image-generation']) {
       const guide = fs.readFileSync(path.join(pub.out, 'features', slug + '.html'), 'utf8');
