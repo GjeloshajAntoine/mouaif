@@ -91,7 +91,16 @@ Each `ui` entry is a **view**: a small web page (an MCP App) that mouaif runs sa
 
 A view receives the active theme through the MCP Apps host context: the standard style variables (`--color-background-primary`, `--color-text-primary`, `--font-sans`, `--border-radius-md`, …) mapped from the mouaif theme, plus `theme` (`light` or `dark`, from the theme's background). It is updated when you switch themes. `hostContext.mouaif` carries `slot`, `extensionId`, `surfaceId`, `chatId`, `projectName` and the raw mouaif tokens (`--bg`, `--surface`, `--fg`, `--accent`, …).
 
-An inline `html` view gets the MCP Apps SDK already connected, as `window.mouaifApp` (`window.mouaifAppReady` resolves when it is): call `getHostContext()` and set `onhostcontextchanged` on it.
+An inline `html` view gets the MCP Apps SDK, connected for it, as `window.mouaifApp`. The SDK is set up after the view's own plain `<script>` tags run, so a plain script waits for the `mouaif-app-ready` event before using it (a `<script type="module">` runs later and can `await window.mouaifAppReady`). Then call `getHostContext()` and set `onhostcontextchanged` on it:
+
+```html
+<script>
+  window.addEventListener('mouaif-app-ready', async () => {
+    const app = window.mouaifApp;
+    const { structuredContent } = await app.callServerTool({ name: 'mouaif/chat.recent', arguments: { limit: 5 } });
+  }, { once: true });
+</script>
+```
 
 ### What a view can do
 
@@ -109,7 +118,7 @@ It can also call **host tools**: ordinary MCP `tools/call` requests whose name s
 | `mouaif/settings.get` `{ key? }` | `storage` | Reads the extension's own stored values (one key or all) |
 | `mouaif/settings.set` `{ key, value }` | `storage` | Stores a JSON value (`null` deletes it). This is the extension's own store, 64 KB per extension, not mouaif's settings, and it is deleted with the extension. A project extension has its own store, even when it shares an app extension's id. |
 
-In an inline view: `await window.mouaifApp.callServerTool({ name: 'mouaif/chat.badge', arguments: { text: '2 fail', tone: 'error' } })`.
+In an inline view, once `mouaif-app-ready` has fired: `await window.mouaifApp.callServerTool({ name: 'mouaif/chat.badge', arguments: { text: '2 fail', tone: 'error' } })`.
 
 ### Shortcuts
 
