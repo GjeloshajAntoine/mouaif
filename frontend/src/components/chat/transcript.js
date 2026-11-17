@@ -9,7 +9,7 @@
 
 import { renderMarkdown } from '../../markdown.js';
 import { mountMcpApp, deliverMcpAppMessage, reloadMcpApp } from './McpAppFrame.jsx';
-import { findToolRenderer, mountToolRenderer, appendMessageActions } from './extensionRenderer.js';
+import { findToolRenderer, mountToolRenderer, appendMessageActions, appendMessageAnnotations } from './extensionRenderer.js';
 import { authorizationCard } from './cards.js';
 import { afterTranscriptAppend, scrollToolBodyToBottomSoon, cancelToolBodyScroll, pinTranscriptAfterSettle } from './scroll.js';
 import {
@@ -507,6 +507,10 @@ export function appendMessageToTranscript(m, isLive, refs, state) {
     badge.className = 'chat-msg__origin';
     badge.textContent = 'Hook · ' + m.origin.hookId + ' · follow-up ' + m.origin.depth + '/3';
     head.appendChild(badge);
+  }
+  // Badges extension views set on this message (saved rows only).
+  if (!isLive && refs.mcpAppContext && (m.role === 'user' || m.role === 'assistant')) {
+    appendMessageAnnotations(head, refs.mcpAppContext.projectDir, refs.mcpAppContext.chatId, m);
   }
   head.appendChild(ts);
   row.appendChild(head);

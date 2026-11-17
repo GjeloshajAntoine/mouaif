@@ -59,6 +59,13 @@ async function testValidation() {
   const rendererSummary = extensions.summary(extensions.validate(manifest({ ui: [
     { id: 'r', slot: 'tool.renderer', title: 'R', html: '<p>r</p>', match: { tool: ['shell', 'mcp__gh__*'] } }] })));
   assert.deepEqual(rendererSummary.ui[0].tools, ['shell', 'mcp__gh__*']);
+  // Shortcuts: only sheet/page slots, mod or alt, normalized to lowercase.
+  assert.throws(() => extensions.validate(manifest({ ui: [{ id: 'a', slot: 'chat.dock', title: 'A', html: 'x', shortcut: 'mod+k' }] })), /shortcut is only/);
+  assert.throws(() => extensions.validate(manifest({ ui: [{ id: 'a', slot: 'app.panel', title: 'A', html: 'x', shortcut: 'shift+k' }] })), /mod or alt/);
+  assert.throws(() => extensions.validate(manifest({ ui: [{ id: 'a', slot: 'app.panel', title: 'A', html: 'x', shortcut: 'mod+f12' }] })), /shortcut/);
+  assert.equal(extensions.validate(manifest({ ui: [{ id: 'a', slot: 'app.route', title: 'A', html: 'x', shortcut: 'Mod+Shift+K' }] })).ui[0].shortcut, 'mod+shift+k');
+  assert.equal(extensions.summary(extensions.validate(manifest({ ui: [{ id: 'a', slot: 'chat.sheet', title: 'A', html: 'x', shortcut: 'alt+1' }] }))).ui[0].shortcut, 'alt+1');
+  assert.ok(extensions.validate(manifest({ ui: [{ id: 'a', slot: 'chat.list.action', title: 'A', html: 'x' }] })));
   // Bare mcp hooks name their server.
   assert.throws(() => hooks.normalizeHook({ id: 'm', event: 'tool.before', handler: { kind: 'mcp', tool: 'x' } }), /server/);
 }
@@ -517,13 +524,19 @@ async function testMoreSlotsAndLifecycle() {
       { id: 'ans', slot: 'message.action', title: 'Explain', html: '<p>m</p>' },
       { id: 'mine', slot: 'message.action', title: 'Mine', html: '<p>u</p>', match: { role: 'user' } },
       { id: 'files', slot: 'files.action', title: 'Files', html: '<p>f</p>' },
-      { id: 'panel', slot: 'app.panel', title: 'Panel', html: '<p>p</p>' }
+      { id: 'panel', slot: 'app.panel', title: 'Panel', html: '<p>p</p>', shortcut: 'mod+shift+p' },
+      { id: 'route', slot: 'app.route', title: 'Board', html: '<p>b</p>', shortcut: 'mod+shift+b' },
+      { id: 'row', slot: 'chat.list.action', title: 'Row', html: '<p>r</p>' }
     ] }));
   extensions.setAppEnabled('more-slots', true);
   extensions.importApp(manifest({ id: 'other-cmd', hooks: [], permissions: ['chat.read'],
     ui: [{ id: 'tool', slot: 'composer.action', title: 'Other', html: '<p>o</p>', command: 'ticket' },
-      { id: 'ans', slot: 'message.action', title: 'Read', html: '<p>r</p>' }] }));
+      { id: 'ans', slot: 'message.action', title: 'Read', html: '<p>r</p>' },
+      { id: 'p2', slot: 'app.panel', title: 'P2', html: '<p>p</p>', shortcut: 'mod+shift+p' }] }));
   extensions.setAppEnabled('other-cmd', true);
+  const panels = extensions.surfaces(projectDir, 'app.panel');
+  assert.equal(panels.find((s) => s.extensionId === 'more-slots').shortcut, 'mod+shift+p');
+  assert.equal(panels.find((s) => s.extensionId === 'other-cmd').shortcutTaken, 'more-slots', 'a taken shortcut is not given twice');
   const composer = extensions.surfaces(projectDir, 'composer.action');
   assert.equal(composer.find((s) => s.extensionId === 'more-slots').command, 'ticket');
   const loser = composer.find((s) => s.extensionId === 'other-cmd');
@@ -563,6 +576,21 @@ async function testMoreSlotsAndLifecycle() {
     assert.equal((await post('/api/mcp/apps/mount', { projectDir, extensionId: 'more-slots', surfaceId: 'tool' })).status, 400, 'a composer action lives in a chat');
     assert.equal((await post('/api/mcp/apps/mount', { projectDir, extensionId: 'more-slots', surfaceId: 'files' })).status, 200, 'files.action needs no chat');
     assert.equal((await post('/api/mcp/apps/mount', { projectDir, extensionId: 'more-slots', surfaceId: 'panel' })).status, 200, 'app.panel needs no chat');
+    assert.equal((await post('/api/mcp/apps/mount', { projectDir, extensionId: 'more-slots', surfaceId: 'route' })).status, 200, 'app.route needs no chat');
+    assert.equal((await post('/api/mcp/apps/mount', { projectDir, extensionId: 'more-slots', surfaceId: 'row' })).status, 400, 'a chat-list action needs its chat');
+    r = await post('/api/mcp/apps/mount', { projectDir, chatId, extensionId: 'more-slots', surfaceId: 'row' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body.result.structuredContent.mouaif, { type: 'chat', slot: 'chat.list.action', chatId, title: 'Lifecycle' });
+    // Annotations: a saved message of this chat, short text, a known tone.
+    const row = r.body;
+    const annotate = (args) => post('/api/mcp/apps/' + row.id + '/host', { name: 'mouaif/message.annotate', arguments: args });
+    r = await annotate({ messageSeq: answerSeq, text: 'checked', tone: 'ok', title: 'Fact-checked' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body.clientAction, { type: 'annotate', messageSeq: answerSeq, text: 'checked', tone: 'ok', title: 'Fact-checked', surfaceId: 'row' });
+    assert.equal((await annotate({ messageSeq: 99999, text: 'x' })).status, 400);
+    assert.equal((await annotate({ messageSeq: answerSeq, text: 'x'.repeat(25) })).status, 400);
+    assert.equal((await annotate({ messageSeq: answerSeq, text: 'x', tone: 'pink' })).status, 400);
+    assert.deepEqual((await annotate({ clearAll: true })).body.clientAction, { type: 'annotate', clearAll: true, surfaceId: 'row' });
 
     const del = await fetch(base + '/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir), { method: 'DELETE' });
     assert.equal(del.status, 200);

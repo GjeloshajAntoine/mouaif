@@ -8,7 +8,7 @@
 // evicted one leaves a "Show view" button.
 import { mountMcpApp } from './McpAppFrame.jsx';
 import { claimSurface, touchSurface } from './appHostContext.js';
-import { openExtensionSheet } from './extensionEvents.js';
+import { openExtensionSheet, annotationsFor, ANNOTATIONS_CHANGED } from './extensionEvents.js';
 
 const byProject = new Map(); // projectDir -> [surface]
 
@@ -72,6 +72,42 @@ export function mountToolRenderer(body, { projectDir, chatId, callId, renderer, 
 // actions. One matching action opens directly; several open a short menu.
 // Opening goes through openExtensionSheet with the message's seq, so the
 // sheet mounts the view with that message (src/server-handlers-mcp-apps.js).
+// appendMessageAnnotations(headEl, projectDir, chatId, m) — the badges views
+// set on this saved message (mouaif/message.annotate); refilled on change.
+export function appendMessageAnnotations(headEl, projectDir, chatId, m) {
+  if (!projectDir || !chatId || !m || !Number.isSafeInteger(m.seq)) return;
+  const wrap = document.createElement('span');
+  wrap.className = 'chat-msg__notes';
+  wrap._notesKey = { projectDir, chatId, seq: m.seq };
+  headEl.appendChild(wrap);
+  fillAnnotations(wrap);
+}
+
+function fillAnnotations(wrap) {
+  const { projectDir, chatId, seq } = wrap._notesKey;
+  const notes = annotationsFor(projectDir, chatId, seq);
+  wrap.textContent = '';
+  wrap.hidden = !notes.length;
+  for (const n of notes) {
+    const chip = document.createElement('span');
+    chip.className = 'chat-msg__note';
+    chip.dataset.tone = n.tone;
+    chip.textContent = n.text;
+    chip.title = (n.title ? n.title + ' · ' : '') + 'from ' + n.extensionId;
+    wrap.appendChild(chip);
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener(ANNOTATIONS_CHANGED, (e) => {
+    const { projectDir, chatId, seqs } = e.detail || {};
+    for (const wrap of document.querySelectorAll('.chat-msg__notes')) {
+      const k = wrap._notesKey;
+      if (k && k.projectDir === projectDir && k.chatId === chatId && seqs.includes(k.seq)) fillAnnotations(wrap);
+    }
+  });
+}
+
 const messageActionsByProject = new Map(); // projectDir -> [surface]
 
 export function setMessageActions(projectDir, list) {

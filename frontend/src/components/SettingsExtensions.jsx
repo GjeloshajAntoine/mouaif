@@ -233,3 +233,23 @@ export function SettingsExtensionPageView({ extensionId, surfaceId }) {
               h(McpAppFrame, { projectDir, callId: 'page:' + extensionId + '/' + surfaceId,
                 surface: { extensionId, surfaceId, slot: 'settings.page', projectName: (activeProject.value && activeProject.value.name) || '' } }))));
 }
+
+// An app.route page: a full page at #/ext/<id>/<surface>, in the active
+// project, with no chat. Reached from the app header's extension menu, the
+// tab bar or the view's shortcut.
+export function ExtensionRouteView({ extensionId, surfaceId }) {
+  const [surface, setSurface] = useState(undefined);
+  const projectDir = (activeProject.value && activeProject.value.dir) || '';
+  useEffect(() => {
+    if (!projectDir) { setSurface(null); return; }
+    api('GET', '/api/extensions/surfaces?projectDir=' + encodeURIComponent(projectDir) + '&slot=app.route')
+      .then((r) => setSurface((r.surfaces || []).find((s) => s.extensionId === extensionId && s.surfaceId === surfaceId) || null),
+        () => setSurface(null));
+  }, [projectDir, extensionId, surfaceId]);
+  return h('section', { class: 'ext-route' },
+    surface === undefined ? h('p', { class: 'hint hint--compact' }, 'Loading…')
+      : !projectDir ? h('p', { class: 'hint hint--compact' }, 'Open a project first: an extension page runs in a project.')
+        : !surface ? h('p', { class: 'hint hint--compact' }, 'This page is not available: the extension is off, not trusted here, or has no such page.')
+          : h(McpAppFrame, { projectDir, callId: 'route:' + extensionId + '/' + surfaceId,
+            surface: { extensionId, surfaceId, slot: 'app.route', projectName: (activeProject.value && activeProject.value.name) || '' } }));
+}

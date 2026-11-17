@@ -136,6 +136,14 @@ const ROUTES = [
     catch { return null; }
   }),
 
+  // An extension's full page (app.route): ext/<id>/<surface>.
+  prefix('ext/', (m) => {
+    const [ext, surface] = String(m.id || '').split('/');
+    if (!ext || !surface) return null;
+    try { return { name: 'extensionRoute', extensionId: decodeURIComponent(ext), surfaceId: decodeURIComponent(surface) }; }
+    catch { return null; }
+  }),
+
   // ---- Themes --------------------------------------------------------
   // The picker, then the editor: `new` (optionally `?from=<theme id>` to
   // start from a copy) before the `<id>` prefix.

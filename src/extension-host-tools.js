@@ -11,6 +11,7 @@
 //   mouaif/composer.insert   composer.insert  put text in the message box (never sends)
 //   mouaif/chat.badge        —                the dock chip's badge (≤ 8 chars) and tone
 //   mouaif/chat.open_sheet   —                open one of the same extension's sheets
+//   mouaif/message.annotate  —                a small badge on a saved message of the chat
 //   mouaif/settings.get      storage          the extension's own key-value store
 //   mouaif/settings.set      storage          (64 KB per extension, not mouaif settings)
 //
@@ -28,6 +29,7 @@ const TOOLS = Object.freeze({
   'composer.insert': { permission: 'composer.insert', chat: true, description: 'Insert text into the message box; the user sends it.' },
   'chat.badge': { permission: null, chat: false, description: 'Set the dock chip’s badge (up to 8 characters, empty to clear) and tone.' },
   'chat.open_sheet': { permission: null, chat: true, description: 'Open one of this extension’s sheets by surface id.' },
+  'message.annotate': { permission: null, chat: true, description: 'Show a small badge (up to 24 characters, empty to clear) on a saved message by seq; clearAll removes every badge of this view.' },
   'settings.get': { permission: 'storage', chat: false, description: 'Read this extension’s stored values (one key, or all).' },
   'settings.set': { permission: 'storage', chat: false, description: 'Store a JSON value under a key (null deletes it); 64 KB per extension.' }
 });
@@ -134,7 +136,7 @@ function runHostTool(mount, name, args) {
     const limit = Math.max(1, Math.min(50, Number(a.limit) || 20));
     const rows = require('./messages.js').listMessages(mount.projectDir, mount.chatId)
       .filter((m) => m && (m.role === 'user' || m.role === 'assistant'))
-      .map((m) => ({ role: m.role, text: textOf(m.content).slice(0, 4000), ts: m.ts }))
+      .map((m) => ({ seq: m.seq, role: m.role, text: textOf(m.content).slice(0, 4000), ts: m.ts }))
       .filter((m) => m.text.trim())
       .slice(-limit);
     while (rows.length > 1 && Buffer.byteLength(JSON.stringify(rows)) > MAX_RECENT_BYTES) rows.shift();
@@ -157,6 +159,19 @@ function runHostTool(mount, name, args) {
     const found = require('./extensions.js').surface(mount.projectDir, mount.extensionId, surfaceId);
     if (!found || found.ui.slot !== 'chat.sheet') throw fail('EBADINPUT', 'this extension has no sheet "' + surfaceId + '"');
     return result({ ok: true }, { type: 'open_sheet', extensionId: mount.extensionId, surfaceId });
+  }
+  if (tool === 'message.annotate') {
+    if (a.clearAll === true) return result({ ok: true }, { type: 'annotate', clearAll: true, surfaceId: mount.surfaceId });
+    const seq = Number(a.messageSeq);
+    if (!Number.isSafeInteger(seq)) throw fail('EBADINPUT', 'messageSeq is required');
+    const row = require('./messages.js').listMessages(mount.projectDir, mount.chatId).find((m) => m.seq === seq);
+    if (!row || (row.role !== 'user' && row.role !== 'assistant')) throw fail('EBADINPUT', 'no saved message ' + seq + ' in this chat');
+    const text = a.text === undefined || a.text === null ? '' : String(a.text);
+    if ([...text].length > 24) throw fail('EBADINPUT', 'an annotation is at most 24 characters');
+    const tone = a.tone === undefined ? 'info' : a.tone;
+    if (!BADGE_TONES.includes(tone)) throw fail('EBADINPUT', 'tone must be one of ' + BADGE_TONES.join(', '));
+    const title = a.title === undefined || a.title === null ? '' : String(a.title).slice(0, 200);
+    return result({ ok: true }, { type: 'annotate', messageSeq: seq, text, tone, title, surfaceId: mount.surfaceId });
   }
   if (tool === 'settings.get') {
     if (a.key !== undefined && typeof a.key !== 'string') throw fail('EBADINPUT', 'key must be a string');

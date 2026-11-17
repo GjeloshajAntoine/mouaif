@@ -13,6 +13,35 @@ export const ARTIFACTS_CHANGED = 'mouaif:artifacts-changed';
 // A view changed the model context of a chat (AppContextBar.jsx reloads).
 export const APP_CONTEXT_CHANGED = 'mouaif:app-context-changed';
 
+// Badges views put on saved messages (mouaif/message.annotate), in memory for
+// this tab: "<projectDir>\n<chatId>" -> Map(seq -> Map("<ext>/<surface>" -> note)).
+export const ANNOTATIONS_CHANGED = 'mouaif:annotations-changed';
+const annotations = new Map();
+
+export function annotationsFor(projectDir, chatId, seq) {
+  const chat = annotations.get(projectDir + '\n' + chatId);
+  const notes = chat && chat.get(seq);
+  return notes ? [...notes.values()] : [];
+}
+
+function annotate(where, action) {
+  const key = where.projectDir + '\n' + where.chatId;
+  const owner = where.extensionId + '/' + (action.surfaceId || '');
+  let chat = annotations.get(key);
+  if (!chat) { chat = new Map(); annotations.set(key, chat); }
+  const touched = [];
+  if (action.clearAll) {
+    for (const [seq, notes] of chat) if (notes.delete(owner)) touched.push(seq);
+  } else {
+    let notes = chat.get(action.messageSeq);
+    if (!notes) { notes = new Map(); chat.set(action.messageSeq, notes); }
+    if (action.text) notes.set(owner, { owner, extensionId: where.extensionId, text: action.text, tone: action.tone || 'info', title: action.title || '' });
+    else notes.delete(owner);
+    touched.push(action.messageSeq);
+  }
+  window.dispatchEvent(new CustomEvent(ANNOTATIONS_CHANGED, { detail: { projectDir: where.projectDir, chatId: where.chatId, seqs: touched } }));
+}
+
 const entries = new Set();
 const sheetOpeners = new Set();
 
@@ -54,6 +83,8 @@ export function performHostAction(action, where) {
     window.dispatchEvent(new CustomEvent(COMPOSER_INSERT, { detail: { projectDir: where.projectDir, chatId: where.chatId, text: action.text } }));
   } else if (action.type === 'badge') {
     setDockBadge(where.projectDir, where.chatId, where.extensionId, action.text ? { text: action.text, tone: action.tone } : null);
+  } else if (action.type === 'annotate' && where.chatId) {
+    annotate(where, action);
   } else if (action.type === 'open_sheet' && where.chatId) {
     // A project-card view has no chat and must not open a sheet inside an
     // unrelated active chat.

@@ -63,7 +63,7 @@ A repository can ship extensions as `.mouaif/extensions/<id>.mouaif-extension.js
 | `server` | `{ "ref": "<server id or slug>" }`: an MCP server set up in Settings → MCP (or the project's `.mcp.json`). Or an inline server (`name`, then `command` + `args` + `env`, or `url`), registered app-wide while the extension is on and removed when it is turned off or deleted. |
 | `permissions` | what its UI may do: `chat.read` (read the chat's recent messages as text), `composer.insert` (put text in your message box, never send), `chat.message` (send a message), `storage` (its own 64 KB of settings), `model.context` (add context the model sees on the next turns) |
 | `hooks` | hook entries as in [Hooks](hooks.md). One more kind, `{ "kind": "mcp", "tool": "<name>" }`, calls a tool on the extension's server with the event as its arguments and reads the answer from `structuredContent` (or the first text block). |
-| `ui` | surfaces: `id`, `slot` (`chat.dock`, `chat.sheet`, `settings.page`, `tool.renderer` with `match.tool`, `project.card`, `composer.action` with an optional `command`, `message.action` with an optional `match.role`, `files.action`, `git.action`, `inspector.panel`, `app.panel`), `title`, and `resourceUri` (a `ui://` resource on the server) or `html` (a single-file page, up to 512 KB). Optional `collapsed` (`chip` or `open`) and `events`. |
+| `ui` | surfaces: `id`, `slot` (`chat.dock`, `chat.sheet`, `settings.page`, `tool.renderer` with `match.tool`, `project.card`, `composer.action` with an optional `command`, `message.action` with an optional `match.role`, `files.action`, `git.action`, `inspector.panel`, `app.panel`, `app.route`, `chat.list.action`), `title`, and `resourceUri` (a `ui://` resource on the server) or `html` (a single-file page, up to 512 KB). Optional `collapsed` (`chip` or `open`), `events` and `shortcut` (see [Shortcuts](#shortcuts)). |
 
 The whole file is at most 1 MiB. Keys mouaif does not know are kept, so a newer file still imports, and **Export** writes the file back unchanged plus `exportedAt`.
 
@@ -82,6 +82,8 @@ Each `ui` entry is a **view**: a small web page (an MCP App) that mouaif runs sa
 - **`git.action`**: the same, in the Git sheet's header.
 - **`inspector.panel`**: the same, in the Inspector's header while a page is attached.
 - **`app.panel`**: a small puzzle button at the right of the app header, available on every screen, for the active project and with no chat.
+- **`app.route`**: a full page at `#/ext/<id>/<surface>`, for the active project and with no chat. The first two get a tab in the bottom bar (puzzle icon, the view's title), and every page is also listed in the app header's puzzle menu.
+- **`chat.list.action`**: a puzzle button on each chat row of the Chats list. The view opens in a sheet bound to that chat, so `chat.recent`, `message.annotate` and events work there. It gets `structuredContent.mouaif`: `{ type: "chat", chatId, title }`.
 - When several views share one of these buttons, it opens a menu. When none are active, it isn't shown.
 - Only **two** docked views or renderers run at once in a tab: opening a third closes the one you used least recently (a renderer then shows **Show …** to bring it back). A view also closes when the tab is hidden and offers **Retry** when you come back. Each view is a browser process, and mouaif's host is small.
 - Views load through the app's own port, so a Docker install has nothing extra to publish.
@@ -103,10 +105,19 @@ It can also call **host tools**: ordinary MCP `tools/call` requests whose name s
 | `mouaif/composer.insert` `{ text }` | `composer.insert` | Puts text in the message box at the cursor, up to 8 KB. It is never sent: you send it. |
 | `mouaif/chat.badge` `{ text, tone? }` | none | Sets the dock chip's badge (up to 8 characters, empty clears it), tone `info`, `ok`, `warn` or `error` |
 | `mouaif/chat.open_sheet` `{ surfaceId }` | none | Opens one of the same extension's sheets |
+| `mouaif/message.annotate` `{ messageSeq, text, tone?, title? }` or `{ clearAll: true }` | none | Shows a small badge (up to 24 characters, tone `info`, `ok`, `warn` or `error`, `title` as its tooltip) in the head of a saved message of the chat. Empty `text` removes this view's badge from that message, and `clearAll` removes all of its badges. Badges live in the tab's memory: a reload clears them. `chat.recent` returns each message's `seq` to aim with. |
 | `mouaif/settings.get` `{ key? }` | `storage` | Reads the extension's own stored values (one key or all) |
 | `mouaif/settings.set` `{ key, value }` | `storage` | Stores a JSON value (`null` deletes it). This is the extension's own store, 64 KB per extension, not mouaif's settings, and it is deleted with the extension. A project extension has its own store, even when it shares an app extension's id. |
 
 In an inline view: `await window.mouaifApp.callServerTool({ name: 'mouaif/chat.badge', arguments: { text: '2 fail', tone: 'error' } })`.
+
+### Shortcuts
+
+A `ui` entry of a `chat.sheet`, `composer.action`, `app.panel` or `app.route` view can set `"shortcut": "mod+shift+k"`: `mod` (Ctrl, or Cmd on Apple devices) and/or `alt`, optional `shift`, then one letter or digit. It is matched on the physical key, so it works with any keyboard layout.
+
+- `app.route` goes to the page, and `app.panel` opens its sheet, from any screen.
+- `chat.sheet` and `composer.action` open their sheet only in an open chat.
+- The first active extension that claims a shortcut keeps it, and later ones get none. The permission screen shows each shortcut, and the menus show it as a tooltip.
 
 ### Context for the model
 

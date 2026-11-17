@@ -19,7 +19,9 @@ export const SLOT_LABELS = {
   'files.action': 'An entry in the Files menu',
   'git.action': 'An entry in the Git sheet',
   'inspector.panel': 'A button in the Inspector’s header',
-  'app.panel': 'An entry in the app header’s Extensions menu'
+  'app.panel': 'An entry in the app header’s Extensions menu',
+  'app.route': 'A full page, with a tab (the first two) and an entry in the app header’s Extensions menu',
+  'chat.list.action': 'A button on each chat in the Chats list (it gets that chat’s id)'
 };
 
 export function ExtensionSummary({ summary }) {
@@ -62,6 +64,7 @@ export function ExtensionSummary({ summary }) {
             u.tools.includes('*') ? null : h('code', null, u.tools.join(', ')))
           : null,
         u.role ? h('div', { class: 'hint hint--compact' }, u.role === 'user' ? 'Your messages' : 'Assistant answers') : null,
-        u.command ? h('div', { class: 'hint hint--compact' }, 'Command: ', h('code', null, '/' + u.command)) : null)))
+        u.command ? h('div', { class: 'hint hint--compact' }, 'Command: ', h('code', null, '/' + u.command)) : null,
+        u.shortcut ? h('div', { class: 'hint hint--compact' }, 'Shortcut: ', h('code', null, u.shortcut)) : null)))
       : h('p', { class: 'hint hint--compact' }, 'No UI.'));
 }

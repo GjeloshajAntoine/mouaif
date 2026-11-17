@@ -48,9 +48,14 @@ const PERMISSIONS = Object.freeze({
   'model.context': 'Add context the model sees on the next turns'
 });
 const SLOTS = Object.freeze(['chat.dock', 'chat.sheet', 'settings.page', 'tool.renderer', 'project.card',
-  'composer.action', 'message.action', 'files.action', 'git.action', 'inspector.panel', 'app.panel']);
+  'composer.action', 'message.action', 'files.action', 'git.action', 'inspector.panel', 'app.panel',
+  'app.route', 'chat.list.action']);
 // Slots that live in a chat (a mount needs a chat id).
-const CHAT_SLOTS = Object.freeze(['chat.dock', 'chat.sheet', 'tool.renderer', 'composer.action', 'message.action']);
+const CHAT_SLOTS = Object.freeze(['chat.dock', 'chat.sheet', 'tool.renderer', 'composer.action', 'message.action', 'chat.list.action']);
+// Slots a keyboard shortcut can open (a sheet or a page).
+const SHORTCUT_SLOTS = Object.freeze(['chat.sheet', 'composer.action', 'app.panel', 'app.route']);
+// mod (Ctrl or Cmd) and/or alt, optional shift, then one letter or digit.
+const SHORTCUT_RE = /^(mod\+)?(alt\+)?(shift\+)?[a-z0-9]$/;
 const COMMAND_RE = /^[a-z][a-z0-9-]{0,30}$/;
 const UI_EVENTS = Object.freeze(['turn.start', 'turn.end', 'tool.after', 'model.change']);
 // Path words under /api/extensions/ that are not extension ids.
@@ -136,6 +141,12 @@ function normalizeUi(raw, hasServer) {
       if (typeof u.command !== 'string' || !COMMAND_RE.test(u.command)) throw fail(at + '.command must be lowercase letters, digits and - (max 31), starting with a letter');
       out.command = u.command;
     } else if (u.command !== undefined) throw fail(at + '.command is only for a composer.action');
+    if (u.shortcut !== undefined) {
+      if (!SHORTCUT_SLOTS.includes(u.slot)) throw fail(at + '.shortcut is only for ' + SHORTCUT_SLOTS.join(', '));
+      const key = typeof u.shortcut === 'string' ? u.shortcut.trim().toLowerCase() : '';
+      if (!SHORTCUT_RE.test(key) || !/^(mod|alt)\+/.test(key)) throw fail(at + '.shortcut must look like mod+shift+k (mod or alt, optional shift, one letter or digit)');
+      out.shortcut = key;
+    }
     if (u.slot === 'message.action') {
       const role = u.match && u.match.role !== undefined ? u.match.role : 'assistant';
       if (role !== 'assistant' && role !== 'user') throw fail(at + '.match.role must be assistant or user');
@@ -245,7 +256,8 @@ function summary(ext) {
     ui: ext.ui.map((u) => Object.assign({ id: u.id, slot: u.slot, title: u.title, source: u.resourceUri || 'inline html' },
       u.match && u.match.tool ? { tools: u.match.tool.slice() } : {},
       u.match && u.match.role ? { role: u.match.role } : {},
-      u.command ? { command: u.command } : {}))
+      u.command ? { command: u.command } : {},
+      u.shortcut ? { shortcut: u.shortcut } : {}))
   };
 }
 
@@ -498,6 +510,7 @@ function surface(projectDir, extensionId, surfaceId) {
 function surfaces(projectDir, slot) {
   const out = [];
   const commands = new Map();
+  const shortcuts = new Map();
   for (const { ext, scope } of active(projectDir)) {
     for (const ui of ext.ui) {
       if (slot && ui.slot !== slot) continue;
@@ -511,6 +524,11 @@ function surfaces(projectDir, slot) {
         if (commands.has(ui.command)) item.commandTaken = commands.get(ui.command);
         else { commands.set(ui.command, ext.id); item.command = ui.command; }
       }
+      if (ui.shortcut) {
+        // One shortcut per project too: the first active extension keeps it.
+        if (shortcuts.has(ui.shortcut)) item.shortcutTaken = shortcuts.get(ui.shortcut);
+        else { shortcuts.set(ui.shortcut, ext.id); item.shortcut = ui.shortcut; }
+      }
       out.push(item);
     }
   }
@@ -519,7 +537,7 @@ function surfaces(projectDir, slot) {
 
 module.exports = {
   surfaces,
-  FORMAT, PERMISSIONS, SLOTS, CHAT_SLOTS, UI_EVENTS, SUFFIX, PROJECT_DIR,
+  FORMAT, PERMISSIONS, SLOTS, CHAT_SLOTS, SHORTCUT_SLOTS, UI_EVENTS, SUFFIX, PROJECT_DIR,
   validate, summary, importApp, setAppEnabled, removeApp, exportApp, setProjectOff,
   projectFiles, trustProject, revokeProject, list, active, runtimeHooks, surface, clearCache
 };

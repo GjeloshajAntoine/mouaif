@@ -12,7 +12,9 @@ import { ProjectsView } from './Projects.jsx';
 import { ProjectPickerView } from './ProjectPicker.jsx';
 import { SharedWithMeView } from './SharedWithMe.jsx';
 import { ChatView } from './chat/Chat.jsx';
-import { ExtensionMenu } from './chat/ExtensionMenu.jsx';
+import { ExtensionMenu, extensionRouteHash } from './chat/ExtensionMenu.jsx';
+import { ExtensionShortcuts } from './chat/ExtensionShortcuts.jsx';
+import { useExtensionSurfaces, PuzzleIcon } from './chat/ExtensionDocks.jsx';
 import { ThemeMockupView } from './ThemeMockup.jsx';
 import { ChatReviewMockupView } from './ChatReviewMockup.jsx';
 // Lazy-load every heavyweight, rarely-opened settings sub-page so its
@@ -53,6 +55,7 @@ const SettingsThemesView = lazyNamed(() => import('./SettingsThemes.jsx'), 'Sett
 const SettingsHooksView = lazyNamed(() => import('./SettingsHooks.jsx'), 'SettingsHooksView');
 const SettingsExtensionsView = lazyNamed(() => import('./SettingsExtensions.jsx'), 'SettingsExtensionsView');
 const SettingsExtensionPageView = lazyNamed(() => import('./SettingsExtensions.jsx'), 'SettingsExtensionPageView');
+const ExtensionRouteView = lazyNamed(() => import('./SettingsExtensions.jsx'), 'ExtensionRouteView');
 const SettingsThemeEditView = lazyNamed(() => import('./SettingsThemeEdit.jsx'), 'SettingsThemeEditView');
 const ROUTES = {
 chats: [ProjectsView],
@@ -99,7 +102,8 @@ settingsThemes: [SettingsThemesView],
 settingsHooks: [SettingsHooksView],
 settingsExtensions: [SettingsExtensionsView],
 settingsExtensionPage: [SettingsExtensionPageView, ({ extensionId, surfaceId }) => ({ extensionId, surfaceId })],
-settingsThemeEdit: [SettingsThemeEditView, ({ id, from }) => ({ id, from })]
+settingsThemeEdit: [SettingsThemeEditView, ({ id, from }) => ({ id, from })],
+extensionRoute: [ExtensionRouteView, ({ extensionId, surfaceId }) => ({ extensionId, surfaceId })]
 };
 const FULL_PAGE_ROUTES = new Set([
 'chat', 'picker', 'sharedWithMe', 'themeMockup', 'chatReviewMockup', ...Object.keys(ROUTES).filter((name) => name.startsWith('settings') && name !== 'settings')
@@ -116,7 +120,7 @@ const LAZY_ROUTE_NAMES = new Set([
 'settingsActions', 'settingsActionEdit',
 'settingsMcp', 'settingsMcpEdit', 'settingsMcpRegistry',
 'settingsTags', 'settingsPricing', 'settingsProjects',
-'settingsThemes', 'settingsThemeEdit', 'settingsHooks', 'settingsExtensions', 'settingsExtensionPage'
+'settingsThemes', 'settingsThemeEdit', 'settingsHooks', 'settingsExtensions', 'settingsExtensionPage', 'extensionRoute'
 ]);
 function renderRoute(view) {
 const [View = ProjectsView, getProps] = ROUTES[view.name] || [];
@@ -129,7 +133,8 @@ const viewKey = view.name + '|' +
 (view.id || '') + '|' +
 (view.scope || '') + '|' +
 (view.page || '') + '|' +
-(view.chatId || '') + '|' + (view.isNew ? 'new' : '');
+(view.chatId || '') + '|' + (view.isNew ? 'new' : '') + '|' +
+(view.extensionId ? view.extensionId + '/' + view.surfaceId : '');
 const node = h(View, { key: viewKey, ...(getProps ? getProps(view) : null) });
 if (!LAZY_ROUTE_NAMES.has(view.name)) return node;
 return h(Suspense, {
@@ -146,13 +151,20 @@ const TabIcon = {
     h('path', { d: 'M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.03 7.03 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.66 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88L2.78 14.16a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.39 1.05.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.23 1.13-.55 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.04-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z', fill: 'currentColor' }))
 };
 
+// At most this many app.route pages get a tab; the rest are in the header menu.
+const MAX_ROUTE_TABS = 2;
+
 function BottomNav() {
   const view = route.value;
+  const routes = useExtensionSurfaces((activeProject.value && activeProject.value.dir) || '', 'app.route').slice(0, MAX_ROUTE_TABS);
   const tabs = [
   { to: 'projects', name: 'chats', label: 'Chats' },
   { to: 'inspector', name: 'inspector', label: 'Inspector' },
+  ...routes.map((r) => ({ to: extensionRouteHash(r), name: 'extensionRoute', ext: r, label: r.title })),
   { to: 'settings', name: 'settings', label: 'Settings' }
   ];
+  const isActive = (t) => view.name === t.name
+    && (!t.ext || (view.extensionId === t.ext.extensionId && view.surfaceId === t.ext.surfaceId));
   return h('nav', { class: 'app__tabbar', 'aria-label': 'Primary' },
   h('ul', {
     class: 'app__tablist',
@@ -160,13 +172,13 @@ function BottomNav() {
     // array stays the only place a tab is declared (see layout.css).
     style: { '--tab-count': tabs.length }
   },
-      tabs.map(t => h('li', { class: 'app__tabitem' },
+      tabs.map(t => h('li', { class: 'app__tabitem', key: t.to },
         h('a', {
           href: '#/' + t.to,
-          class: 'app__tab' + (view.name === t.name ? ' is-active' : ''),
-          'aria-current': view.name === t.name ? 'page' : null
+          class: 'app__tab' + (isActive(t) ? ' is-active' : ''),
+          'aria-current': isActive(t) ? 'page' : null
         },
-          h('span', { class: 'app__tab-icon' }, TabIcon[t.name]),
+          h('span', { class: 'app__tab-icon' }, t.ext ? h(PuzzleIcon, { size: 22 }) : TabIcon[t.name]),
           h('span', { class: 'app__tab-label' }, t.label)
         )
       ))
@@ -198,8 +210,8 @@ function Header() {
       h('span', { class: 'app__logo', 'aria-hidden': 'true' }, BrandMark),
       h('h1', { class: 'app__title' }, 'mouaif')
     ),
-    // app.panel views (docs/features/extensions.md): app-wide, no chat.
-    h(ExtensionMenu, { projectDir: (activeProject.value && activeProject.value.dir) || '', slot: 'app.panel' })
+    // app.panel views and app.route pages (docs/features/extensions.md): app-wide, no chat.
+    h(ExtensionMenu, { projectDir: (activeProject.value && activeProject.value.dir) || '', slot: ['app.panel', 'app.route'] })
   );
 }
 
@@ -257,6 +269,7 @@ export function App() {
         + (showTabBar ? '' : ' app__main--flush')
         + (view.name === 'chat' ? ' app__main--chat' : '')
     }, body),
-    showTabBar ? h(BottomNav, null) : null
+    showTabBar ? h(BottomNav, null) : null,
+    h(ExtensionShortcuts, { projectDir: (activeProject.value && activeProject.value.dir) || '' })
   );
 }

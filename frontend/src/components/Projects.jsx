@@ -13,6 +13,7 @@ import { pinnedProfiles } from './settings/profileLaunchers.js';
 import { WEBHOOK_ICON_PATH } from './chat/webhookDock.js';
 import { HOOK_ICON_PATH } from './chat/hookEvents.js';
 import { ProjectCardExtensions } from './ProjectCardExtensions.jsx';
+import { ExtensionMenu } from './chat/ExtensionMenu.jsx';
 const CHAT_PAGE_SIZE = 30;
 // A card's search is a peek, not a page: the card holds about three rows and
 // the server caps the list at its own maximum anyway.
@@ -447,6 +448,9 @@ class: 'project-card__chat-meta',
 'data-draft': draftOnly ? '1' : undefined,
 'data-cost-known': costBits.known ? '1' : '0'
 }, costStr + ' · ' + dateStr + traceStr),
+// chat.list.action views (docs/features/extensions.md): this chat's id.
+project.shared ? null : h(ExtensionMenu, { projectDir: project.path, chatId: c.id, slot: 'chat.list.action',
+  class: 'project-card__chat-ext', label: 'Extension actions for ' + titleStr }),
 h('button', {
 class: 'project-card__chat-delete',
 type: 'button',

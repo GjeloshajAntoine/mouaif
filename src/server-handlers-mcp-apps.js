@@ -144,7 +144,12 @@ function createMcpAppsHost(lifecycle = {}) {
     let callResult = { content: [], structuredContent: { mouaif: { type: 'mounted', slot: found.ui.slot } } };
     let callId = null;
     let messageSeq = null;
-    if (found.ui.slot === 'message.action') {
+    if (found.ui.slot === 'chat.list.action') {
+      // One chat of the list: its id and title (no messages; chat.recent reads them).
+      const chat = chats.getChat(projectDir, chatId);
+      const info = { type: 'chat', slot: found.ui.slot, chatId, title: (chat && chat.title) || '' };
+      callResult = { content: [], structuredContent: { mouaif: info } };
+    } else if (found.ui.slot === 'message.action') {
       // One saved message: its role must match; the text only with chat.read.
       const seq = Number(body.messageSeq);
       if (!Number.isSafeInteger(seq)) throw err('EBADINPUT', 'messageSeq is required for a message action');
