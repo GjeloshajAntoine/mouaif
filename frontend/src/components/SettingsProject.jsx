@@ -28,6 +28,24 @@ import { backHref, backTarget, settingsLink } from './settings/projectNavigation
 import { WebpreviewModal } from './chat/WebpreviewModal.jsx';
 import { PreviewUrlPrompt } from './chat/PreviewUrlPrompt.jsx';
 
+// ---- Preview link list helpers ----
+function hostOf(url) { try { return new URL(url).host || url; } catch { return url; } }
+function shortUrl(url) { try { const u = new URL(url); return (u.host + u.pathname + u.search).replace(/\/$/, '') || url; } catch { return url; } }
+function initialOf(link) { const t = (link.title || hostOf(link.url) || '?').replace(/^www\./, ''); return (t.match(/[\p{L}\p{N}]/u) || ['?'])[0].toUpperCase(); }
+function hueOf(s) { let x = 0; for (let i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) % 360; return x; }
+function parseVp(id) {
+  const presets = { phone: [375, 667], 'phone+': [414, 896], tablet: [768, 1024], laptop: [1280, 800] };
+  if (presets[id]) return { w: presets[id][0], h: presets[id][1] };
+  const m = /^(\d+)x(\d+)$/.exec(id || ''); return m ? { w: +m[1], h: +m[2] } : { w: 375, h: 667 };
+}
+function timeAgo(iso) {
+  const t = Date.parse(iso); if (!t) return '';
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 60) return 'now'; if (s < 3600) return Math.floor(s / 60) + 'm';
+  if (s < 86400) return Math.floor(s / 3600) + 'h'; if (s < 604800) return Math.floor(s / 86400) + 'd';
+  return new Date(t).toLocaleDateString();
+}
+
 export function SettingsProjectView({ projectDir: initialDir, chatId: initialChatId, from = '', page = 'main' } = {}) {
   const [globalStatus, setGlobalStatus] = useState({ text: '', state: '' });
   const authorizationWrites = useRef(Promise.resolve());
@@ -110,6 +128,9 @@ const [previewStatusMsg, setPreviewStatusMsg] = useState('');
 // recent chat for the project on first use so it can capture without asking
 // the user to pick a chat.
 const [previewChatId, setPreviewChatId] = useState((initialChatId || '').trim());
+// Links the agent (or this page) previewed, newest first; stored in the
+// project setting `previewLinks` by src/previewLinks.js.
+const [previewLinks, setPreviewLinks] = useState([]);
 
   // MCP authorization
   const [mcpAuth, setMcpAuth] = useState({ mode: 'ask', allowlist: [], servers: {}, tools: {} });
@@ -193,6 +214,7 @@ return withChat + (ctxFrom ? '&from=' + encodeURIComponent(ctxFrom) : '');
     setPromptSize((cp.promptSize && String(cp.promptSize)) || '');
     setPromptSizeStatusMsg('');
     setToolView(normalizeToolView(cp.toolView));
+    setPreviewLinks(Array.isArray(cp.previewLinks) ? cp.previewLinks.filter(l => l && typeof l.url === 'string') : []);
     setToolViewStatusMsg('');
 
     const resolved = (resolvedRes.status === 200 && resolvedRes.body && resolvedRes.body.resolved) || {};
@@ -557,6 +579,7 @@ if (out && out.ok && out.result && out.result.thumbnail) {
 setPreviewPayload(out.result);
 setPreviewViewOpen(true);
 setPreviewStatusMsg('');
+reloadPreviewLinks();
 } else if (out) {
 setPreviewStatusMsg((out.result && out.result.error) || out.error || 'capture failed');
 } else {
@@ -581,6 +604,30 @@ function onPreviewRecapture(viewport) {
 const url = previewUrl || (previewPayload && previewPayload.url);
 if (!url) return Promise.resolve(null);
 return capturePreview(url, viewport);
+}
+// Open a saved link: a live link frames the page with no capture, a
+// screenshot link re-captures at its saved size.
+function openPreviewLink(link) {
+setPreviewUrl(link.url);
+if (link.mode === 'live') {
+const vp = parseVp(link.viewport);
+setPreviewPayload({ ok: true, mode: 'live', url: link.url, title: link.title || hostOf(link.url), width: vp.w, height: vp.h, viewport: { id: link.viewport || 'phone', width: vp.w, height: vp.h }, capturedAt: new Date().toISOString() });
+setPreviewViewOpen(true);
+return;
+}
+capturePreview(link.url, link.viewport);
+}
+async function removePreviewLink(url) {
+const prev = previewLinks;
+const next = prev.filter(l => l.url !== url);
+setPreviewLinks(next);
+if (!(await patchProject({ previewLinks: next }, setPreviewStatusMsg, 'Link removed'))) setPreviewLinks(prev);
+}
+// Refresh the list after a capture from this page added a link.
+async function reloadPreviewLinks() {
+const d = dir(); if (!d) return;
+const r = await fetchJson('/api/settings/project?projectDir=' + encodeURIComponent(d));
+if (r.status === 200 && r.body && r.body.project) setPreviewLinks(Array.isArray(r.body.project.previewLinks) ? r.body.project.previewLinks : []);
 }
 function openPreviewPrompt() {
 setPreviewPromptOpen(true);
@@ -1200,7 +1247,35 @@ h('h2', { class: 'view-title' }, 'Web preview')
   : null
   )
   )
+  ),
+  h('div', { class: 'group settings-project__section' },
+  h('div', { class: 'group__title settings-project__section-title' },
+  sectionIcon('tools'),
+  h('span', null, 'Links'),
+  previewLinks.length ? h('span', { class: 'plinks__count' }, String(previewLinks.length)) : null
+  ),
+  previewLinks.length
+  ? h('ul', { class: 'plinks', 'aria-label': 'Previewed links' },
+  previewLinks.map(link => h('li', { class: 'plinks__item', key: link.url },
+  h('button', { class: 'plinks__open', type: 'button', onClick: () => openPreviewLink(link), 'aria-label': 'Open preview of ' + (link.title || link.url) },
+  h('span', { class: 'plinks__tile', style: { '--plink-hue': String(hueOf(hostOf(link.url))) }, 'aria-hidden': 'true' }, initialOf(link)),
+  h('span', { class: 'plinks__text' },
+  h('span', { class: 'plinks__title' }, link.title || hostOf(link.url)),
+  h('span', { class: 'plinks__url' }, shortUrl(link.url))
+  ),
+  h('span', { class: 'plinks__meta' },
+  h('span', { class: 'plinks__badge' + (link.mode === 'live' ? ' plinks__badge--live' : '') }, link.mode === 'live' ? 'Live' : 'Shot'),
+  link.addedAt ? h('span', { class: 'plinks__time' }, timeAgo(link.addedAt)) : null
   )
+  ),
+  h('button', { class: 'plinks__remove', type: 'button', onClick: () => removePreviewLink(link.url), 'aria-label': 'Remove ' + (link.title || link.url) }, '×')
+  ))
+  )
+  : h('div', { class: 'plinks__empty' },
+  h('span', { class: 'plinks__empty-icon', 'aria-hidden': 'true' }, '◎'),
+  h('p', null, 'No links yet. Pages the agent previews with ', h('code', null, 'webpreview'), ' appear here.')
+  )
+  ),
   ),
   previewPromptOpen
   ? h(PreviewUrlPrompt, {

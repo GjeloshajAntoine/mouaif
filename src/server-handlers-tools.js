@@ -794,6 +794,7 @@ async function handleTools(req, res, parsed, sessionToken = '') {
     }
     try {
       const out = await wp.runWebpreview({ url, viewport: viewport || undefined, mode: mode || undefined });
+      require('./previewLinks.js').recordFromResult(projectDir, out);
       return sendJSON(res, 200, out);
     } catch (e) {
       return sendJSON(res, 500, { ok: false, error: e.message || String(e), code: e.code || 'EWEBPREVIEW' });

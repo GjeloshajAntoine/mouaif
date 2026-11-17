@@ -58,6 +58,7 @@ To show the page itself, interactive, instead of a screenshot, set `"mode": "liv
 - **A local address is proxied** — when the URL points at this machine (`localhost`, `127.0.0.1`, `*.localhost`, the container-to-host aliases), the frame is loaded through mouaif's own [local preview proxy](./local-preview-proxy.md) instead, so a dev server on the machine running mouaif is reachable from your phone. The viewer's footer says `via proxy` when that happens. Every other URL is framed directly, as before.
 - **Dismiss** — a small circular close button on the card's top-right border removes the preview without changing the chat.
 - **Open in browser** — the full viewer can open the original URL in a new browser tab.
+- **Saved to the project's link list** — each successful preview also adds its URL to the Links list on the [Web preview page](./webpreview-project-page.md) in project settings.
 - **Reload by the AI** — another `webpreview` call replaces the card's image with a fresh capture.
 - **The dock always shows the newest capture.** A capture goes to the dock once, when its tool result arrives, not when you open its card in the transcript, so opening an old `webpreview` card no longer swaps the dock back to that stale screenshot. The dock compares `capturedAt`: an older capture never replaces a newer one, and a capture with no timestamp never replaces one that has a timestamp. Transcript backfill renders old rows after newer ones, so this ordering matters (`scripts/test-webpreview-dock-order.mjs`).
 

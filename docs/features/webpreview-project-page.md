@@ -6,6 +6,8 @@ Project Settings → More settings gains a **Web preview** link that opens a ded
 2. Tap **Capture…** and enter a URL (any scheme — `https:`, `http:`, `file:`, `data:`, …; a bare hostname becomes `https://`). A local address such as `localhost:5173` also works in the viewer's Live mode: it is loaded through mouaif's [local preview proxy](./local-preview-proxy.md).
 3. The page captures the page in the Inspector debug Chrome and opens the full-screen viewer (title with a short host sub-line, a **Refresh** button, the **Size** dropdown, capture time and resolution in the footer, and an Open-in-new-tab link).
 4. The captured thumbnail stays on the page; tapping it re-opens the viewer. Changing the size in the viewer re-captures the same URL at the chosen resolution.
+### Links
+Below **Capture**, a **Links** list shows every URL previewed in this project, newest first — whether the agent called `webpreview` in a chat or you captured it here. Each card shows a coloured initial tile, the page title, the short URL, a **Live** or **Shot** badge, and how long ago it was added. Tap a card to open it again: a Live link opens the viewer in Live mode at its saved size, and a screenshot link is re-captured. **×** removes a link. The list is kept in the project setting `previewLinks` (at most 50 links, one per URL); screenshots themselves are not stored.
 ### Authorization
 The capture goes through `POST /api/tools/webpreview`, which honors the project's `webpreview` authorization gate. In **Allow** mode the capture runs straight through. In **Ask** mode the endpoint returns `409 EAUTH_REQUIRED`; because there is no chat transcript here, the page shows a hint ("approve it in the chat to capture") rather than mounting the chat's authorization card.
 ## Related

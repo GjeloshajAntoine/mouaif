@@ -3038,6 +3038,7 @@ viewport: args && args.viewport,
 mode: args && args.mode,
 signal: callOpts && callOpts.signal
 });
+require('./previewLinks.js').recordFromResult(callOpts && callOpts.projectDir, out);
 return out;
 } catch (e) {
 const r = { error: { code: 'EWEBPREVIEW', message: e.message || String(e) } };

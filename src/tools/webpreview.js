@@ -448,7 +448,7 @@ const SPEC = {
     description: 'Show the user a preview of a web page. The preview is for the user only: the screenshot is not returned to you, so this tool cannot be used to look at a page. ' +
       'By default mouaif takes a screenshot in its debug Chrome and shows it in a small dock above the chat composer (tapping it opens the full image); ' +
       'with `mode` "live" the user gets the page itself as an interactive iframe instead (use it when the user should click around, or for pages that animate). ' +
-      'Call it again whenever the preview should reload. Any absolute URL Chrome can open is accepted (http, https, file, data, about, …); `viewport` sets the size.',
+      'Call it again whenever the preview should reload. Every previewed URL is also saved to the project\'s link list (Project settings → Web preview), so calling it is how you add a link there. Any absolute URL Chrome can open is accepted (http, https, file, data, about, …); `viewport` sets the size.',
       parameters: {
       type: 'object',
       properties: {

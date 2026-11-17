@@ -1575,3 +1575,119 @@ textarea#projectEditor {
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
 }
+
+/* ---- Web preview: link list ------------------------------------------
+   Deliberately richer than the plain settings rows: each link is a card
+   with a hue tile derived from its host, a two-line label and a mode pill. */
+.settings-project__section-title > span.plinks__count {
+  flex: none;
+  margin-left: auto;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.plinks {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.plinks__item {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--r-md);
+  background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 4px 14px -8px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  transition: transform var(--dur-fast, 120ms) var(--ease, ease), box-shadow var(--dur-fast, 120ms) var(--ease, ease), border-color var(--dur-fast, 120ms);
+}
+.plinks__item:hover { border-color: var(--border-strong); transform: translateY(-1px); box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08), 0 10px 22px -10px rgba(0, 0, 0, 0.35); }
+.plinks__open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 4px 10px 10px;
+  background: none;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.plinks__open:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-md); }
+.plinks__tile {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: #fff;
+  background: linear-gradient(140deg, hsl(var(--plink-hue) 72% 58%), hsl(calc(var(--plink-hue) + 40) 70% 44%));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 2px 6px -2px hsl(var(--plink-hue) 60% 40% / 0.6);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+}
+.plinks__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.plinks__title,
+.plinks__url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plinks__title { font-weight: 600; font-size: 0.92rem; color: var(--fg); }
+.plinks__url { font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); }
+.plinks__meta { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.plinks__badge {
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  color: var(--fg-soft);
+}
+.plinks__badge--live { background: var(--success-soft); color: var(--success); }
+.plinks__badge--live::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: 1px;
+  animation: plinks-pulse 1.6s ease-in-out infinite;
+}
+@keyframes plinks-pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .plinks__badge--live::before { animation: none; } .plinks__item { transition: none; } }
+.plinks__time { font-size: 0.7rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.plinks__remove {
+  flex: none;
+  width: 32px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.plinks__remove:hover { color: var(--danger); }
+.plinks__empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-md);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.plinks__empty p { margin: 0; }
+.plinks__empty-icon { font-size: 1.4rem; color: var(--accent); }
