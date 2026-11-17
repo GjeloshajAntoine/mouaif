@@ -325,7 +325,7 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
       h('strong', { class: 'mcp-app__title' }, resolvedTitle || 'MCP App'),
       mount && !failed && h('button', {
         type: 'button',
-        class: 'btn mcp-app__btn mcp-app__btn--mode' + (isFullscreen ? ' is-active' : ''),
+        class: 'glyph-btn mcp-app__btn mcp-app__btn--mode' + (isFullscreen ? ' is-active' : ''),
         onClick: changeMode,
         'aria-pressed': String(isFullscreen),
         'aria-label': isFullscreen ? 'Exit fullscreen' : 'Fullscreen app',
@@ -338,21 +338,30 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
               : 'M4 9V4h5 M20 9V4h-5 M4 15v5h5 M20 15v5h-5',
             fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round'
           })
-        ),
-        h('span', null, isFullscreen ? 'Inline' : 'Fullscreen')
+        )
       ),
       mount && !failed && h('button', {
         type: 'button',
-        class: 'btn mcp-app__btn mcp-app__btn--close',
+        class: 'glyph-btn mcp-app__btn mcp-app__btn--close',
         onClick: () => closeView.current?.(),
         'aria-label': 'Close app',
         title: 'Close app'
-      }, 'Close'),
+      },
+        h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
+          h('path', { d: 'M6 6l12 12M18 6L6 18', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round' })
+        )
+      ),
       failed && h('button', {
         type: 'button',
-        class: 'btn mcp-app__btn mcp-app__btn--retry',
-        onClick: () => setGeneration(n => n + 1)
-      }, 'Retry')
+        class: 'glyph-btn mcp-app__btn mcp-app__btn--retry',
+        onClick: () => setGeneration(n => n + 1),
+        'aria-label': 'Retry',
+        title: 'Retry'
+      },
+        h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
+          h('path', { d: 'M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })
+        )
+      )
     ),
     status && h('p', { role: 'status' }, status),
     mount && !failed && h('iframe', { ref: frame, title: mount.title,

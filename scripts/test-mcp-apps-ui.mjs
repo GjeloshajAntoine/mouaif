@@ -94,7 +94,16 @@ try {
   assert.equal(await evaluate("document.querySelector('.mcp-app [role=status]')?.textContent || ''"), '', 'official App SDK initializes');
   assert.equal(mountCount, 1, 'one mount, no handshake render loop');
   assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true, '360 px has no horizontal overflow');
-  assert.equal(await evaluate("document.querySelector('.mcp-app button').getBoundingClientRect().height >= 44"), true);
+  // The header is glyph-only and compact: a 32px control (28px on a phone
+  // frame) that still clears the 24px accessibility floor and carries its
+  // name in aria-label rather than in a text label that would take room from
+  // the app's title.
+  assert.equal(await evaluate(`(() => {
+    const button = document.querySelector('.mcp-app button');
+    const r = button.getBoundingClientRect();
+    return r.height >= 28 && r.width >= 28 && Math.abs(r.width - r.height) < 1
+      && !!button.getAttribute('aria-label') && !button.textContent.trim();
+  })()`), true, 'header controls are compact, square and named by aria-label');
   await evaluate("document.querySelector('.mcp-app button').click()");
   assert.equal(await evaluate("!!document.querySelector('.mcp-app--fullscreen')"), true);
   assert.equal(await evaluate("document.querySelector('.mcp-app').matches(':modal')"), true, 'fullscreen promotes dialog to top layer via showModal');
@@ -153,7 +162,7 @@ try {
   await evaluate("window.postMessage({jsonrpc:'2.0',method:'ui/notifications/size-changed',params:{height:9999}},location.origin)");
   assert.equal(await evaluate("parseInt(document.querySelector('.mcp-app iframe').style.height) <= innerHeight * .7"), true);
   await evaluate("document.querySelectorAll('.mcp-app button')[1].click()");
-  for (let i = 0; i < 100 && await evaluate("document.querySelector('.mcp-app button')?.textContent") !== 'Retry'; i++) await sleep(20);
+  for (let i = 0; i < 100 && await evaluate("document.querySelector('.mcp-app button')?.getAttribute('aria-label')") !== 'Retry'; i++) await sleep(20);
   await evaluate("document.querySelector('.mcp-app button').click()");
   for (let i = 0; i < 100; i++) { if (await evaluate("!!document.querySelector('.mcp-app iframe') && !document.querySelector('.mcp-app [role=status]')")) break; await sleep(100); }
   assert.equal(await evaluate("document.querySelector('.mcp-app [role=status]')?.textContent || ''"), '', 'HTTPS CSP-sandboxed proxy initializes official App SDK');

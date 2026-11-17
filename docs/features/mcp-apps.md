@@ -10,7 +10,9 @@ MCP Apps are interactive HTML tool views inside the conversation, as described b
 2. Start the relevant MCP server using its Settings lifecycle control. Restart servers connected before this update so they receive the Apps capability at initialization.
 3. Call a tool declaring `_meta.ui.resourceUri`. Expand its completed tool card to load the app beside the ordinary text/image result. The latest mounted MCP App stays pinned at the bottom of the transcript as new messages arrive; earlier ones go back to their place in the chat and keep running there. Opening an app older than the pinned one runs it in its chat position.
 4. Interact with the view. App tool calls use the server's Off/Ask/Allow policy; Ask displays the app/server identity and arguments on a normal approval card.
-5. Use **Fullscreen** / **Inline** (or press **Escape**) for the mobile sheet, **Close** to revoke a view, or **Retry** after closure, tab hiding, a resource change or initialization failure.
+5. The app's header carries **two icon buttons** — the fullscreen toggle (press **Escape** too, for the mobile sheet) and **Close** to revoke a view — plus **Retry** after closure, tab hiding, a resource change or initialization failure. Each is a glyph with an `aria-label`/`title`, so no text label takes room from the app's title on a phone.
+
+Inside the chat the app sits flush: its tool card drops the usual padding, the frame carries no margin, and the header is a slim, transparent strip above the app rather than a second toolbar.
 
 App frames and sandbox wrappers have transparent backgrounds: unpainted app areas show the chat backdrop in inline mode. An app's own background is preserved; fullscreen retains its normal sheet backdrop. Transparency does not change sandbox isolation or permissions.
 
@@ -41,7 +43,7 @@ The installed official SDK is pinned to `@modelcontextprotocol/ext-apps@2.0.3`, 
 - Mount identities come from persisted tool call/result rows. The app cannot select another project, chat or server, or nominate its approval call ID. Only raw tools with app visibility on its own server are callable, through existing per-chat/per-tool authorization.
 - Resource reads are session-scoped and bounded to 16 cached HTML resources of at most 1 MiB each. Updates invalidate the cache and mounted views detect resource/session changes; they fall back and offer Retry rather than injecting replacement HTML into an initialized app.
 - Initialization has a 10-second timeout. Teardown requests wait at most 500 ms on explicit closure; navigation or recycled transcript rows use best-effort teardown because the browser may already remove the frame. Close/tab hide removes app approval UI and sends independent keepalive revocation; restore requires Retry. A 20-second server lease renewed by 5-second host polling bounds abandoned capabilities/approvals, with a 5-second sweep even if browser teardown fails. Absolute expiry is 30 minutes; limits prevent unbounded mount/call growth. Accepted automatic AI turns remain independent of app teardown.
-- Inline views are width-constrained with bounded heights; fullscreen uses a safe-area sheet and controls at least 44 px tall. Text/image results remain independent of app success.
+- Inline views are width-constrained with bounded heights; fullscreen uses a safe-area sheet. Its header controls are compact glyph buttons (32 px, 28 px on a phone frame) whose accessible name is an `aria-label`; app-owned controls inside the frame keep their own sizing. Text/image results remain independent of app success.
 
 ## HTTP interface
 
