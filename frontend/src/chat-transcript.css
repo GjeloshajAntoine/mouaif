@@ -575,8 +575,10 @@
   position: absolute;
   /* Follow the reading column on wide windows and clear the scrollbar.
      The transcript reserves a matching reading inset on narrow screens. */
-  right: max(calc(env(safe-area-inset-right, 0px) + var(--nav-scrollbar, 0px)),
-    calc((100% - var(--read-max, 44rem)) / 2 - var(--nav-col)));
+  /* Flush with the chat's right edge, over the scrollbar lane: the rail
+     covers only a short stretch of a thin bar, and leaving the lane free
+     kept it visibly off the side. */
+  right: env(safe-area-inset-right, 0px);
   /* Explicit slots keep Prev/Next fixed when Latest appears or its
      unread count grows. The overlay always clears the composer/dock.
      The resting clearance above the transcript's bottom edge is a
@@ -584,7 +586,10 @@
      and the gap above it — so the rail reads as floating clear of the
      surface below instead of as an edge-attached strip. Written against
      the slot and gap variables so the level follows them. */
-  bottom: calc(24px + var(--nav-col) + var(--nav-gap));
+  /* The folded dots sit a third of the way down the transcript and the
+     unfolded rail grows evenly around them. */
+  top: 35%;
+  transform: translateY(-50%);
   z-index: 6;
   display: grid;
   /* Three fixed square slots, top to bottom: Prev, Next, Latest. The
@@ -592,15 +597,59 @@
      Next never move when it appears. Each 20px pill is centred in its
      slot, and its hit area fills the slot without reaching a neighbour. */
   grid-template-columns: var(--nav-col);
-  grid-template-rows: repeat(3, var(--nav-col));
+  grid-template-rows: repeat(4, var(--nav-col));
   gap: var(--nav-gap);
+  /* Pills are centred in their slot, not hugged to its right edge: the
+     hit area grows 4px past the pill on every side, and a pill flush with
+     the slot's right edge — which is the chat's right edge — pushed 1-2px
+     of that hit area past the frame and made the chat scroll sideways. */
   justify-items: center;
   align-items: center;
   pointer-events: none;
 }
 .chat-view__scroll-nav[hidden] { display: none; }
-.chat-view__nav-btn--prev { grid-area: 1 / 1; }
-.chat-view__nav-btn--next { grid-area: 2 / 1; }
+/* Slots: Top, Prev, Next, Latest. Collapsed, each button folds into a
+   small dot and the dots gather at the rail's middle; a tap on them
+   (handled in Chat.jsx) unfolds them back into their slots. --fold is
+   the distance from a slot's centre to its dot's place: the folded dots
+   span one button's height. */
+.chat-view__nav-btn--top { grid-area: 1 / 1; --fold: 37px; }
+.chat-view__nav-btn--prev { grid-area: 2 / 1; --fold: 12px; }
+.chat-view__nav-btn--next { grid-area: 3 / 1; --fold: -12px; }
+.chat-view__nav-btn.chat-view__jump { --fold: -37px; }
+.chat-view__scroll-nav > .chat-view__nav-btn {
+  /* Fold toward the right edge so the dots sit on the side. */
+  transform-origin: 100% 50%;
+  transition: transform 240ms var(--ease), background-color 240ms var(--ease),
+    border-color 240ms var(--ease), box-shadow 240ms var(--ease), opacity 240ms var(--ease);
+}
+.chat-view__scroll-nav > .chat-view__nav-btn svg,
+.chat-view__scroll-nav > .chat-view__nav-btn .chat-view__jump-count { transition: opacity 160ms var(--ease); }
+/* Folding scales each button's hit area down with it, so the folded rail
+   carries its own: a 28 x 40px strip around the dots at mid-height. A tap
+   on it lands on the nav itself, which unfolds the rail. */
+.chat-view__scroll-nav[data-expanded="false"] { cursor: pointer; }
+.chat-view__scroll-nav[data-expanded="false"]::before {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: var(--nav-col);
+  height: 40px;
+  transform: translateY(-50%);
+  pointer-events: auto;
+  z-index: 1;
+}
+.chat-view__scroll-nav[data-expanded="false"] > .chat-view__nav-btn,
+.chat-view__scroll-nav[data-expanded="false"] > .chat-view__nav-btn:disabled {
+  transform: translateY(var(--fold)) scale(0.2);
+  background: var(--fg-muted, var(--fg));
+  border-color: transparent;
+  box-shadow: none;
+  opacity: 0.6;
+}
+.chat-view__scroll-nav[data-expanded="false"] > .chat-view__nav-btn svg,
+.chat-view__scroll-nav[data-expanded="false"] > .chat-view__nav-btn .chat-view__jump-count { opacity: 0; }
 
 .chat-view__nav-btn {
   position: relative;
@@ -646,7 +695,7 @@
    pinned to the pill's corner instead of widening it, so a `99+` stays
    inside the narrow column and off the messages. */
 .chat-view__jump {
-  grid-area: 3 / 1;
+  grid-area: 4 / 1;
   opacity: 1;
 }
 .chat-view__jump .chat-view__jump-count {

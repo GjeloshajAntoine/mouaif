@@ -28,7 +28,7 @@ renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendTo
 } from './transcript.js';
 import { buildToolsCard, toggleTool, toggleToolGroup, toggleAgentFiles, toggleAgentFile, toggleSkills, toggleSkill } from './cards.js';
 import { jumpToSeq as jumpToSeqRow, flashRow, findToolCard } from './jumpToRun.js';
-import { scrollTranscriptToBottom, scrollToAdjacentMessage, scrollToTranscriptRow, noteTranscriptScrollTop, noteTranscriptScroll, isNearBottom, updateJumpButton, syncNavScrollbarLane, afterTranscriptAppend, pinTranscriptAfterSettle, cancelTranscriptPin, isTranscriptPinScroll, trackUserScrollIntent } from './scroll.js';
+import { scrollTranscriptToBottom, scrollTranscriptToTop, scrollToAdjacentMessage, scrollToTranscriptRow, noteTranscriptScrollTop, noteTranscriptScroll, isNearBottom, updateJumpButton, syncNavScrollbarLane, afterTranscriptAppend, pinTranscriptAfterSettle, cancelTranscriptPin, isTranscriptPinScroll, trackUserScrollIntent } from './scroll.js';
 import { updateUsageSummary, refreshProviderCredit, updateProviderCredit, setChatStatus } from './usage.js';
 import {
   updateMetaLine, refreshSystemPrompt, activeProfileId, updateSwitch, updateSetupVisibility
@@ -1710,6 +1710,7 @@ onComposerInput(refs, projectDir, chatId, updateChatBound);
       flash
     }),
     onJumpToBottom: () => scrollTranscriptToBottom(refs),
+    onJumpToTop: () => scrollTranscriptToTop(refs),
     onJumpToPrevMessage: () => scrollToAdjacentMessage(refs, -1),
     onJumpToNextMessage: () => scrollToAdjacentMessage(refs, 1),
 onCancelRunning,

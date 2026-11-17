@@ -416,6 +416,19 @@ export function scrollToAdjacentMessage(refs, dir) {
   alignRowToTop(refs, el, rows[idx]);
 }
 
+// scrollTranscriptToTop(refs)
+//
+// Jump to the start of the transcript. Unpins first: a tap on the rail is
+// outside the user-intent tracker (see scrollToAdjacentMessage).
+export function scrollTranscriptToTop(refs) {
+  const el = refs.transcript.current;
+  if (!el) return;
+  cancelTranscriptPin(refs);
+  refs.pinnedToBottom.current = false;
+  updateJumpButton(refs);
+  el.scrollTop = 0;
+}
+
 // scrollToTranscriptRow(refs, row)
 //
 // Bring one row to the top of the transcript and stay there: unpins from the

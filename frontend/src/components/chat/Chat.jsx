@@ -66,7 +66,7 @@ setFileEditorOpen,
     picker,
     send, onPickerPick, onPickerTogglePin, onPickerOpen, onRefreshAllProviders, onPickerOpenChange,
     onComposerKey, onComposerInput, onComposerPaste, onImagePickerChange,
-    onRemoveImage, jumpToSeq, jumpToToolCard, onJumpToBottom, onJumpToPrevMessage, onJumpToNextMessage, onCancelRunning, onBack,
+    onRemoveImage, jumpToSeq, jumpToToolCard, onJumpToBottom, onJumpToTop, onJumpToPrevMessage, onJumpToNextMessage, onCancelRunning, onBack,
 onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat, runCustomAction, refreshCustomActions, updateChat
 } = s;
 
@@ -721,7 +721,38 @@ h('div', { ref: refs.transcript, class: 'chat-view__transcript', tabIndex: 0, ro
 // carry their meaning in aria-label/title, which the CSS grows to a 44px
 // hit area. The transcript and buttons are keyboard-accessible: Space
 // scrolls a focused transcript and activates a focused navigation button.
-h('nav', { ref: refs.scrollNav, class: 'chat-view__scroll-nav', 'data-mode': 'pinned', hidden: true, 'aria-label': 'Transcript navigation' },
+// The rail starts folded into dots at mid-height. A tap on the dots
+// unfolds it (that tap does not run a button: `detail` is 0 for a
+// keyboard-triggered click, so Tab + Enter still activates the button); a
+// tap anywhere outside the rail folds it again. Focus unfolds it too, so a
+// keyboard user never activates a control they cannot see.
+h('nav', { ref: refs.scrollNav, class: 'chat-view__scroll-nav', 'data-mode': 'pinned', 'data-expanded': 'false', hidden: true, 'aria-label': 'Transcript navigation',
+  onClickCapture: (e) => {
+    const nav = e.currentTarget;
+    if (nav.dataset.expanded === 'true' || !e.detail) return;
+    e.preventDefault();
+    e.stopPropagation();
+    nav.dataset.expanded = 'true';
+    const doc = nav.ownerDocument;
+    const fold = (ev) => {
+      if (nav.contains(ev.target)) return;
+      nav.dataset.expanded = 'false';
+      doc.removeEventListener('pointerdown', fold, true);
+    };
+    doc.addEventListener('pointerdown', fold, true);
+  },
+  onFocusIn: (e) => { e.currentTarget.dataset.expanded = 'true'; } },
+h('button', {
+  class: 'chat-view__nav-btn chat-view__nav-btn--top',
+  type: 'button',
+  onClick: onJumpToTop,
+  'aria-label': 'Go to top',
+  title: 'Top'
+  },
+      h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
+        h('path', { d: 'M12 10.5 19.5 18l-1.4 1.4-6.1-6.1-6.1 6.1L4.5 18 12 10.5ZM4.5 4.5h15v2h-15z', fill: 'currentColor' })
+      )
+    ),
 h('button', {
   class: 'chat-view__nav-btn chat-view__nav-btn--prev',
   type: 'button',
