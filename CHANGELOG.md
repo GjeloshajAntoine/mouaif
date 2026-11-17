@@ -9,6 +9,8 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-11-17
+
 ### Removed
 
 - The cap on subagent model requests running at the same time (`subagentLimits.maxConcurrent`, default 4) is gone: subagents no longer queue for a slot, and a stored `maxConcurrent` is ignored.
@@ -522,6 +524,7 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
   subagents) with per-project **Off / Ask / Allow** gating.
 - Access authentication with a setup link and QR code.
 
+[0.9.0]: https://www.npmjs.com/package/mouaif/v/0.9.0
 [0.8.5]: https://www.npmjs.com/package/mouaif/v/0.8.5
 [0.8.0]: https://www.npmjs.com/package/mouaif
 [0.5.7]: https://www.npmjs.com/package/mouaif/v/0.5.7
