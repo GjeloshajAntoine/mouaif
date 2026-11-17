@@ -9,7 +9,7 @@
 //   * app-wide chat microphone settings, separate from the test-only hints;
 //   * optional language and vocabulary hints;
 //   * the transcript, editable in place (a transcript is a draft, not an
-//     answer), with Copy / Insert in chat / Send to chat.
+//     answer), with Copy / Insert in chat / Open in chat.
 //
 // The audio is recorded locally and POSTed as base64 to
 // `/api/ai/transcribe`; the page never holds a provider credential
@@ -117,6 +117,14 @@ export function DictationView() {
   const [busyKind, setBusyKind] = useState('');
   const [status, setStatus] = useState('');
   const [statusState, setStatusState] = useState('');
+  // Which section the status line renders in: 'model', 'recorder' or
+  // 'transcript' — the one whose control produced it (see statusLine).
+  const [statusAt, setStatusAt] = useState('recorder');
+  function say(text, state, place) {
+    setStatus(text);
+    setStatusState(state || '');
+    if (place) setStatusAt(place);
+  }
   const [lastRun, setLastRun] = useState(null);
 
   // The model the *user* has explicitly picked in this session, or '' when they
@@ -155,37 +163,37 @@ export function DictationView() {
   // exactly why pass 2 exists: without it the page is unusable until the user
   // hand-edits `.mouaif.json`.
   const [liveBusy, setLiveBusy] = useState(false);
-const [liveFailures, setLiveFailures] = useState([]);
-const [catalogProviders, setCatalogProviders] = useState([]);
+  const [liveFailures, setLiveFailures] = useState([]);
+  const [catalogProviders, setCatalogProviders] = useState([]);
 
-  // applyCatalog(catalog, saved, opts) — fold one catalog response into the page
-// state.
-//
-// There is no request shape to choose: the shape follows from the model's
-// provider connection (see kindForModel on the server), which is the only
-// thing that knows how to address it. So a catalog response only has to pick a
-// sensible default model — `opts.onlyIfEmpty` protects a selection the *user*
-// has made since the first pass resolved, so a slow live response cannot
-// overwrite it. It is keyed on `userPickRef`, not on the current selection:
-// the fast pass (`live=0`) resolves a fallback from the project's records
-// alone, and if that counted as the user's choice the complete pass would
-// refuse to apply the remembered model that only it contains.
-function applyCatalog(catalog, saved, opts) {
-  const onlyIfEmpty = !!(opts && opts.onlyIfEmpty);
-  const rows = catalog.models;
-  setModels(rows);
-  setKinds(catalog.kinds);
-  setLiveFailures(Array.isArray(catalog.liveFailures) ? catalog.liveFailures : []);
-  setCatalogProviders(Array.isArray(catalog.providers) ? catalog.providers : []);
-  // The remembered model wins if it still exists; otherwise a lone candidate or
-  // a lone model whose name says it transcribes is adopted; otherwise the
-  // picker asks. `defaultDictationModel` owns that order (see dictation.js).
-  const fallback = defaultDictationModel(rows, saved);
-  if (fallback && (!onlyIfEmpty || !userPickRef.current)) {
-    setModelId(fallback.modelId);
-    setProviderId(fallback.providerId);
+    // applyCatalog(catalog, saved, opts) — fold one catalog response into the page
+  // state.
+  //
+  // There is no request shape to choose: the shape follows from the model's
+  // provider connection (see kindForModel on the server), which is the only
+  // thing that knows how to address it. So a catalog response only has to pick a
+  // sensible default model — `opts.onlyIfEmpty` protects a selection the *user*
+  // has made since the first pass resolved, so a slow live response cannot
+  // overwrite it. It is keyed on `userPickRef`, not on the current selection:
+  // the fast pass (`live=0`) resolves a fallback from the project's records
+  // alone, and if that counted as the user's choice the complete pass would
+  // refuse to apply the remembered model that only it contains.
+  function applyCatalog(catalog, saved, opts) {
+    const onlyIfEmpty = !!(opts && opts.onlyIfEmpty);
+    const rows = catalog.models;
+    setModels(rows);
+    setKinds(catalog.kinds);
+    setLiveFailures(Array.isArray(catalog.liveFailures) ? catalog.liveFailures : []);
+    setCatalogProviders(Array.isArray(catalog.providers) ? catalog.providers : []);
+    // The remembered model wins if it still exists; otherwise a lone candidate or
+    // a lone model whose name says it transcribes is adopted; otherwise the
+    // picker asks. `defaultDictationModel` owns that order (see dictation.js).
+    const fallback = defaultDictationModel(rows, saved);
+    if (fallback && (!onlyIfEmpty || !userPickRef.current)) {
+      setModelId(fallback.modelId);
+      setProviderId(fallback.providerId);
+    }
   }
-}
 
   useEffect(() => {
     let cancelled = false;
@@ -194,10 +202,10 @@ function applyCatalog(catalog, saved, opts) {
       setCatalogError('');
       let saved = {};
       try {
-const app = await fetchJson('/api/settings');
-if (app.status === 200 && app.body && app.body.app) saved = app.body.app[APP_KEY] || {};
-} catch { /* a settings read failure must not block the recorder */ }
-if (!cancelled) setLive(liveDictationEnabled(saved));
+        const app = await fetchJson('/api/settings');
+        if (app.status === 200 && app.body && app.body.app) saved = app.body.app[APP_KEY] || {};
+      } catch { /* a settings read failure must not block the recorder */ }
+      if (!cancelled) setLive(liveDictationEnabled(saved));
 
       let catalog = { models: [], kinds: [], total: 0 };
       try {
@@ -347,22 +355,19 @@ if (!cancelled) setLive(liveDictationEnabled(saved));
   }
 
   async function startRecording() {
-    setStatus('');
-    setStatusState('');
+    say('', '', 'recorder');
     const win = typeof window !== 'undefined' ? window : null;
     if (!win || !recorderSupported(win)) {
-      setStatus('This browser cannot record audio.');
-      setStatusState('error');
+      say('This browser cannot record audio.', 'error', 'recorder');
       return;
     }
     let stream;
     try {
       stream = await win.navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {
-      setStatus(e && e.name === 'NotAllowedError'
+      say(e && e.name === 'NotAllowedError'
         ? 'Microphone permission was refused. Allow it in the browser, then tap again.'
-        : 'Could not open the microphone: ' + ((e && e.message) || e));
-      setStatusState('error');
+        : 'Could not open the microphone: ' + ((e && e.message) || e), 'error', 'recorder');
       return;
     }
     streamRef.current = stream;
@@ -375,8 +380,7 @@ if (!cancelled) setLive(liveDictationEnabled(saved));
       // browser's own default rather than failing the whole feature.
       try { recorder = new win.MediaRecorder(stream); } catch (e) {
         releaseMic();
-        setStatus('Could not start the recorder: ' + ((e && e.message) || e));
-        setStatusState('error');
+        say('Could not start the recorder: ' + ((e && e.message) || e), 'error', 'recorder');
         return;
       }
     }
@@ -396,18 +400,15 @@ if (!cancelled) setLive(liveDictationEnabled(saved));
       if (blob && blob.size) {
         setRecordingBlob(blob);
         setRecordingMime(type);
-        setStatus('Recorded ' + formatDuration(Date.now() - startedAtRef.current) + '. Ready to transcribe.');
-        setStatusState('success');
+        say('Recorded ' + formatDuration(Date.now() - startedAtRef.current) + '. Ready to transcribe.', 'success', 'recorder');
       } else {
-        setStatus('Nothing was captured — check that the microphone is not muted.');
-        setStatusState('error');
+        say('Nothing was captured — check that the microphone is not muted.', 'error', 'recorder');
       }
     };
     recorder.onerror = () => {
       releaseMic();
       setRecording(false);
-      setStatus('The recorder stopped unexpectedly.');
-      setStatusState('error');
+      say('The recorder stopped unexpectedly.', 'error', 'recorder');
     };
     mediaRecorderRef.current = recorder;
     startedAtRef.current = Date.now();
@@ -424,19 +425,16 @@ if (!cancelled) setLive(liveDictationEnabled(saved));
   // ---- Transcribe ---------------------------------------------------------
   async function runTranscription() {
     if (!modelId) {
-      setStatus('Pick a dictation model first.');
-      setStatusState('error');
+      say('Pick a dictation model first.', 'error', 'recorder');
       return;
     }
     if (!recordingBlob) {
-      setStatus('Record something first.');
-      setStatusState('error');
+      say('Record something first.', 'error', 'recorder');
       return;
     }
     setBusy(true);
     setBusyKind('transcribe');
-    setStatus('Transcribing with ' + modelId + '…');
-    setStatusState('busy');
+    say('Transcribing with ' + modelId + '…', 'busy', 'recorder');
     try {
       const audioBase64 = await blobToBase64(recordingBlob);
       const out = await transcribeAudio({
@@ -454,18 +452,16 @@ if (!cancelled) setLive(liveDictationEnabled(saved));
       });
       setTranscript(out.text || '');
       setLastRun({
-      model: out.model,
-      kind: out.kind,
-      bytes: out.bytes,
-      durationMs: out.durationMs,
-      usage: out.usage || null,
-      costLabel: transcribeCost(out).label
+        model: out.model,
+        kind: out.kind,
+        bytes: out.bytes,
+        durationMs: out.durationMs,
+        usage: out.usage || null,
+        costLabel: transcribeCost(out).label
       });
-      setStatus('Transcribed with ' + ((out.model && out.model.id) || modelId) + '.');
-      setStatusState('success');
+      say('Transcribed with ' + ((out.model && out.model.id) || modelId) + '.', 'success', 'recorder');
     } catch (e) {
-      setStatus((e && e.message) || 'Transcription failed');
-      setStatusState('error');
+      say((e && e.message) || 'Transcription failed', 'error', 'recorder');
     } finally {
       setBusy(false);
       setBusyKind('');
@@ -476,24 +472,36 @@ if (!cancelled) setLive(liveDictationEnabled(saved));
   async function copyTranscript() {
     try {
       await navigator.clipboard.writeText(transcript);
-      setStatus('Transcript copied.');
-      setStatusState('success');
+      say('Transcript copied.', 'success', 'transcript');
     } catch {
-      setStatus('Could not copy — long-press the text instead.');
-      setStatusState('error');
+      say('Could not copy — long-press the text instead.', 'error', 'transcript');
     }
   }
 
-  // appendToLatestChat(value) — put the transcript into a chat draft.
+  // The chat Insert / Open write to: the project's most recent one. Read up
+  // front so the page can name it before the tap (see the transcript hint).
+  const [chatTarget, setChatTarget] = useState(null);
+  async function latestChat(dir) {
+    const listed = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(dir) + '&limit=1');
+    if (listed.status !== 200) throw new Error((listed.body && listed.body.error) || ('HTTP ' + listed.status));
+    const chat = (listed.body && listed.body.chats && listed.body.chats[0]) || null;
+    return chat ? { id: chat.id, title: chat.title || '' } : null;
+  }
+  useEffect(() => {
+    if (!projectDir) { setChatTarget(null); return undefined; }
+    let cancelled = false;
+    latestChat(projectDir).then((c) => { if (!cancelled) setChatTarget(c); }, () => {});
+    return () => { cancelled = true; };
+  }, [projectDir]);
+
+  // appendToLatestChat(open) — put the transcript into the latest chat's draft.
   //
-  // `send` decides whether the message is also sent: dictation is a *draft*
-  // input method, so the default hand-off fills the composer and leaves the
-  // send decision to the user.
-  async function appendToLatestChat(send) {
+  // Dictation is a *draft* input method: nothing is ever sent. `open` also
+  // navigates to that chat, so the user lands on the filled composer.
+  async function appendToLatestChat(open) {
     const dir = projectDir;
     if (!dir) {
-      setStatus('Open a project first, then this can hand the text to a chat.');
-      setStatusState('error');
+      say('Open a project first, then this can hand the text to a chat.', 'error', 'transcript');
       return;
     }
     setBusy(true);
@@ -504,13 +512,13 @@ if (!cancelled) setLive(liveDictationEnabled(saved));
       // `draftSnippet` (a bounded head of the draft — see
       // src/chatdb.js#LIST_COLUMNS), so appending to that would silently
       // truncate the draft the user already had.
-      const listed = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(dir) + '&limit=1');
-      if (listed.status !== 200) throw new Error((listed.body && listed.body.error) || ('HTTP ' + listed.status));
-      const chat = (listed.body && listed.body.chats && listed.body.chats[0]) || null;
+      // Re-read at tap time: a chat started in another tab is now the latest.
+      const chat = await latestChat(dir);
+      setChatTarget(chat);
       if (!chat) throw new Error('This project has no chat yet — start one in the Chats tab.');
       const record = await fetchJson('/api/chats/' + encodeURIComponent(chat.id) + '?projectDir=' + encodeURIComponent(dir));
       if (record.status !== 200 || !record.body || !record.body.chat) {
-      throw new Error((record.body && record.body.error) || ('HTTP ' + record.status));
+        throw new Error((record.body && record.body.error) || ('HTTP ' + record.status));
       }
       const previous = typeof record.body.chat.draft === 'string' ? record.body.chat.draft : '';
       const joined = previous.trim() ? previous.replace(/\s+$/, '') + '\n' + transcript : transcript;
@@ -520,13 +528,10 @@ if (!cancelled) setLive(liveDictationEnabled(saved));
         body: JSON.stringify({ projectDir: dir, draft: joined })
       });
       if (patched.status !== 200) throw new Error((patched.body && patched.body.error) || ('HTTP ' + patched.status));
-      setStatus(send
-        ? 'Draft filled in "' + (chat.title || chat.id) + '" — send it from the chat.'
-        : 'Draft filled in "' + (chat.title || chat.id) + '".');
-      setStatusState('success');
+      say('Draft filled in "' + (chat.title || chat.id) + '".', 'success', 'transcript');
+      if (open) location.hash = '#/chat/' + encodeURIComponent(chat.id) + '?projectDir=' + encodeURIComponent(dir);
     } catch (e) {
-      setStatus((e && e.message) || 'Could not reach the chat.');
-      setStatusState('error');
+      say((e && e.message) || 'Could not reach the chat.', 'error', 'transcript');
     } finally {
       setBusy(false);
       setBusyKind('');
@@ -534,67 +539,64 @@ if (!cancelled) setLive(liveDictationEnabled(saved));
   }
 
   // ---- Derived ------------------------------------------------------------
-// One list, no family filter: every row can be transcribed, and each row
-// carries the shape its own connection speaks.
-const pickerList = pickerModels(models);
-// The first rows the picker shows: the ones whose name or capability says they
-// transcribe, in that order (see recommendedModels in dictation.js).
-const recommendedIds = recommendedModels(models).map((m) => ({ id: m.id, provider: m.provider || '' }));
-const selection = modelId ? { providerId, modelId } : null;
-const actions = transcriptActions({ text: transcript, chatId: projectDir, hasRecording: !!recordingBlob });
-// The note above the picker distinguishes the two sources it merges.
-const projectCount = models.filter((m) => m.source !== 'live').length;
-const hasLive = models.some((m) => m.source === 'live');
-const providers = Array.isArray(catalogProviders) ? catalogProviders : [];
-// What the page is waiting on, and what the catalog read-out says about it
-// (see catalogNote / busyPhase in dictation.js — both are decided from values
-// alone, so the two loading affordances cannot drift from the state they
-// describe: the note's spinner for a catalog read, and the spinner on the
-// control the user tapped for a transcription or a hand-off).
-const phase = busyPhase({
-catalogBusy,
-liveBusy,
-transcribing: busy && busyKind === 'transcribe',
-handoff: busy && busyKind === 'handoff'
-});
-const note = catalogNote({ catalogBusy, liveBusy, projectCount, hasLive });
+  // One list, no family filter: every row can be transcribed, and each row
+  // carries the shape its own connection speaks.
+  const pickerList = pickerModels(models);
+  // The first rows the picker shows: the ones whose name or capability says they
+  // transcribe, in that order (see recommendedModels in dictation.js).
+  const recommendedIds = recommendedModels(models).map((m) => ({ id: m.id, provider: m.provider || '' }));
+  const selection = modelId ? { providerId, modelId } : null;
+  const actions = transcriptActions({ text: transcript, chatId: chatTarget && chatTarget.id, hasRecording: !!recordingBlob });
+  // The note above the picker distinguishes the two sources it merges.
+  const projectCount = models.filter((m) => m.source !== 'live').length;
+  const hasLive = models.some((m) => m.source === 'live');
+  const providers = Array.isArray(catalogProviders) ? catalogProviders : [];
+  // What the page is waiting on, and what the catalog read-out says about it
+  // (see catalogNote / busyPhase in dictation.js — both are decided from values
+  // alone, so the two loading affordances cannot drift from the state they
+  // describe: the note's spinner for a catalog read, and the spinner on the
+  // control the user tapped for a transcription or a hand-off).
+  const phase = busyPhase({
+    catalogBusy,
+    liveBusy,
+    transcribing: busy && busyKind === 'transcribe',
+    handoff: busy && busyKind === 'handoff'
+  });
+  const note = catalogNote({ catalogBusy, liveBusy, projectCount, hasLive });
 
-// refreshCatalog() — re-read both passes with the server's cache bypassed.
-// The live list is memoized for an hour, so without this a model added to a
-// provider account would not appear until the cache aged out.
-async function refreshCatalog() {
-  if (liveBusy || catalogBusy) return;
-  setLiveBusy(true);
-  setStatus('');
-  setStatusState('');
-  try {
-    const catalog = await loadDictationModels(projectDir, { refresh: true });
-    applyCatalog(catalog, { modelId, providerId }, { onlyIfEmpty: false });
-  } catch (e) {
-    setStatus((e && e.message) || 'Could not refresh the model list.');
-    setStatusState('error');
-  } finally {
-    setLiveBusy(false);
+  // refreshCatalog() — re-read both passes with the server's cache bypassed.
+  // The live list is memoized for an hour, so without this a model added to a
+  // provider account would not appear until the cache aged out.
+  async function refreshCatalog() {
+    if (liveBusy || catalogBusy) return;
+    setLiveBusy(true);
+    say('', '', 'model');
+    try {
+      const catalog = await loadDictationModels(projectDir, { refresh: true });
+      applyCatalog(catalog, { modelId, providerId }, { onlyIfEmpty: false });
+    } catch (e) {
+      say((e && e.message) || 'Could not refresh the model list.', 'error', 'model');
+    } finally {
+      setLiveBusy(false);
+    }
   }
-}
 
-function onPickModel(next) {
-  const nextModelId = next ? next.modelId : '';
-  const nextProviderId = next ? next.providerId : '';
-  // Recorded in the ref as well as in state: the catalog callbacks compare
-  // against the ref, and a state update would not be visible to a response
-  // that is already in flight — without this a slow live pass can overwrite
-  // the model the user just picked.
-  userPickRef.current = nextModelId;
-  setModelId(nextModelId);
-  setProviderId(nextProviderId);
-  setStatus('');
-  setStatusState('');
-  // App-level, and best-effort: the composer microphone reads this same key
-  // (see chat/MicButton.jsx), so a pick that is not written back is a pick the
-  // next page load — and the mic button — never see.
-  remember({ modelId: nextModelId, providerId: nextProviderId });
-}
+  function onPickModel(next) {
+    const nextModelId = next ? next.modelId : '';
+    const nextProviderId = next ? next.providerId : '';
+    // Recorded in the ref as well as in state: the catalog callbacks compare
+    // against the ref, and a state update would not be visible to a response
+    // that is already in flight — without this a slow live pass can overwrite
+    // the model the user just picked.
+    userPickRef.current = nextModelId;
+    setModelId(nextModelId);
+    setProviderId(nextProviderId);
+    say('', '', 'model');
+    // App-level, and best-effort: the composer microphone reads this same key
+    // (see chat/MicButton.jsx), so a pick that is not written back is a pick the
+    // next page load — and the mic button — never see.
+    remember({ modelId: nextModelId, providerId: nextProviderId });
+  }
 
   // Persisting the choice is best-effort: a failure to remember the model must
   // never look like a failure to record, so nothing here reports an error.
@@ -610,27 +612,27 @@ function onPickModel(next) {
   // update happens between the two changes.
   const dictationWriteRef = useRef({ record: null, chain: Promise.resolve() });
   async function remember(patch) {
-  const state = dictationWriteRef.current;
-  state.record = Object.assign({}, state.record, patch);
-  state.chain = state.chain.then(async () => {
-  try {
-  const app = await fetchJson('/api/settings');
-  const stored = (app.status === 200 && app.body && app.body.app && app.body.app[APP_KEY]) || {};
-  // Anything the server knows that this session does not is kept: another
-  // tab may own a field this page never touched.
-  const next = Object.assign({}, stored, state.record);
-  state.record = next;
-  await saveApp({ [APP_KEY]: next });
-  } catch { /* the picker still works for this session */ }
-  });
-  return state.chain;
+    const state = dictationWriteRef.current;
+    state.record = Object.assign({}, state.record, patch);
+    state.chain = state.chain.then(async () => {
+      try {
+        const app = await fetchJson('/api/settings');
+        const stored = (app.status === 200 && app.body && app.body.app && app.body.app[APP_KEY]) || {};
+        // Anything the server knows that this session does not is kept: another
+        // tab may own a field this page never touched.
+        const next = Object.assign({}, stored, state.record);
+        state.record = next;
+        await saveApp({ [APP_KEY]: next });
+      } catch { /* the picker still works for this session */ }
+    });
+    return state.chain;
   }
   // onToggleLive(next) — the chat's live dictation, remembered next to the model
   // it applies to. The switch moves immediately (it is a preference, not a
   // network operation) and the write is best-effort like `onPickModel`'s.
   function onToggleLive(next) {
-  setLive(next);
-  remember({ live: next });
+    setLive(next);
+    remember({ live: next });
   }
 
 
@@ -648,8 +650,18 @@ function onPickModel(next) {
 
   // The record button's own caption. Recording beats every other state, then
   // "stop is available" beats "transcribe".
-  const recordLabel = recording ? 'Stop' : (elapsedMs ? 'Record again' : 'Record');
+  const recordLabel = recording ? 'Stop' : (recordingBlob ? 'Record again' : 'Record');
   const canTranscribe = !!recordingBlob && !!modelId && !busy && !recording;
+
+  // The status line sits next to the control whose action it reports: a
+  // recorder error printed at the foot of the page is off-screen on a phone.
+  const statusLine = (place) => (statusAt === place
+    ? h('p', {
+      class: 'status dictation__status',
+      'aria-live': 'polite',
+      'data-state': statusState || undefined
+    }, status)
+    : null);
 
   return h('section', { class: 'dictation' },
     h('div', { class: 'view-head' },
@@ -667,187 +679,178 @@ function onPickModel(next) {
       // models come from *that* project, and naming it is the difference
       // between "where did these come from" and a named source.
       h('div', { class: 'group__title' }, 'Dictation model',
-      scope ? h('span', { class: 'group__title-note' }, scope) : null),
+        scope ? h('span', { class: 'group__title-note' }, scope) : null),
       h('div', { class: 'dictation__card dictation__model-card' },
-      h('div', { class: 'dictation__fields' },
-        h('div', { class: 'dictation__field' },
-          h('div', { class: 'model-row' }, h(ModelPickerField, {
-            models: pickerList,
-            value: selection,
-            onChange: onPickModel,
-            onOpen: () => { /* the catalog is already loaded */ },
-            placeholder: catalogBusy ? 'Loading models…' : (emptyHint(models) || 'Pick a model'),
-            ariaLabel: 'Pick dictation model',
-            // The rows worth reaching first, in order of how much their name
-            // says (see recommendedModels): a long live catalog is otherwise an
-            // alphabetical wall in which `whisper-large-v3` sits wherever its id
-            // happens to fall.
-            recommended: recommendedIds,
-            // Same bookmarks as the chat picker — see the note on bookmarkState.
-            pinned,
-            onTogglePin,
-            recent,
-            // The chat head's picker: its compact trigger and the same mobile
-            // viewport modal (a dropdown would render in flow and cover the
-            // transcript directly beneath it on a phone).
-            variant: 'chat',
-            refreshEmpty: 'No dictation models'
-          }))
+        h('div', { class: 'dictation__fields' },
+          h('div', { class: 'dictation__field' },
+            h('div', { class: 'model-row' }, h(ModelPickerField, {
+              models: pickerList,
+              value: selection,
+              onChange: onPickModel,
+              onOpen: () => { /* the catalog is already loaded */ },
+              placeholder: catalogBusy ? 'Loading models…' : (emptyHint(models, projectDir) || 'Pick a model'),
+              ariaLabel: 'Pick dictation model',
+              // The rows worth reaching first, in order of how much their name
+              // says (see recommendedModels): a long live catalog is otherwise an
+              // alphabetical wall in which `whisper-large-v3` sits wherever its id
+              // happens to fall.
+              recommended: recommendedIds,
+              // Same bookmarks as the chat picker — see the note on bookmarkState.
+              pinned,
+              onTogglePin,
+              recent,
+              // The chat head's picker: its compact trigger and the same mobile
+              // viewport modal (a dropdown would render in flow and cover the
+              // transcript directly beneath it on a phone).
+              variant: 'chat',
+              refreshEmpty: 'No dictation models'
+            }))
+          ),
+          // Read-only. The shape a transcription will use is not a user choice:
+          // it follows from the model's provider connection (Gemini speaks
+          // generateContent, every other provider speaks the OpenAI multipart
+          // form), and the two are not interchangeable. Showing it means the
+          // user can see what a given model will do; letting them set it only
+          // offered a way to break it. With no model picked there is nothing to
+          // report: the picker's placeholder already says what to do first.
+          selectedRow && effectiveKind
+            ? h('div', { class: 'dictation__field dictation__field--route' },
+              h('span', { class: 'label' }, 'Sends as'),
+              h('span', {
+                class: 'dictation__kind-readout',
+                title: kindLabel(kinds, effectiveKind) || effectiveKind
+              }, kindShortLabel(effectiveKind))
+            )
+            : null
         ),
-        // Read-only. The shape a transcription will use is not a user choice: it
-        // follows from the model's provider connection (Gemini speaks
-        // generateContent, every other provider speaks the OpenAI multipart
-        // form), and the two are not interchangeable — pointing a Gemini
-        // connection at /audio/transcriptions, or an OpenRouter connection at
-        // /v1beta/models/…:generateContent, is a 404. Showing it means the user
-        // can see what a given model will do; letting them set it only offered a
-        // way to break it.
-        //
-        // With no model picked there is nothing to report: the picker's own
-        // placeholder already says what the first step is, and repeating it in a
-        // second row read as a broken control.
-        selectedRow && effectiveKind
-          ? h('div', { class: 'dictation__field dictation__field--route' },
-          h('span', { class: 'label' }, 'Sends as'),
-            h('span', {
-              class: 'dictation__kind-readout',
-              title: kindLabel(kinds, effectiveKind) || effectiveKind
-            }, kindShortLabel(effectiveKind))
+        // Where the rows came from, and the one action that can add more. The
+        // live catalogs are memoized server-side for an hour, so a provider that
+        // just gained a model needs this tap to show up.
+        h('div', { class: 'dictation__catalog-note' },
+          // The spinner and the sentence are one fact: a read that has not
+          // answered yet is *loading*, not "no models". `aria-busy` carries the
+          // same thing to a screen reader, which never sees the animation.
+          h('span', {
+            class: 'hint hint--compact dictation__catalog-line',
+            'aria-busy': note.loading ? 'true' : undefined
+          },
+            note.loading
+              ? h('span', { class: 'dictation__spinner', 'aria-hidden': 'true' })
+              : null,
+            note.text),
+          projectDir && providers.length
+            ? h('button', {
+              class: 'dictation__refresh',
+              type: 'button',
+              disabled: liveBusy || catalogBusy,
+              onClick: refreshCatalog,
+              'aria-label': 'Refresh the model list from the provider'
+            }, liveBusy ? 'Refreshing…' : 'Refresh')
+            : null
+        ),
+        selectedBadge
+          ? h('p', { class: 'hint hint--compact dictation__selected-badge' }, selectedBadge)
+          : null,
+        catalogError
+          ? h('p', { class: 'hint hint--compact dictation__error' }, 'Could not read the model list: ' + catalogError)
+          : null,
+        // A provider that could not answer is reported per-provider, by the
+        // name Settings → Providers uses: one unreachable or badly-keyed
+        // connection must not look like "no models".
+        liveFailures.length
+          ? h('div', { class: 'dictation__failures' },
+            liveFailures.map((f) => h('p', {
+              key: f.provider,
+              class: 'hint hint--compact dictation__error'
+            }, 'No models from ' + providerName(f.provider) + ' — ' + f.error))
           )
-          : null
-      ),
-      // Where the rows came from, and the one action that can add more. The
-      // live catalogs are memoized server-side for an hour, so a provider that
-      // just gained a model needs this tap to show up.
-      h('div', { class: 'dictation__catalog-note' },
-        // The spinner and the sentence are one fact: a read that has not
-        // answered yet is *loading*, not "no models". `aria-busy` carries the
-        // same thing to a screen reader, which never sees the animation.
-        h('span', {
-        class: 'hint hint--compact dictation__catalog-line',
-        'aria-busy': note.loading ? 'true' : undefined
-        },
-          note.loading
-            ? h('span', { class: 'dictation__spinner', 'aria-hidden': 'true' })
-            : null,
-          note.text),
-        projectDir && providers.length
-          ? h('button', {
-            class: 'dictation__refresh',
-            type: 'button',
-            disabled: liveBusy || catalogBusy,
-            onClick: refreshCatalog,
-            'aria-label': 'Refresh the model list from the provider'
-          }, liveBusy ? 'Refreshing…' : 'Refresh')
-          : null
-      ),
-      selectedBadge
-      ? h('p', { class: 'hint hint--compact dictation__selected-badge' }, selectedBadge)
-      : null,
-      catalogError
-        ? h('p', { class: 'hint hint--compact dictation__error' }, 'Could not read the model list: ' + catalogError)
-        : null,
-      // A provider that could not answer is reported per-provider: one
-      // unreachable or badly-keyed connection must not look like "no models".
-      // The provider's own message is kept — it is the only thing that says
-      // *why* — and it is attributed to the connection by name, so
-      // "OpenAI compatible — upstream 401 Unauthorized" names both the cause
-      // and the connection to fix. No follow-up instruction line: the picker
-      // and the Refresh button are right there.
-      liveFailures.length
-      ? h('div', { class: 'dictation__failures' },
-      liveFailures.map((f) => h('p', {
-        key: f.provider,
-        class: 'hint hint--compact dictation__error'
-      }, 'No models from ' + providerName(f.provider) + ' — ' + f.error))
-      )
-      : null,
-      !catalogBusy && !liveBusy && !models.length
-        ? h('p', { class: 'hint hint--compact' }, providers.length
-          ? 'Your providers returned no usable models. Check the connection, then tap Refresh.'
-          : 'Connect a provider or add a speech-to-text model to this project to get started.')
+          : null,
+        !catalogBusy && !liveBusy && !models.length
+          ? h('p', { class: 'hint hint--compact' }, providers.length
+            ? 'Your providers returned no usable models. Check the connection, then tap Refresh.'
+            : 'Connect a provider or add a speech-to-text model to this project to get started.')
           : null,
         !catalogBusy && !liveBusy && (!models.length || liveFailures.length || catalogError)
           ? h('a', { class: 'btn dictation__provider-link', href: '#/settings/providers' }, 'Manage providers')
-          : null
-        )
-        ),
+          : null,
+        statusLine('model')
+      )
+    ),
 
-        // ---- 2. Chat microphone ----------------------------------------------
-        h('div', { class: 'group' },
-        h('div', { class: 'group__title' }, 'Chat microphone'),
-        h('ul', { class: 'dictation__options' },
-          h('li', null,
+    // ---- 2. Chat microphone ----------------------------------------------
+    h('div', { class: 'group' },
+      h('div', { class: 'group__title' }, 'Chat microphone'),
+      h('ul', { class: 'dictation__options' },
+        h('li', null,
           h('label', { class: 'dictation__option-row', for: 'dictation-live' },
-          h('span', { class: 'dictation__option-body' },
-          h('span', { class: 'dictation__option-title' }, 'Live transcription'),
-          h('span', { class: 'dictation__option-note', id: 'dictation-live-note' },
-            'Fill the chat draft as you speak. Turn off to transcribe after you stop.')
-          ),
-          h('span', { class: 'switch' },
-          h('input', {
-            id: 'dictation-live',
-            type: 'checkbox',
-            checked: live,
-            'aria-describedby': 'dictation-live-note',
-            onChange: (e) => onToggleLive(!!(e.target && e.target.checked))
-          }),
-          h('span', { class: 'switch__track', 'aria-hidden': 'true' },
-            h('span', { class: 'switch__thumb' })
-          )
-          )
-          )
+            h('span', { class: 'dictation__option-body' },
+              h('span', { class: 'dictation__option-title' }, 'Live transcription'),
+              h('span', { class: 'dictation__option-note', id: 'dictation-live-note' },
+                'Fill the chat draft as you speak. Turn off to transcribe after you stop.')
+            ),
+            h('span', { class: 'switch' },
+              h('input', {
+                id: 'dictation-live',
+                type: 'checkbox',
+                checked: live,
+                'aria-describedby': 'dictation-live-note',
+                onChange: (e) => onToggleLive(!!(e.target && e.target.checked))
+              }),
+              h('span', { class: 'switch__track', 'aria-hidden': 'true' },
+                h('span', { class: 'switch__thumb' })
+              )
+            )
           )
         )
-        ),
+      )
+    ),
 
-        // ---- 3. Test (speak) --------------------------------------------------
+    // ---- 3. Test ----------------------------------------------------------
     h('div', { class: 'group' },
       // The settings above decide what a take *does*, so they are answered
       // before the microphone is opened: a phone user picks a model once and
-      // records many times, and the picker used to sit between the recording
-      // and its transcript, pushing the result off the fold.
+      // records many times.
       h('div', { class: 'group__title' }, 'Test'),
       h('p', { class: 'dictation__section-note' },
-      'Record, stop, then transcribe. This test always uses one recording; nothing is sent to a chat.'),
+        'Record, stop, then transcribe. Nothing reaches a chat unless you tap Insert or Open below.'),
       h('ul', { class: 'dictation__options dictation__options--test' },
-      h('li', null,
-      h('div', { class: 'dictation__option-row dictation__option-row--field' },
-        h('label', { class: 'dictation__option-title', for: 'dictation-language' },
-        'Language', h('span', { class: 'dictation__optional' }, 'Optional')),
-        h('input', {
-        class: 'input dictation__option-input',
-        id: 'dictation-language', type: 'text',
-        placeholder: 'Auto-detect',
-        value: language,
-        maxLength: 20,
-        autoCapitalize: 'none',
-        spellCheck: false,
-        'aria-describedby': 'dictation-language-note',
-        onInput: (e) => setLanguage(e.target.value.slice(0, 20))
-        }),
-        h('span', { class: 'dictation__option-note', id: 'dictation-language-note' },
-        'Leave blank to detect, or enter a language code: en, fr, de, en-US.')
-      )
-      ),
-      h('li', null,
-      h('div', { class: 'dictation__option-row dictation__option-row--field' },
-        h('label', { class: 'dictation__option-title', for: 'dictation-prompt' },
-        'Vocabulary hint', h('span', { class: 'dictation__optional' }, 'Optional')),
-        h('textarea', {
-        class: 'input dictation__option-input',
-        id: 'dictation-prompt',
-        rows: 2,
-        placeholder: 'mouaif, MediaRecorder, SSE…',
-        value: prompt,
-        maxLength: 400,
-        'aria-describedby': 'dictation-prompt-note',
-        onInput: (e) => setPrompt(e.target.value.slice(0, 400))
-        }),
-        h('span', { class: 'dictation__option-note', id: 'dictation-prompt-note' },
-        'Names or technical terms to recognize. Applies only to this test.')
-      )
-      )
+        h('li', null,
+          h('div', { class: 'dictation__option-row dictation__option-row--field' },
+            h('label', { class: 'dictation__option-title', for: 'dictation-language' },
+              'Language', h('span', { class: 'dictation__optional' }, 'Optional')),
+            h('input', {
+              class: 'input dictation__option-input',
+              id: 'dictation-language', type: 'text',
+              placeholder: 'Auto-detect',
+              value: language,
+              maxLength: 20,
+              autoCapitalize: 'none',
+              spellCheck: false,
+              'aria-describedby': 'dictation-language-note',
+              onInput: (e) => setLanguage(e.target.value.slice(0, 20))
+            }),
+            h('span', { class: 'dictation__option-note', id: 'dictation-language-note' },
+              'Leave blank to detect, or enter a language code: en, fr, de, en-US.')
+          )
+        ),
+        h('li', null,
+          h('div', { class: 'dictation__option-row dictation__option-row--field' },
+            h('label', { class: 'dictation__option-title', for: 'dictation-prompt' },
+              'Vocabulary hint', h('span', { class: 'dictation__optional' }, 'Optional')),
+            h('textarea', {
+              class: 'input dictation__option-input',
+              id: 'dictation-prompt',
+              rows: 2,
+              placeholder: 'mouaif, MediaRecorder, SSE…',
+              value: prompt,
+              maxLength: 400,
+              'aria-describedby': 'dictation-prompt-note',
+              onInput: (e) => setPrompt(e.target.value.slice(0, 400))
+            }),
+            h('span', { class: 'dictation__option-note', id: 'dictation-prompt-note' },
+              'Names or technical terms to recognize. Applies only to this test.')
+          )
+        )
       ),
       h('div', { class: 'dictation__card dictation__card--recorder' },
         h('div', { class: 'dictation__clock' },
@@ -858,56 +861,55 @@ function onPickModel(next) {
           h('span', { class: 'dictation__meter-fill', style: { width: Math.round((recording ? level : 0) * 100) + '%' } })
         ),
         h('button', {
-        class: 'dictation__record' + (recording ? ' is-recording' : (recordingBlob ? ' is-secondary' : '')),
-        type: 'button',
-        disabled: !supported || busy,
-        onClick: recording ? stopRecording : startRecording,
-        // The one wait this button can be in is the hand-off (filling a chat's
-        // draft), and it may last a round trip or two: a spinner on the control
-        // that was *not* tapped would point at the wrong one.
-        'aria-busy': phase === 'handoff' ? 'true' : undefined,
-        'aria-label': recording ? 'Stop recording' : (phase === 'handoff' ? 'Working…' : recordLabel)
-        },
-        phase === 'handoff'
-        ? h('span', { class: 'dictation__spinner', 'aria-hidden': 'true' })
-        : h('span', { class: 'dictation__record-dot', 'aria-hidden': 'true' }),
-        h('span', { class: 'dictation__record-label' }, phase === 'handoff' ? 'Working…' : recordLabel)
-        ),
-        // The transcribe action only exists while there is an untranscribed
-        // recording: a permanently disabled button would suggest the feature is
-        // broken rather than waiting. When there is one, it is the primary
-        // action and Record steps back to secondary.
-        recordingBlob && !recording
-        ? h('div', { class: 'dictation__recorder-actions' },
-          h('span', { class: 'dictation__ready' }, 'Recording ready'),
-          h('button', {
-          class: 'dictation__transcribe',
+          class: 'dictation__record' + (recording ? ' is-recording' : (recordingBlob ? ' is-secondary' : '')),
           type: 'button',
-          disabled: !canTranscribe,
-          onClick: runTranscription,
-          'aria-busy': phase === 'transcribe' ? 'true' : undefined,
-          'aria-label': 'Transcribe the recording'
-          }, phase === 'transcribe'
-          ? h('span', { class: 'dictation__spinner dictation__spinner--on-accent', 'aria-hidden': 'true' })
+          disabled: !supported || busy,
+          onClick: recording ? stopRecording : startRecording,
+          // The one wait this button can be in is the hand-off (filling a
+          // chat's draft): a spinner on the control that was *not* tapped
+          // would point at the wrong one.
+          'aria-busy': phase === 'handoff' ? 'true' : undefined,
+          'aria-label': recording ? 'Stop recording' : (phase === 'handoff' ? 'Working…' : recordLabel)
+        },
+          phase === 'handoff'
+            ? h('span', { class: 'dictation__spinner', 'aria-hidden': 'true' })
+            : h('span', { class: 'dictation__record-dot', 'aria-hidden': 'true' }),
+          h('span', { class: 'dictation__record-label' }, phase === 'handoff' ? 'Working…' : recordLabel)
+        ),
+        // The transcribe action only exists while there is a recording: a
+        // permanently disabled button would suggest the feature is broken.
+        recordingBlob && !recording
+          ? h('div', { class: 'dictation__recorder-actions' },
+            h('span', { class: 'dictation__ready' }, 'Recording ready'),
+            h('button', {
+              class: 'dictation__transcribe',
+              type: 'button',
+              disabled: !canTranscribe,
+              onClick: runTranscription,
+              'aria-busy': phase === 'transcribe' ? 'true' : undefined,
+              'aria-label': 'Transcribe the recording'
+            },
+              phase === 'transcribe'
+                ? h('span', { class: 'dictation__spinner dictation__spinner--on-accent', 'aria-hidden': 'true' })
+                : null,
+              phase === 'transcribe' ? 'Transcribing…' : 'Transcribe')
+          )
           : null,
-          phase === 'transcribe' ? 'Transcribing…' : 'Transcribe')
-        )
-        : null,
         !supported
           ? h('p', { class: 'hint hint--compact' }, 'This browser cannot record audio. Dictation needs a browser with MediaRecorder and microphone access.')
-          : null
-      ),
+          : null,
+        statusLine('recorder')
+      )
     ),
 
-    // ---- 3. Transcript ----------------------------------------------------
+    // ---- 4. Transcript ----------------------------------------------------
     h('div', { class: 'group' },
       h('div', { class: 'group__title' }, 'Transcript'),
       // The transcript is the region both waits rewrite: a transcription
-      // replaces the text and a hand-off reads it out to a chat. `aria-busy`
-      // says so, since neither wait is visible in this region's own markup.
+      // replaces the text and a hand-off reads it out to a chat.
       h('div', {
-      class: 'dictation__transcript',
-      'aria-busy': (phase === 'transcribe' || phase === 'handoff') ? 'true' : undefined
+        class: 'dictation__transcript',
+        'aria-busy': (phase === 'transcribe' || phase === 'handoff') ? 'true' : undefined
       },
         h('textarea', {
           class: 'input dictation__textarea',
@@ -920,35 +922,34 @@ function onPickModel(next) {
         h('div', { class: 'dictation__actions' },
           actions.map((action) => h('button', {
             key: action.id,
-            class: 'btn' + (action.id === 'send' ? ' btn--primary' : '') + (action.id === 'clear' ? ' btn--ghost' : ''),
+            class: 'btn' + (action.id === 'open' ? ' btn--primary' : '') + (action.id === 'clear' ? ' btn--ghost' : ''),
             type: 'button',
             disabled: action.disabled || busy,
             onClick: () => {
               if (action.id === 'copy') return copyTranscript();
-              if (action.id === 'clear') { setTranscript(''); setStatus(''); setStatusState(''); return undefined; }
-              return appendToLatestChat(action.id === 'send');
+              if (action.id === 'clear') { setTranscript(''); say(''); return undefined; }
+              return appendToLatestChat(action.id === 'open');
             }
           }, action.label))
-        )
+        ),
+        // Name the chat Insert and Open write to *before* the tap: it is the
+        // project's most recent chat, which is not always the one in mind.
+        projectDir
+          ? h('p', { class: 'hint hint--compact dictation__target' }, chatTarget
+            ? 'Insert and Open add to the draft of “' + (chatTarget.title || 'Untitled chat') + '”, the latest chat.'
+            : 'This project has no chat yet — start one in the Chats tab to hand text to it.')
+          : null
       ),
-      // What the last run produced *and* what it cost, in one line (the format
-      // lives in dictation.js so it is testable without a media recorder). The
-      // token footprint rides along in the tooltip for the cases where the
-      // provider reported one.
+      // What the last run produced *and* what it cost, in one line; the token
+      // footprint rides along in the tooltip when the provider reported one.
       lastRun
-      ? h('p', {
-      class: 'hint hint--compact dictation__last-run',
-      title: lastRunTitle(lastRun)
-      }, lastRunLine(lastRun))
-      : null
-    ),
-
-    // ---- Status -----------------------------------------------------------
-    h('p', {
-      class: 'status dictation__status',
-      'aria-live': 'polite',
-      'data-state': statusState || undefined
-    }, status)
+        ? h('p', {
+          class: 'hint hint--compact dictation__last-run',
+          title: lastRunTitle(lastRun)
+        }, lastRunLine(lastRun))
+        : null,
+      statusLine('transcript')
+    )
   );
 }
 
@@ -957,9 +958,9 @@ function onPickModel(next) {
 // models at all, catalog still loading) each get a sentence instead of a
 // generic "none". A non-empty list means the placeholder is the plain
 // "Pick a model" prompt, which the caller supplies.
-function emptyHint(models) {
+function emptyHint(models, projectDir) {
   if (models && models.length) return '';
-  return 'No models in this project';
+  return projectDir ? 'No models in this project' : 'No project open';
 }
 
 // scopeNote(project, projectDir) — the note next to the group title. The models

@@ -12,7 +12,7 @@ Dictation turns speech into text using a model the user picks, and hands that te
 2. Pick a **dictation model** (a model from the active project or one the connected providers offer) under **Dictation model**. The route it will be sent with is shown underneath, read-only. There is usually nothing to pick: a remembered model, a lone candidate, or a lone row whose name says it transcribes is selected for you.
 3. In the **Test** card below, tap **Record**. The timer and level meter confirm the microphone is live. Recording stops on the second tap, or automatically at 2:00.
 4. Tap **Transcribe**. The transcript appears in an editable field, and the line under it reports the run — model, size, duration, and **what it cost**.
-5. Choose what happens to it: **Copy**, **Insert in chat** (fills the newest chat's draft), **Send to chat**, or **Clear**.
+5. Choose what happens to it: **Copy**, **Insert in chat** (fills the newest chat's draft), **Open in chat** (fills it and goes there), or **Clear**. The line under the actions names the chat both write to — the project's most recent one — before you tap.
 
 The page separates saved app settings from test-only hints:
 

@@ -300,7 +300,7 @@ function useCase(caseOptions) {
   // A take is required before the transcribe action exists: a permanently
   // disabled button would read as "broken", not as "not yet".
   assert.equal(find(nodes, (n) => buttonClass(n) === 'dictation__transcribe'), null);
-  assert.deepEqual(chipLabels(nodes), ['Copy', 'Insert in chat', 'Send to chat', 'Clear']);
+  assert.deepEqual(chipLabels(nodes), ['Copy', 'Insert in chat', 'Open in chat', 'Clear']);
   for (const node of buttons(nodes).filter((n) => buttonClass(n).startsWith('btn'))) {
     assert.equal(node.attrs.disabled, true, 'nothing is offered before there is anything to act on');
   }
@@ -361,7 +361,9 @@ function useCase(caseOptions) {
   // The read order matters: settings once, then the fast project pass, then
   // the live pass. The page must not block its first paint on the live list,
   // and it must not re-read settings for it.
-  assert.deepEqual(calls.map((c) => new URL(c.url, 'http://fixture').pathname + new URL(c.url, 'http://fixture').search),
+  // (The latest-chat read that names the hand-off target is independent.)
+  assert.deepEqual(calls.map((c) => new URL(c.url, 'http://fixture').pathname + new URL(c.url, 'http://fixture').search)
+    .filter((u) => !u.startsWith('/api/chats')),
     ['/api/settings',
       '/api/ai/transcribe/models?projectDir=%2Ffixture%2Fproject&live=0',
       '/api/ai/transcribe/models?projectDir=%2Ffixture%2Fproject'],

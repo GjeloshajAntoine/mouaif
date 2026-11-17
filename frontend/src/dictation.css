@@ -368,6 +368,11 @@
 
 .dictation__status {
   min-height: 1.4em;
+  margin: 8px 0 0;
+}
+
+.dictation__target {
+  margin: 8px 0 0;
 }
 
 /* ---- Loading -------------------------------------------------------- */

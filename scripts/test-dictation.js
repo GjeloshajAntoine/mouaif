@@ -1003,7 +1003,7 @@ try { fs.rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ 
 
   check('transcriptActions gates each action on what exists', () => {
     const none = dictation.transcriptActions({});
-    assert.deepEqual(none.map((a) => a.id), ['copy', 'insert', 'send', 'clear']);
+    assert.deepEqual(none.map((a) => a.id), ['copy', 'insert', 'open', 'clear']);
     assert.ok(none.every((a) => a.disabled), 'an empty page offers nothing');
     const withText = dictation.transcriptActions({ text: '  hi  ' });
     assert.equal(withText.find((a) => a.id === 'copy').disabled, false);

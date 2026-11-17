@@ -873,7 +873,7 @@ export function transcriptActions(props) {
   const actions = [
     { id: 'copy',   label: 'Copy',           disabled: !hasText },
     { id: 'insert', label: 'Insert in chat', disabled: !hasText || !opts.chatId },
-    { id: 'send',   label: 'Send to chat',   disabled: !hasText || !opts.chatId },
+    { id: 'open',   label: 'Open in chat',   disabled: !hasText || !opts.chatId },
     { id: 'clear',  label: 'Clear',          disabled: !hasText && !opts.hasRecording }
   ];
   return actions;
