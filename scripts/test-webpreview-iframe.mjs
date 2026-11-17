@@ -105,7 +105,7 @@ await ok('resolveMode normalises and rejects junk', () => {
 await ok('tool spec advertises mode to the agent', () => {
   const p = wp.SPEC.function.parameters.properties.mode;
   assert.ok(p, 'no mode property');
-  assert.deepEqual(p.enum, ['screenshot', 'live']);
+  assert.deepEqual(p.enum, ['screenshot', 'live', 'link']);
   assert.match(wp.SPEC.function.description, /live/);
 });
 

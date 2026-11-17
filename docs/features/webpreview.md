@@ -44,7 +44,7 @@ To show the page itself, interactive, instead of a screenshot, set `"mode": "liv
 }
 ```
 
-`mode` is `"screenshot"` (default) or `"live"`. The same field is accepted by `POST /api/tools/webpreview`.
+`mode` is `"screenshot"` (default), `"live"`, or `"link"`. With `"link"` nothing is shown or captured: the URL (and an optional `title`) is only added to the project's link list on the [Web preview page](./webpreview-project-page.md). The same field is accepted by `POST /api/tools/webpreview`.
 
 ### In the chat UI
 - **Right-aligned miniature** — the latest successful capture is shown above the composer, outside the scrolling transcript, as a small phone-proportioned image. The screenshot is the only content in chat; page title/host/time are shown only in the full-screen viewer. Its height is capped (`min(24dvh, 11rem)`) so a tall page capture stays a thumbnail instead of taking over the chat: the dock is in the flow above the composer, so every pixel of it comes out of the transcript. The image fills the card and is cropped to the **top** of the page — the part worth previewing — and the full capture is one tap away in the viewer.

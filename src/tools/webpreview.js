@@ -231,6 +231,7 @@ const finalUrl = url.href;
 const captureVp = resolveViewport(opts && opts.viewport);
 const mode = resolveMode(opts && opts.mode);
 if (mode === 'live') return liveResult(url, captureVp);
+if (mode === 'link') return linkResult(url, captureVp, opts && opts.title);
 
   let target;
   try {
@@ -408,12 +409,13 @@ return { ok: true, content: JSON.stringify(summary), result };
 
 // Preview modes. 'screenshot' captures a JPEG in the debug Chrome; 'live'
 // hands the URL to the UI, which frames the page itself.
-const MODES = Object.freeze(['screenshot', 'live']);
+const MODES = Object.freeze(['screenshot', 'live', 'link']);
 function resolveMode(raw) {
   const v = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
   if (v === 'live' || v === 'iframe') return 'live';
+  if (v === 'link' || v === 'save') return 'link';
   if (!v || v === 'screenshot' || v === 'image') return 'screenshot';
-  throw err('EBADINPUT', 'mode must be "screenshot" or "live"');
+  throw err('EBADINPUT', 'mode must be "screenshot", "live" or "link"');
 }
 
 // liveResult — the Live (iframe) payload. No Chrome round-trip: the user's
@@ -437,6 +439,14 @@ function liveResult(url, vp) {
   return { ok: true, content: JSON.stringify(summary), result };
 }
 
+// linkResult — mode "link": nothing is shown or captured; the caller
+// (src/previewLinks.js) only saves the URL to the project's link list.
+function linkResult(url, vp, rawTitle) {
+  const title = (typeof rawTitle === 'string' && rawTitle.trim()) ? rawTitle.trim().slice(0, 200) : (url.hostname || url.href.slice(0, 120));
+  const result = { ok: true, mode: 'link', url: url.href, title, viewport: { id: vp.id }, capturedAt: new Date().toISOString() };
+  return { ok: true, content: JSON.stringify({ ok: true, mode: 'link', saved: true, url: url.href, title }), result };
+}
+
 const SPEC = {
   type: 'function',
   function: {
@@ -448,7 +458,7 @@ const SPEC = {
     description: 'Show the user a preview of a web page. The preview is for the user only: the screenshot is not returned to you, so this tool cannot be used to look at a page. ' +
       'By default mouaif takes a screenshot in its debug Chrome and shows it in a small dock above the chat composer (tapping it opens the full image); ' +
       'with `mode` "live" the user gets the page itself as an interactive iframe instead (use it when the user should click around, or for pages that animate). ' +
-      'Call it again whenever the preview should reload. Every previewed URL is also saved to the project\'s link list (Project settings → Web preview), so calling it is how you add a link there. Any absolute URL Chrome can open is accepted (http, https, file, data, about, …); `viewport` sets the size.',
+      'Call it again whenever the preview should reload. Every previewed URL is also saved to the project\'s link list (Project settings → Web preview); with `mode` "link" the URL is only saved to that list, with nothing shown. Any absolute URL Chrome can open is accepted (http, https, file, data, about, …); `viewport` sets the size.',
       parameters: {
       type: 'object',
       properties: {
@@ -459,9 +469,10 @@ const SPEC = {
         },
         mode: {
           type: 'string',
-          enum: ['screenshot', 'live'],
-          description: '"screenshot" (default) captures an image in the debug Chrome. "live" shows the page as an interactive iframe in the user\'s browser, rendered at `viewport` size.'
-        }
+          enum: ['screenshot', 'live', 'link'],
+          description: '"screenshot" (default) captures an image in the debug Chrome. "live" shows the page as an interactive iframe in the user\'s browser, rendered at `viewport` size. "link" only adds the URL to the project\'s link list.'
+        },
+        title: { type: 'string', description: 'Optional label for the saved link (mode "link"); defaults to the host.' }
       },
       required: ['url'],
       additionalProperties: false

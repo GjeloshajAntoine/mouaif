@@ -19,7 +19,9 @@ import { h } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useModal } from '../../hooks/useModal.js';
 
-export function PreviewUrlPrompt({ onSubmit, onClose }) {
+// Optional title / subtitle / submitLabel / hint reuse the sheet for other
+// URL entry (the project's Web preview "Add link").
+export function PreviewUrlPrompt({ onSubmit, onClose, title = 'Preview a web page', subtitle = 'Opens in the web-preview viewer', submitLabel = 'Preview', hint = null }) {
   const [url, setUrl] = useState('');
   const [error, setError] = useState('');
   const inputRef = useRef(null);
@@ -64,14 +66,14 @@ export function PreviewUrlPrompt({ onSubmit, onClose }) {
     class: 'wp__overlay',
     role: 'dialog',
     'aria-modal': 'true',
-    'aria-label': 'Preview a web page',
+    'aria-label': title,
     onClick: onBackdropClick
   },
   h('div', { class: 'wp__sheet wp__prompt-sheet', ref: sheetRef },
   h('div', { class: 'wp__head' },
   h('div', { class: 'wp__head-text' },
-  h('div', { class: 'wp__title' }, 'Preview a web page'),
-  h('div', { class: 'wp__title-sub' }, 'Opens in the web-preview viewer')
+  h('div', { class: 'wp__title' }, title),
+  h('div', { class: 'wp__title-sub' }, subtitle)
   ),
   h('div', { class: 'wp__head-actions' },
   h('button', {
@@ -108,9 +110,9 @@ export function PreviewUrlPrompt({ onSubmit, onClose }) {
     'aria-label': 'Web URL to preview'
   }),
   h('button', { class: 'btn btn--primary wp__prompt-submit', type: 'submit' },
-  'Preview'),
+  submitLabel),
   error ? h('div', { class: 'wp__prompt-error', role: 'alert' }, error) : null,
-  h('p', { class: 'wp__prompt-hint' }, 'A screenshot is captured using the Inspector debug Chrome. A local address (', h('code', null, 'localhost:5173'), ') can be opened live: the app proxies it, so a dev server on the machine running mouaif is reachable from this device.')
+  hint !== null ? h('p', { class: 'wp__prompt-hint' }, hint) : h('p', { class: 'wp__prompt-hint' }, 'A screenshot is captured using the Inspector debug Chrome. A local address (', h('code', null, 'localhost:5173'), ') can be opened live: the app proxies it, so a dev server on the machine running mouaif is reachable from this device.')
   )
   )
   );

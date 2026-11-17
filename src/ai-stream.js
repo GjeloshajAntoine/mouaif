@@ -3036,6 +3036,7 @@ const out = await wp.runWebpreview({
 url: args && args.url,
 viewport: args && args.viewport,
 mode: args && args.mode,
+title: args && args.title,
 signal: callOpts && callOpts.signal
 });
 require('./previewLinks.js').recordFromResult(callOpts && callOpts.projectDir, out);

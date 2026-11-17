@@ -131,6 +131,7 @@ const [previewChatId, setPreviewChatId] = useState((initialChatId || '').trim())
 // Links the agent (or this page) previewed, newest first; stored in the
 // project setting `previewLinks` by src/previewLinks.js.
 const [previewLinks, setPreviewLinks] = useState([]);
+const [addLinkOpen, setAddLinkOpen] = useState(false);
 
   // MCP authorization
   const [mcpAuth, setMcpAuth] = useState({ mode: 'ask', allowlist: [], servers: {}, tools: {} });
@@ -616,6 +617,15 @@ setPreviewViewOpen(true);
 return;
 }
 capturePreview(link.url, link.viewport);
+}
+// The user adds a link by hand: saved to the list, nothing captured.
+async function addPreviewLink(url) {
+setAddLinkOpen(false);
+const prev = previewLinks;
+const host = hostOf(url);
+const next = [{ url, title: host, mode: 'screenshot', viewport: 'phone', addedAt: new Date().toISOString() }, ...prev.filter(l => l.url !== url)].slice(0, 50);
+setPreviewLinks(next);
+if (!(await patchProject({ previewLinks: next }, setPreviewStatusMsg, 'Link added'))) setPreviewLinks(prev);
 }
 async function removePreviewLink(url) {
 const prev = previewLinks;
@@ -1252,7 +1262,8 @@ h('h2', { class: 'view-title' }, 'Web preview')
   h('div', { class: 'group__title settings-project__section-title' },
   sectionIcon('tools'),
   h('span', null, 'Links'),
-  previewLinks.length ? h('span', { class: 'plinks__count' }, String(previewLinks.length)) : null
+  previewLinks.length ? h('span', { class: 'plinks__count' }, String(previewLinks.length)) : null,
+  h('button', { class: 'plinks__add', type: 'button', onClick: () => setAddLinkOpen(true), 'aria-label': 'Add a link' }, '+ Add')
   ),
   previewLinks.length
   ? h('ul', { class: 'plinks', 'aria-label': 'Previewed links' },
@@ -1273,10 +1284,13 @@ h('h2', { class: 'view-title' }, 'Web preview')
   )
   : h('div', { class: 'plinks__empty' },
   h('span', { class: 'plinks__empty-icon', 'aria-hidden': 'true' }, '◎'),
-  h('p', null, 'No links yet. Pages the agent previews with ', h('code', null, 'webpreview'), ' appear here.')
+  h('p', null, 'No links yet. Tap ', h('strong', null, '+ Add'), ', or ask the agent: links it saves or previews with ', h('code', null, 'webpreview'), ' appear here.')
   )
   ),
   ),
+  addLinkOpen
+  ? h(PreviewUrlPrompt, { title: 'Add a link', subtitle: 'Saved to this project’s list', submitLabel: 'Add', hint: 'Nothing is captured now; tap the link later to preview it.', onSubmit: addPreviewLink, onClose: () => setAddLinkOpen(false) })
+  : null,
   previewPromptOpen
   ? h(PreviewUrlPrompt, {
   onSubmit: onPreviewSubmit,

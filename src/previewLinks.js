@@ -49,7 +49,7 @@ function recordFromResult(projectDir, out) {
     const entry = {
       url: r.url,
       title: r.title || '',
-      mode: r.mode === 'live' ? 'live' : 'screenshot',
+      mode: r.mode === 'live' ? 'live' : 'screenshot',  // a saved-only link reopens as a screenshot
       viewport: (r.viewport && r.viewport.id) || 'phone',
       addedAt: r.capturedAt || new Date().toISOString()
     };

@@ -1579,6 +1579,21 @@ textarea#projectEditor {
 /* ---- Web preview: link list ------------------------------------------
    Deliberately richer than the plain settings rows: each link is a card
    with a hue tile derived from its host, a two-line label and a mode pill. */
+.plinks__add {
+  flex: none;
+  margin-left: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.plinks__add:hover { background: var(--accent); color: var(--on-accent); }
 .settings-project__section-title > span.plinks__count {
   flex: none;
   margin-left: auto;
