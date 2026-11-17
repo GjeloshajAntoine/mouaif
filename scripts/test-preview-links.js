@@ -27,5 +27,8 @@ console.log('preview links: ok');
   assert.strictEqual(out.result.title, 'Docs');
   assert.ok(!out.result.thumbnail);
   assert.ok(wp.SPEC.function.parameters.properties.mode.enum.includes('link'));
+  // A shown preview is never recorded: no write is even attempted.
+  assert.strictEqual(p.recordFromResult('/nonexistent', { ok: true, result: { mode: 'live', url: 'http://localhost:1/' } }), false);
+  assert.strictEqual(p.recordFromResult('/nonexistent', { ok: true, result: { url: 'https://shot.test/' } }), false);
   console.log('preview links (link mode): ok');
 })().catch((e) => { console.error(e); process.exit(1); });

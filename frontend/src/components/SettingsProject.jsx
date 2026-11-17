@@ -580,7 +580,6 @@ if (out && out.ok && out.result && out.result.thumbnail) {
 setPreviewPayload(out.result);
 setPreviewViewOpen(true);
 setPreviewStatusMsg('');
-reloadPreviewLinks();
 } else if (out) {
 setPreviewStatusMsg((out.result && out.result.error) || out.error || 'capture failed');
 } else {
@@ -632,12 +631,6 @@ const prev = previewLinks;
 const next = prev.filter(l => l.url !== url);
 setPreviewLinks(next);
 if (!(await patchProject({ previewLinks: next }, setPreviewStatusMsg, 'Link removed'))) setPreviewLinks(prev);
-}
-// Refresh the list after a capture from this page added a link.
-async function reloadPreviewLinks() {
-const d = dir(); if (!d) return;
-const r = await fetchJson('/api/settings/project?projectDir=' + encodeURIComponent(d));
-if (r.status === 200 && r.body && r.body.project) setPreviewLinks(Array.isArray(r.body.project.previewLinks) ? r.body.project.previewLinks : []);
 }
 function openPreviewPrompt() {
 setPreviewPromptOpen(true);
@@ -1284,7 +1277,7 @@ h('h2', { class: 'view-title' }, 'Web preview')
   )
   : h('div', { class: 'plinks__empty' },
   h('span', { class: 'plinks__empty-icon', 'aria-hidden': 'true' }, '◎'),
-  h('p', null, 'No links yet. Tap ', h('strong', null, '+ Add'), ', or ask the agent: links it saves or previews with ', h('code', null, 'webpreview'), ' appear here.')
+  h('p', null, 'No links yet. Tap ', h('strong', null, '+ Add'), ', or ask the agent to save one.')
   )
   ),
   ),

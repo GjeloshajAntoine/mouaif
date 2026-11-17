@@ -1,8 +1,9 @@
 'use strict';
 // mouaif — project preview links
 //
-// Every successful `webpreview` (the agent's call, or a capture from the
-// project's Web preview page) records its URL in the project setting
+// A link is added only on purpose: the agent calls `webpreview` with
+// mode "link", or the user taps + Add on the project's Web preview page.
+// Showing a preview never adds one. Links live in the project setting
 // `previewLinks`, newest first. The Web preview page in project settings
 // lists them. Only the URL and a little metadata are kept, never the
 // screenshot bytes.
@@ -42,14 +43,14 @@ function withLink(list, entry) {
 function recordFromResult(projectDir, out) {
   try {
     const r = out && out.ok && out.result;
-    if (!projectDir || !r || typeof r.url !== 'string') return false;
+    if (!projectDir || !r || r.mode !== 'link' || typeof r.url !== 'string') return false;
     const content = require('./content/service.js');
     const settings = require('./settings.js');
     const current = (settings.getProject(projectDir) || {})[KEY];
     const entry = {
       url: r.url,
       title: r.title || '',
-      mode: r.mode === 'live' ? 'live' : 'screenshot',  // a saved-only link reopens as a screenshot
+      mode: 'screenshot',  // a saved link reopens as a screenshot capture
       viewport: (r.viewport && r.viewport.id) || 'phone',
       addedAt: r.capturedAt || new Date().toISOString()
     };
