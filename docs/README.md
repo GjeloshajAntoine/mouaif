@@ -25,6 +25,7 @@ One page per feature: what it does and how to use it.
 ### Install and access
 
 - [npm package](features/npm-package.md) — the published package, what an install contains, and the release flow.
+- [Measuring frontend JavaScript size](features/frontend-js-size.md) — compare raw entry, startup, and total bundle bytes.
 - [Login notification](features/login-notification.md) — a browser alert on a new sign-in, sent to every subscribed device.
 - [Push notifications](features/push-notifications.md) — follow a running chat and answer approvals from a notification.
 - [Install as an app](features/pwa.md) — install the web app, the offline shell, and the update prompt.
