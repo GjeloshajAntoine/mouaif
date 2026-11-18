@@ -186,8 +186,10 @@ const recordingRef = useRef(false);
 const [tick, setTick] = useState(0);
 // The model this take will be sent to, resolved before the microphone opens
 // (see start()). Held in a ref so the recorder's onstop callback — registered
-// when recording began — reads the row that was resolved for *this* take.
+// when recording began — reads the row (and saved language/prompt) resolved
+// for *this* take.
 const modelRef = useRef(null);
+const savedHintsRef = useRef({ language: '', prompt: '' });
 // say(message, state) — report on both surfaces: the button (title and
 // aria-label, which is all a sighted user gets on hover) and the chat's status
 // row under the composer, which is the one line a phone can actually see.
@@ -290,7 +292,8 @@ kind: match.kind || '',
 audioBase64,
 mimeType: mime,
 filename: dictationFilename(mime, startedAtRef.current),
-language
+language: language || savedHintsRef.current.language || '',
+prompt: savedHintsRef.current.prompt || ''
 });
 if (!takeRef.current) return;
 failedRef.current = false;
@@ -443,8 +446,9 @@ say(failed ? 'Transcription failed' : 'Nothing was recognised — try again a li
         audioBase64,
         mimeType: mime,
         filename: dictationFilename(mime, startedAtRef.current),
-        language
-      });
+        language: language || savedHintsRef.current.language || '',
+        prompt: savedHintsRef.current.prompt || ''
+        });
       const text = (out.text || '').trim();
 if (!text) {
 say('Nothing was recognised — try again a little closer to the mic.', 'error');
@@ -491,7 +495,12 @@ setSending(false);
   if (!picked) return null;
   const row = catalog.models.find((m) => m.id === picked.modelId && (m.provider || '') === picked.providerId);
   if (!row) return null;
-  return { row, live: liveDictationEnabled(saved) };
+  return {
+    row,
+    live: liveDictationEnabled(saved),
+    language: typeof saved.language === 'string' ? saved.language : '',
+    prompt: typeof saved.prompt === 'string' ? saved.prompt : ''
+  };
   }
 
   async function start() {
@@ -531,6 +540,7 @@ say(NO_MODEL_MESSAGE, 'error');
 return;
 }
 modelRef.current = resolved.row;
+savedHintsRef.current = { language: resolved.language || '', prompt: resolved.prompt || '' };
 
   let stream;
     try {

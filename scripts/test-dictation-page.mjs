@@ -112,7 +112,10 @@ const usageSource = read('usage.js').replace(/^export /gm, '');
 const dictation = await import('data:text/javascript;base64,' + Buffer.from(
   'const fetchJson = globalThis.__mouaifDictationFetch;\n'
   + usageSource + '\n'
-  + read('dictation.js').replace(/^import .*';$/gm, '')
+  + read('dictation.js').replace(/^import .*;$/gm, '')
+).toString('base64'));
+const composerTools = await import('data:text/javascript;base64,' + Buffer.from(
+  read('components/chat/composerTools.js')
 ).toString('base64'));
 
 // ---- The render harness -------------------------------------------------
@@ -186,6 +189,7 @@ return refs[i];
   });
   // The page's own helper imports, as the real implementations.
   for (const [name, value] of Object.entries(dictation)) context[name] = value;
+  for (const [name, value] of Object.entries(composerTools)) context[name] = value;
   vm.runInContext(asScript('components/DictationPage.jsx'), context);
 
   function render() {
@@ -703,10 +707,13 @@ for (const { providers, provider, label } of [
   const nodes = view.render();
 
   const titles = all(nodes, (n) => buttonClass(n) === 'group__title');
-  // Settings, then the test, then the result: the model picker has to be
-  // answered before a take *can* be transcribed, so it sits above the record
-  // button rather than between the recording and its transcript.
-  assert.deepEqual(titles.map((t) => t.children[0]), ['Dictation model', 'Chat microphone', 'Test', 'Transcript'],
+  // ---- 2. Options -------------------------------------------------------
+  // The page's top half is the settings surface (model first, then all
+  // app-wide options in one list); the Test recorder and Transcript sit below
+  // as a separate try-it-out section.
+  // ---- 3. Test ----------------------------------------------------------
+  // ---- 4. Transcript ----------------------------------------------------
+  assert.deepEqual(titles.map((t) => t.children[0]), ['Dictation model', 'Options', 'Test', 'Transcript'],
     'the page separates app settings from the recording test');
   assert.equal(titles[0].children[0], 'Dictation model', 'the group title is the label');
   assert.equal(
@@ -720,17 +727,21 @@ for (const { providers, provider, label } of [
   assert.ok(!titles[0].children.some((child) => child && child.attrs && buttonClass(child) === 'group__title-note'),
     'no note for the active project');
 
-  // The per-run hints are a plain item list, not a folded disclosure: every
-  // setting is on the page at once, each row its own touch target. (The old
-  // "Options" row had the shape of a group title — uppercase label + caret —
-  // and read as a section heading, which is what this pins against.)
+  // All app-wide dictation preferences sit in the single Options list (no
+  // folded disclosure): Composer microphone, Live transcription, Language, and
+  // Vocabulary hint, each its own touch target.
   const hintRows = all(nodes, (n) => buttonClass(n).includes('dictation__option-row'));
-  assert.equal(hintRows.length, 3, 'live + the two hints are each one row');
+  assert.equal(hintRows.length, 4, 'composer mic + live + the two saved hints are each one row');
   assert.equal(find(nodes, (n) => buttonClass(n).includes('dictation__options-toggle')), null,
     'there is no disclosure toggle any more');
   assert.ok(find(nodes, (n) => buttonClass(n).includes('dictation__options')),
     'the rows live in the options list');
-  // Both hint fields are already visible, no tap needed.
+  // Composer microphone mirrors `dictationButton` from Settings → App defaults.
+  const buttonSwitch = find(nodes, (n) => n.attrs && n.attrs.id === 'dictation-button');
+  assert.ok(buttonSwitch, 'the composer microphone switch is in Options');
+  assert.equal(buttonSwitch.attrs.type, 'checkbox');
+  assert.equal(buttonSwitch.attrs.checked, true, 'composer microphone is on by default');
+  // Both hint fields are already visible, no tap needed, and live inside Options.
   const languageInput = find(nodes, (n) => n.attrs && n.attrs.id === 'dictation-language');
   assert.ok(languageInput, 'the language field is visible, not folded away');
   assert.equal(languageInput.attrs.placeholder, 'Auto-detect', 'blank language clearly means automatic detection');
@@ -745,24 +756,36 @@ for (const { providers, provider, label } of [
     assert.ok(find(nodes, (n) => n.attrs.id === input.attrs['aria-describedby']),
       'each hint has a linked accessible description');
   }
-  const testHints = find(nodes, (n) => buttonClass(n).includes('dictation__options--test'));
-  assert.equal(testHints.children.length, 2, 'only the per-test hints are grouped with the recording test');
+  assert.equal(find(nodes, (n) => buttonClass(n).includes('dictation__options--test')), null,
+    'language and vocabulary hints are saved options, not grouped under Test');
   assert.ok(find(nodes, (n) => buttonClass(n).includes('dictation__model-card')),
     'model metadata and catalog controls share one card');
   assert.equal(find(nodes, (n) => buttonClass(n).includes('dictation__provider-link')), null,
     'healthy non-empty catalogs do not need a setup action');
-  // The live switch is the first row, on by default — the chat composer's mic
-  // reads it before it opens the microphone.
+  // The live switch is on by default — the chat composer's mic reads it before
+  // it opens the microphone.
   const liveSwitch = find(nodes, (n) => n.attrs && n.attrs.id === 'dictation-live');
   assert.ok(liveSwitch, 'the live switch is on the page');
   assert.equal(liveSwitch.attrs.type, 'checkbox');
   assert.equal(liveSwitch.attrs.checked, true, 'live dictation is on until it is turned off');
   liveSwitch.attrs.onChange({ target: { checked: false } });
+  await view.flush();
   const off = view.render();
   assert.equal(find(off, (n) => n.attrs && n.attrs.id === 'dictation-live').attrs.checked, false);
+  // Toggling Composer microphone saves `dictationButton` directly.
+  find(off, (n) => n.attrs && n.attrs.id === 'dictation-button').attrs.onChange({ target: { checked: false } });
+  await view.flush();
+  assert.equal(view.saved.at(-1).dictationButton, false, 'composer mic toggle writes dictationButton');
+  assert.equal(find(view.render(), (n) => n.attrs && n.attrs.id === 'dictation-button').attrs.checked, false);
+  // Language and vocabulary hints save into the app-wide `dictation` record.
   languageInput.attrs.onInput({ target: { value: 'fr' } });
+  await view.flush();
   assert.equal(find(view.render(), (n) => n.attrs && n.attrs.id === 'dictation-language').attrs.value, 'fr',
     'a typed hint stays in the field');
+  assert.equal(view.saved.at(-1).dictation.language, 'fr', 'language is saved in the dictation record');
+  vocabularyInput.attrs.onInput({ target: { value: 'mouaif, SSE' } });
+  await view.flush();
+  assert.equal(view.saved.at(-1).dictation.prompt, 'mouaif, SSE', 'vocabulary hint is saved in the dictation record');
 }
 
 // ---- The preselect rule on its own -------------------------------------

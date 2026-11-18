@@ -6,10 +6,9 @@
 //   * a live timer and level meter while recording, so a silent mic is
 //     obvious before the user waits for a transcription;
 //   * a model picker with a read-only request-shape summary;
-//   * app-wide chat microphone settings, separate from the test-only hints;
-//   * optional language and vocabulary hints;
-//   * the transcript, editable in place (a transcript is a draft, not an
-//     answer), with Copy / Insert in chat / Open in chat.
+//   * app-wide chat microphone and dictation options (composer mic toggle,
+//     live mode, saved language and vocabulary hints);
+//   * a local test recorder + editable transcript with Copy / Insert / Open.
 //
 // The audio is recorded locally and POSTed as base64 to
 // `/api/ai/transcribe`; the page never holds a provider credential
@@ -22,6 +21,10 @@
 import { h, Fragment } from 'preact';
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import { fetchJson, activeProject, appProviders, connectionType, providerDef, saveApp } from '../api.js';
+import {
+  DICTATION_BUTTON_KEY,
+  composerToolsFromApp
+} from './chat/composerTools.js';
 import { nav } from '../router.js';
 import { ModelPickerField } from './ModelPickerField.jsx';
 import { loadPinned, loadRecent, loadRecentFromServer, togglePin,
@@ -68,6 +71,10 @@ export function DictationView() {
   // `dictation` record), default on, and only meaningful in the chat: this page
   // records a take and transcribes it once, on purpose.
   const [live, setLive] = useState(true);
+  // Whether the microphone button is shown in the chat composer (`dictationButton`
+  // app key, default true). Mirrored here from Settings → App defaults so all
+  // dictation controls live in one place.
+  const [dictationButton, setDictationButton] = useState(true);
 
   const [catalogBusy, setCatalogBusy] = useState(true);
   const [catalogError, setCatalogError] = useState('');
@@ -202,11 +209,20 @@ export function DictationView() {
       setCatalogBusy(true);
       setCatalogError('');
       let saved = {};
+      let showButton = true;
       try {
-        const app = await fetchJson('/api/settings');
-        if (app.status === 200 && app.body && app.body.app) saved = app.body.app[APP_KEY] || {};
+      const app = await fetchJson('/api/settings');
+      if (app.status === 200 && app.body && app.body.app) {
+      saved = app.body.app[APP_KEY] || {};
+      showButton = composerToolsFromApp(app.body).dictation;
+      }
       } catch { /* a settings read failure must not block the recorder */ }
-      if (!cancelled) setLive(liveDictationEnabled(saved));
+      if (!cancelled) {
+      setLive(liveDictationEnabled(saved));
+      setDictationButton(showButton);
+      if (typeof saved.language === 'string') setLanguage(saved.language);
+      if (typeof saved.prompt === 'string') setPrompt(saved.prompt);
+      }
 
       let catalog = { models: [], kinds: [], total: 0 };
       try {
@@ -636,6 +652,25 @@ export function DictationView() {
     remember({ live: next });
   }
 
+  // onToggleDictationButton(next) — show or hide the microphone button in the
+  // chat composer (`dictationButton` app key, separate from `dictation`).
+  function onToggleDictationButton(next) {
+    setDictationButton(next);
+    saveApp({ [DICTATION_BUTTON_KEY]: next }).catch(() => {});
+  }
+
+  function onLanguageInput(e) {
+    const val = e.target.value.slice(0, 20);
+    setLanguage(val);
+    remember({ language: val });
+  }
+
+  function onPromptInput(e) {
+    const val = e.target.value.slice(0, 400);
+    setPrompt(val);
+    remember({ prompt: val });
+  }
+
 
   const selectedRow = models.find((m) => m.id === modelId && (m.provider || '') === providerId) || null;
   // Why the selected model is on the list, when its name does not say. Shown
@@ -778,81 +813,100 @@ export function DictationView() {
       )
     ),
 
-    // ---- 2. Chat microphone ----------------------------------------------
+    // ---- 2. Options -------------------------------------------------------
     h('div', { class: 'group' },
-      h('div', { class: 'group__title' }, 'Chat microphone'),
-      h('ul', { class: 'dictation__options' },
-        h('li', null,
-          h('label', { class: 'dictation__option-row', for: 'dictation-live' },
-            h('span', { class: 'dictation__option-body' },
-              h('span', { class: 'dictation__option-title' }, 'Live transcription'),
-              h('span', { class: 'dictation__option-note', id: 'dictation-live-note' },
-                'Fill the chat draft as you speak. Turn off to transcribe after you stop.')
-            ),
-            h('span', { class: 'switch' },
-              h('input', {
-                id: 'dictation-live',
-                type: 'checkbox',
-                checked: live,
-                'aria-describedby': 'dictation-live-note',
-                onChange: (e) => onToggleLive(!!(e.target && e.target.checked))
-              }),
-              h('span', { class: 'switch__track', 'aria-hidden': 'true' },
-                h('span', { class: 'switch__thumb' })
-              )
-            )
-          )
+    h('div', { class: 'group__title' }, 'Options'),
+    h('ul', { class: 'dictation__options' },
+      h('li', null,
+      h('label', { class: 'dictation__option-row', for: 'dictation-button' },
+        h('span', { class: 'dictation__option-body' },
+        h('span', { class: 'dictation__option-title' }, 'Composer microphone'),
+        h('span', { class: 'dictation__option-note', id: 'dictation-button-note' },
+          'Show the microphone button in the chat composer.')
+        ),
+        h('span', { class: 'switch' },
+        h('input', {
+          id: 'dictation-button',
+          type: 'checkbox',
+          checked: dictationButton,
+          'aria-describedby': 'dictation-button-note',
+          onChange: (e) => onToggleDictationButton(!!(e.target && e.target.checked))
+        }),
+        h('span', { class: 'switch__track', 'aria-hidden': 'true' },
+          h('span', { class: 'switch__thumb' })
+        )
         )
       )
+      ),
+      h('li', null,
+      h('label', { class: 'dictation__option-row', for: 'dictation-live' },
+        h('span', { class: 'dictation__option-body' },
+        h('span', { class: 'dictation__option-title' }, 'Live transcription'),
+        h('span', { class: 'dictation__option-note', id: 'dictation-live-note' },
+          'Fill the chat draft as you speak. Turn off to transcribe after you stop.')
+        ),
+        h('span', { class: 'switch' },
+        h('input', {
+          id: 'dictation-live',
+          type: 'checkbox',
+          checked: live,
+          'aria-describedby': 'dictation-live-note',
+          onChange: (e) => onToggleLive(!!(e.target && e.target.checked))
+        }),
+        h('span', { class: 'switch__track', 'aria-hidden': 'true' },
+          h('span', { class: 'switch__thumb' })
+        )
+        )
+      )
+      ),
+      h('li', null,
+      h('div', { class: 'dictation__option-row dictation__option-row--field' },
+        h('label', { class: 'dictation__option-title', for: 'dictation-language' },
+        'Language', h('span', { class: 'dictation__optional' }, 'Optional')),
+        h('input', {
+        class: 'input dictation__option-input',
+        id: 'dictation-language', type: 'text',
+        placeholder: 'Auto-detect',
+        value: language,
+        maxLength: 20,
+        autoCapitalize: 'none',
+        spellCheck: false,
+        'aria-describedby': 'dictation-language-note',
+        onInput: onLanguageInput
+        }),
+        h('span', { class: 'dictation__option-note', id: 'dictation-language-note' },
+        'Leave blank to detect, or enter a language code: en, fr, de, en-US.')
+      )
+      ),
+      h('li', null,
+      h('div', { class: 'dictation__option-row dictation__option-row--field' },
+        h('label', { class: 'dictation__option-title', for: 'dictation-prompt' },
+        'Vocabulary hint', h('span', { class: 'dictation__optional' }, 'Optional')),
+        h('textarea', {
+        class: 'input dictation__option-input',
+        id: 'dictation-prompt',
+        rows: 2,
+        placeholder: 'mouaif, MediaRecorder, SSE…',
+        value: prompt,
+        maxLength: 400,
+        'aria-describedby': 'dictation-prompt-note',
+        onInput: onPromptInput
+        }),
+        h('span', { class: 'dictation__option-note', id: 'dictation-prompt-note' },
+        'Names or technical terms to recognize. Saved for both chat and test recordings.')
+      )
+      )
+    )
     ),
 
     // ---- 3. Test ----------------------------------------------------------
     h('div', { class: 'group' },
-      // The settings above decide what a take *does*, so they are answered
-      // before the microphone is opened: a phone user picks a model once and
-      // records many times.
-      h('div', { class: 'group__title' }, 'Test'),
-      h('p', { class: 'dictation__section-note' },
-        'Record, stop, then transcribe. Nothing reaches a chat unless you tap Insert or Open below.'),
-      h('ul', { class: 'dictation__options dictation__options--test' },
-        h('li', null,
-          h('div', { class: 'dictation__option-row dictation__option-row--field' },
-            h('label', { class: 'dictation__option-title', for: 'dictation-language' },
-              'Language', h('span', { class: 'dictation__optional' }, 'Optional')),
-            h('input', {
-              class: 'input dictation__option-input',
-              id: 'dictation-language', type: 'text',
-              placeholder: 'Auto-detect',
-              value: language,
-              maxLength: 20,
-              autoCapitalize: 'none',
-              spellCheck: false,
-              'aria-describedby': 'dictation-language-note',
-              onInput: (e) => setLanguage(e.target.value.slice(0, 20))
-            }),
-            h('span', { class: 'dictation__option-note', id: 'dictation-language-note' },
-              'Leave blank to detect, or enter a language code: en, fr, de, en-US.')
-          )
-        ),
-        h('li', null,
-          h('div', { class: 'dictation__option-row dictation__option-row--field' },
-            h('label', { class: 'dictation__option-title', for: 'dictation-prompt' },
-              'Vocabulary hint', h('span', { class: 'dictation__optional' }, 'Optional')),
-            h('textarea', {
-              class: 'input dictation__option-input',
-              id: 'dictation-prompt',
-              rows: 2,
-              placeholder: 'mouaif, MediaRecorder, SSE…',
-              value: prompt,
-              maxLength: 400,
-              'aria-describedby': 'dictation-prompt-note',
-              onInput: (e) => setPrompt(e.target.value.slice(0, 400))
-            }),
-            h('span', { class: 'dictation__option-note', id: 'dictation-prompt-note' },
-              'Names or technical terms to recognize. Applies only to this test.')
-          )
-        )
-      ),
+    // The settings above decide what a take *does*, so they are answered
+    // before the microphone is opened: a phone user picks a model once and
+    // records many times.
+    h('div', { class: 'group__title' }, 'Test'),
+    h('p', { class: 'dictation__section-note' },
+      'Record, stop, then transcribe. Nothing reaches a chat unless you tap Insert or Open below.'),
       h('div', { class: 'dictation__card dictation__card--recorder' },
         h('div', { class: 'dictation__clock' },
           h('span', { class: 'dictation__time', 'aria-live': 'polite' }, formatDuration(elapsedMs)),

@@ -233,7 +233,7 @@ function installFixture(data) {
         enterForNewline: true,
         // Remembered on the dictation page, honoured here. Switchable, so the
         // "nothing configured" state can be reached without a reload.
-        dictation: test.dictationChoice,
+        dictation: Object.assign({ language: test.savedLanguage || '', prompt: test.savedPrompt || '' }, test.dictationChoice || {}),
         // Which optional composer tools the row draws. `false` hides one;
         // see docs/features/composer-tool-buttons.md.
         dictationButton: test.composerTools.dictationButton,
@@ -528,10 +528,25 @@ async function main() {
     unpriced.total === '$0.00055',
     'Total pill reads ' + JSON.stringify(unpriced.total));
     check('and the composer got the second transcript too',
-      unpriced.composer === 'This is a dictated sentence about mouaif. Second dictated sentence.');
+    unpriced.composer === 'This is a dictated sentence about mouaif. Second dictated sentence.');
     check('the button does not claim a price either',
-      unpriced.title === 'Added to the composer — review it, then send.');
+    unpriced.title === 'Added to the composer — review it, then send.');
     check('two runs, two upstream calls', await evaluate('dictationTest.runs === 2'));
+
+    // ---- Saved language and vocabulary hint reach the chat request -----
+    await evaluate(`dictationTest.savedLanguage = 'fr'; dictationTest.savedPrompt = 'mouaif, SSE';`);
+    const hintedBefore = await evaluate('dictationTest.transcribeBodies.length');
+    await tap('.chat-view__mic-btn');
+    await waitFor(`document.querySelector('.chat-view__mic-btn').getAttribute('aria-pressed') === 'true'`, 'hinted recording starts');
+    await tap('.chat-view__mic-btn');
+    await waitFor(`dictationTest.transcribeBodies.length === ${hintedBefore + 1} && document.querySelector('.chat-view__mic-btn').getAttribute('aria-pressed') === 'false'`,
+    'hinted transcription lands');
+    check('the composer mic forwards the saved language and vocabulary hint',
+    await evaluate(`(() => {
+      const last = dictationTest.transcribeBodies[${hintedBefore}];
+      return last && last.language === 'fr' && last.prompt === 'mouaif, SSE';
+    })()`));
+    await evaluate(`dictationTest.savedLanguage = ''; dictationTest.savedPrompt = '';`);
 
     // ---- A live take that rotates: several complete recordings -------------
     //
