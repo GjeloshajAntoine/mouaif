@@ -19,6 +19,14 @@ Project-only setting: `mcpApps: { enabled: true }`; UI control in SettingsProjec
 - `transcript.js`, `useChatState.js`: lazy mount on completed MCP result expansion, original result retained; runtime project/chat context bound before mounting. `cards.js`: show authorization summary so the user sees the serving app identity. `SettingsProject.jsx`: project opt-in.
 - Official sources enter through the overview's links. SDK pinned to `2.0.3`, reviewed revision `82221c0c8ce7661efa6771c9d461511b1650495f`; do not confuse package release with extension date `2026-01-26`.
 
+## Startup JS dependency review
+
+Keep the named `AppBridge` import from `@modelcontextprotocol/ext-apps/app-bridge`. In installed ext-apps 2.0.3 this is the only public host bridge entry. The root and `app-with-deps` entries are for the app inside the frame, not smaller host builds. There are no other direct MCP SDK or Zod imports in the frontend source to consolidate with this one.
+
+The published bridge imports `Protocol` from `@modelcontextprotocol/client`, schemas from `@modelcontextprotocol/core`, and Classic `zod/v4` for its own runtime schemas. The installed client and core (2.3.1) also use Classic. `zod/v4/mini` is not a drop-in alias: the bridge constructs schemas with chained `.optional()`, `.describe()` and `.passthrough()` calls that Mini does not provide. The client does not export a dedicated `Protocol` subpath. Private bundle imports, compatibility shims, or stripping schema construction would change what we rely on from the official runtime rather than narrow our public import. Leave the bridge, origin-checked transport and authorization path untouched.
+
+No safe import-only substitution was found. No startup-byte delta was measured; installed dependency sizes do not measure retained startup bytes after tree shaking. If revisiting this for a future SDK version, look for an official lean host entry and compare raw byte totals of the entry and its statically loaded chunk graph, not just the entry filename's size.
+
 ## Testing and landing
 
 Tests: `test-mcp-apps-detection.js`, `test-mcp-apps-host.js`, `test-mcp-apps-ui.mjs`, `test-mcp-apps-e2e.mjs`; fixture `test-mcp-apps-server.js`. The UI test bundles the official App and actual host component with a fake mount API; the host test exercises actual REST gates and the E2E combines both with the real AI runner. Browser checks retain normal site isolation. Docker uses `scripts/Dockerfile.mcp-apps` atop existing `mouaif-app:latest`; phase 0 can also reuse the already-installed `mouaif-track-b-mcp-apps:test` image, copying current source into its isolated container without dependency installation.
