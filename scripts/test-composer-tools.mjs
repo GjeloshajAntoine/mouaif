@@ -119,7 +119,9 @@ check('a hidden status line keeps its span mounted and its errors visible', () =
   assert.match(src, /composerTools\.status \? '' : ' chat-view__status-row--hidden'/);
   assert.match(src, /h\('span', \{ ref: refs\.status, class: 'status chat-view__status'/, 'the span stays mounted');
   const css = read('frontend/src/chat-composer.css');
-  assert.match(css, /\.chat-view__status-row--hidden \.chat-view__status:not\(\[data-state="error"\]\) \{ display: none; \}/);
+  // Errors and busy states survive the switch: dictation's live progress is a
+  // busy line, and on mobile there is no tooltip to replace it.
+  assert.match(css, /\.chat-view__status-row--hidden \.chat-view__status:not\(\[data-state="error"\]\):not\(\[data-state="busy"\]\) \{ display: none; \}/);
   const ui = read('frontend/src/components/SettingsDefaults.jsx');
   assert.ok(ui.includes("id: 'sd-status-bar'"));
   assert.match(ui, /'statusBar', \{ statusBar: v \}/);

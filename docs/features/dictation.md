@@ -51,6 +51,8 @@ The number is resolved server-side with the same pricing table the chat uses, so
 | the provider reported no tokens (`whisper-1` bills per minute and answers with the transcript alone) | `--` |
 | no pricing record for the model anywhere | `--` |
 
+A model picked from a provider's live **transcription** catalog is priced from that row, not only from the chat slice — so a speech-to-text model that exists only in that slice still reports its published rate.
+
 A run taken on the **Dictation page** belongs to no chat and stays point-of-use only. A run whose cost is unknown adds nothing to any total anywhere.
 
 ### Choosing from the list
@@ -71,6 +73,9 @@ A connected provider's catalog is a chat catalog: hundreds of rows, rendered pro
 - **The choice is remembered app-wide**, and written back on every change — including clearing it. That is what makes the composer microphone and a later visit agree with the page.
 - **One unreachable provider does not empty the list.** Its failure is reported with the provider's own message, named as Settings names the connection, and the rows from the providers that did answer are still offered.
 - **Failures name their cause.** A rejected key surfaces the provider's own message with HTTP 401, an unreachable provider is 502, a stalled one is 504 after 60s, and a recording that is too long is 413.
+- **A failed segment of a live take does not strand the take.** The 3-second segment that came back as an error is retired as answered (it contributes no words) and the take still settles on stop, so the transcript already recognised lands in the draft and its price is reported. A `finishing` take cannot be restarted by a tap either: the button stays busy until the last segment has answered.
+- **A transcription is authorised like a chat on the same connection.** The auth header, `api-version` query and attribution headers come from the provider registry (`ENDPOINTS` in `src/ai-endpoints.js`): Azure uses `api-key` plus `?api-version=`, GitHub Copilot exchanges its GitHub token for a Copilot token, OpenRouter sends its referer/title headers, a keyless OpenAI-compatible server (llama.cpp, LM Studio) sends no auth header, and an Ollama connection is addressed at its OpenAI-shaped `/v1` surface.
+- **The status line still reports waiting when it is switched off.** With **Status line under the composer** off, errors *and* `busy` states stay visible — live dictation progress, `Finishing dictation…`, `Transcribing…` — because that line is the only report of work in flight on a phone. Only advisory states (a settled `dictation added`) honour the switch. See [Composer tool buttons](./composer-tool-buttons.md).
 - **Every wait is reported** on the control that was tapped and beside the thing being waited on: a spinner and `aria-busy` on the catalog read-out, the **Transcribe** button, and the composer microphone, with the same words for a screen reader. A model resolve before the microphone opens gets a sentence (`Preparing dictation…`) only after it outlasts 400 ms, since a healthy connection answers inside a frame.
 - **Nothing is auto-sent.** The composer hand-off fills a draft; the dictation page fills the newest chat's draft.
 - **Dictation is not a security boundary or a background service.** It records only while the button says it is recording, and it stops the microphone on unmount.

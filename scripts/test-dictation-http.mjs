@@ -515,6 +515,46 @@ try {
   assert.deepEqual(unpriced.body.usage, { promptTokens: 40, completionTokens: 5 }, 'the OpenAI-shaped report is read');
   assert.equal(unpriced.body.cost.known, false, 'no pricing record anywhere means -- , not $0.00');
   assert.equal(unpriced.body.cost.total, 0);
+  // A live row is priced from the slice it was picked from. `resolveModel` only
+  // folds pricing in from the *chat* catalog, so a speech-to-text model that
+  // exists only in the provider's transcription slice arrived unpriced even
+  // though the provider had published its rates. The row below is seeded into
+  // that slice only, which is the OpenRouter `whisper-1` situation.
+  {
+    const serverShared = require('../src/server-shared.js');
+    const { connectionIdOf } = require('../src/providerConnections.js');
+    const key = serverShared.modelListCacheKey(
+      connectionIdOf({ providerId: 'openai-compatible' }),
+      serverShared.credHashFor('openai-compatible'),
+      'transcription',
+      serverShared.baseUrlForProvider('openai-compatible')
+    );
+    serverShared.MODEL_LIST_CACHE.set(key, {
+      fetchedAt: Date.now(),
+      models: [{
+        id: 'openai/whisper-1',
+        label: 'Whisper 1',
+        outputModalities: ['transcription'],
+        pricing: { inputPer1K: 1, outputPer1K: 0 }
+      }]
+    });
+    upstream.reply = {
+      status: 200,
+      body: { text: 'live row', usage: { type: 'tokens', input_tokens: 1000, output_tokens: 0 } }
+    };
+    const livePriced = await request('/api/ai/transcribe', jsonInit('POST', {
+      projectDir,
+      modelId: 'openai/whisper-1',
+      providerId: 'openai-compatible',
+      audioBase64: audio.toString('base64'),
+      mimeType: 'audio/webm'
+    }));
+    assert.equal(livePriced.status, 200, JSON.stringify(livePriced.body));
+    assert.equal(livePriced.body.cost.known, true, 'the transcription slice publishes the price');
+    assert.equal(livePriced.body.cost.total, 1, 'priced at the catalog row\'s own rates');
+    serverShared.MODEL_LIST_CACHE.delete(key);
+  }
+
   // Put the project back the way the transcription cases above configured it:
   // the failure cases below look up `whisper-1` and the Gemini record, and a
   // missing model is a 404 rather than the failure under test.

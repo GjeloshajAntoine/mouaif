@@ -2329,6 +2329,10 @@ endpointFor,
   COPILOT_MODEL_CATALOG,
   // Copilot token cache clear (OAuth refresher + tests)
   copilotCacheClear,
+  // The per-request Copilot token exchange, shared with the dictation proxy
+  // (src/transcribe.js credentialFor) so both products authenticate a Copilot
+  // connection the same way instead of copying the exchange.
+  exchangeCopilotTokenIfNeeded,
   // exposed for scripts/test-copilot-provider.js
   safeCopilotApiBase,
   // exposed for scripts/test-anthropic-request.js

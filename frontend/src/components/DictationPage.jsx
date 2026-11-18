@@ -22,6 +22,7 @@
 import { h, Fragment } from 'preact';
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import { fetchJson, activeProject, appProviders, connectionType, providerDef, saveApp } from '../api.js';
+import { nav } from '../router.js';
 import { ModelPickerField } from './ModelPickerField.jsx';
 import { loadPinned, loadRecent, loadRecentFromServer, togglePin,
   migrateProjectScopedBookmarks } from './chat/modelPicker.js';
@@ -529,7 +530,7 @@ export function DictationView() {
       });
       if (patched.status !== 200) throw new Error((patched.body && patched.body.error) || ('HTTP ' + patched.status));
       say('Draft filled in "' + (chat.title || chat.id) + '".', 'success', 'transcript');
-      if (open) location.hash = '#/chat/' + encodeURIComponent(chat.id) + '?projectDir=' + encodeURIComponent(dir);
+      if (open) nav('chat/' + encodeURIComponent(chat.id) + '?projectDir=' + encodeURIComponent(dir));
     } catch (e) {
       say((e && e.message) || 'Could not reach the chat.', 'error', 'transcript');
     } finally {
@@ -890,7 +891,7 @@ export function DictationView() {
               'aria-label': 'Transcribe the recording'
             },
               phase === 'transcribe'
-                ? h('span', { class: 'dictation__spinner dictation__spinner--on-accent', 'aria-hidden': 'true' })
+                ? h('span', { class: 'dictation__spinner', 'aria-hidden': 'true' })
                 : null,
               phase === 'transcribe' ? 'Transcribing…' : 'Transcribe')
           )

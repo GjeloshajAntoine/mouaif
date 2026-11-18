@@ -363,10 +363,24 @@ text() {
 const order = Array.from(slots.keys()).sort((a, b) => a - b);
 return joinTranscript(order.map((key) => slots.get(key)));
 },
+// fail(index) — this chunk's request came back as an error.
+//
+// The slot is recorded as answered with no text, which is the honest reading:
+// the words in that chunk are lost, but the request is over. Without it a
+// single failed segment left `pending()` permanently above zero (the slot was
+// never set, so `slots.size` never grew), and because `finishing` is derived
+// from `pending()` the take could never settle: the spinner stayed, the draft
+// was never written and the run's cost was never reported. A failure that is
+// remembered with `failedRef` in the caller, and an answered slot here, are the
+// two different facts — *what* happened, and *whether it is still in flight*.
+fail(index) {
+slots.set(Number(index) || 0, '');
+},
 // pending(issued) — how many chunks were sent but have not been answered.
 // The caller counts what it sent; the store counts what came back, and the
 // difference is what keeps a take from being closed with its last words
-// still in flight.
+// still in flight. A failed chunk counts as answered (`fail`), because its
+// request is over even though its words are not in the transcript.
 pending(issued) {
 return Math.max(0, (Number(issued) || 0) - slots.size);
 },

@@ -240,7 +240,6 @@ function Host() {
           h('div', { class: 'chat-view__composer' },
             h(MicButton, {
               projectDir: '/fixture/project',
-              promptRef: { current: null },
               onTranscript,
               onStatus: (message) => setMicStatus(message),
               onProgress: (message) => setMicStatus(message)

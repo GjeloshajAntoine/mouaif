@@ -281,7 +281,10 @@ function useCase(caseOptions) {
   assert.ok(/settingsDictation: \[DictationView\]/.test(app), 'the route renders the dictation page');
   assert.ok(/\n'inspector', 'settingsDictation',/.test(app), 'the lazy route is wrapped in <Suspense>');
   assert.ok(/settings\/dictation/.test(read('components/SettingsHome.jsx')), 'Settings → App defaults links to the page');
-  assert.ok(/nav\('settings\/dictation'\)/.test(read('components/chat/MicButton.jsx')), 'the composer mic links to the page');
+  // The composer's mic points at the page through its hint (the mic has no
+  // separate link), which is what a first-run tap reads.
+  assert.ok(/Open Settings → App defaults → Dictation/.test(read('components/chat/MicButton.jsx')),
+    'the composer mic names the page it needs');
 }
 
 // ---- First paint, before the catalog resolves ---------------------------

@@ -322,6 +322,25 @@ function defaultPathFor(kind) {
   return '/audio/transcriptions';
 }
 
+// speechBaseUrl(baseUrl) — where the OpenAI-shaped speech endpoints live under
+// an Ollama connection.
+//
+// Ollama's default base URL (`http://127.0.0.1:11434`) is its *native* API root,
+// which has `/api/chat` and `/api/tags` but no `/audio/transcriptions`. The
+// OpenAI-compatible surface is served under `/v1`, which is where every other
+// OpenAI-shaped builder in the app would put the call — so a dictation model on
+// an Ollama connection resolved to `http://127.0.0.1:11434/audio/transcriptions`
+// and got a 404. A base URL that already names a path beyond the origin is left
+// alone: only the bare host needs the `/v1`.
+function speechBaseUrl(baseUrl, provider) {
+  const base = String(baseUrl || '').replace(/\/+$/, '');
+  if (provider !== 'ollama' || !base) return base;
+  try {
+    if (new URL(base).pathname.replace(/\/+$/, '') === '') return base + '/v1';
+  } catch { /* not an absolute URL: fall through and use it as given */ }
+  return base;
+}
+
 // resolveUrl(kind, model) — the upstream URL. A model record may carry
 // `transcription.path` for providers whose endpoint is not the convention
 // (Azure's deployment URL, a self-hosted whisper.cpp server, ...). `{model}`
@@ -336,7 +355,26 @@ function resolveUrl(kind, model) {
   const path = model.transcription && typeof model.transcription.path === 'string' && model.transcription.path
     ? model.transcription.path
     : defaultPathFor(kind);
-  return joinUrl(baseUrl, path.replace('{model}', encodeURIComponent(model.id || '')));
+  const url = joinUrl(speechBaseUrl(baseUrl, model.provider), path.replace('{model}', encodeURIComponent(model.id || '')));
+  // Azure OpenAI requires an `api-version` query parameter on every call. The
+  // chat builder appends it (`buildOpenAIRequest` in src/ai-endpoints.js); the
+  // dictation path had no equivalent, so every Azure transcription was answered
+  // with `400 API version is required`. A version already in the configured
+  // path wins, and the connection's own value is next (see `apiVersionFor`).
+  if (model.provider !== 'azure' || url.indexOf('api-version=') >= 0) return url;
+  const separator = url.indexOf('?') >= 0 ? '&' : '?';
+  return url + separator + 'api-version=' + encodeURIComponent(apiVersionFor(model));
+}
+
+// apiVersionFor(model) — the Azure API version a request is built for. The
+// model's own value first, then the connection's, then the shipped default that
+// src/ai-endpoints.js ENDPOINTS.azure carries. Read through the registry rather
+// than copied, so the two paths cannot drift.
+function apiVersionFor(model) {
+  const explicit = model && typeof model.apiVersion === 'string' ? model.apiVersion.trim() : '';
+  if (explicit) return explicit;
+  const def = require('./ai-endpoints.js').ENDPOINTS.azure;
+  return (def && def.apiVersion) || '2024-10-21';
 }
 
 // ---- multipart/form-data ------------------------------------------------
@@ -460,8 +498,10 @@ function buildTranscribeRequest(options) {
         text: 'The recording is in the language with code "' + language + '". Transcribe it in that language.'
       });
     }
-    const headers = { 'Content-Type': 'application/json' };
-    if (opts.apiKey) headers['Authorization'] = 'Bearer ' + opts.apiKey;
+    const headers = Object.assign(
+    { 'Content-Type': 'application/json' },
+    openAIHeaders(model, opts.apiKey)
+    );
     return { url, method: 'POST', headers, body: Buffer.from(JSON.stringify(body)) };
   }
 
@@ -477,9 +517,75 @@ function buildTranscribeRequest(options) {
   if (language) fields.push({ name: 'language', value: language });
   if (prompt) fields.push({ name: 'prompt', value: prompt });
   const { boundary, body } = buildMultipartBody(fields);
-  const headers = { 'Content-Type': 'multipart/form-data; boundary=' + boundary };
-  if (opts.apiKey) headers['Authorization'] = 'Bearer ' + opts.apiKey;
+  const headers = Object.assign(
+    { 'Content-Type': 'multipart/form-data; boundary=' + boundary },
+    openAIHeaders(model, opts.apiKey)
+  );
   return { url, method: 'POST', headers, body };
+}
+
+// openAIHeaders(model, apiKey) — the auth and provider headers an OpenAI-shaped
+// request carries.
+//
+// A transcription request is a *normal* request to the same connection a chat
+// uses, so it has to be authenticated the same way. Hard-coding
+// `Authorization: Bearer <key>` was right for OpenAI, Groq, Mistral, DeepSeek
+// and OpenRouter, and wrong for the two connections whose auth is not that
+// header:
+//
+//   * Azure OpenAI takes the key in `api-key` (it rejects `Authorization:
+//     Bearer` with key auth — that header is for Entra ID), so every Azure
+//     transcription was a 401.
+//   * GitHub Copilot wants a short-lived Copilot token, not the GitHub OAuth
+//     token the connection stores, so a Copilot transcription was a 401 as
+//     well. The exchange is `copilotCredential` below.
+//
+// The auth shape comes from the registry entry (`ENDPOINTS[provider].authHeader`),
+// which is the single place that decision already lives for chat. The static
+// per-provider headers (Copilot's editor identification, OpenRouter's
+// attribution) ride along for the same reason they do on chat: a provider that
+// requires them answers without them with an error, not a transcript.
+function openAIHeaders(model, apiKey) {
+  const { ENDPOINTS } = require('./ai-endpoints.js');
+  const def = ENDPOINTS[model.provider] || ENDPOINTS['openai-compatible'];
+  const headers = {};
+  const credentialValue = typeof apiKey === 'string' ? apiKey : '';
+  // A keyless OpenAI-compatible connection (llama.cpp, LM Studio) sends no auth
+  // header at all; `Bearer undefined` is worse than nothing.
+  if (credentialValue || !(def && def.keyOptional)) {
+    const authFn = def && typeof def.authHeader === 'function'
+      ? def.authHeader
+      : ENDPOINTS['openai-compatible'].authHeader;
+    Object.assign(headers, authFn(credentialValue));
+  }
+  if (def && def.staticHeaders && typeof def.staticHeaders === 'object') {
+    Object.assign(headers, def.staticHeaders);
+  }
+  if (model.headers && typeof model.headers === 'object') Object.assign(headers, model.headers);
+  return headers;
+}
+
+// credentialFor(model, apiKey) — the credential the request is actually
+// authorised with, asynchronously.
+//
+// The connection stores the *GitHub OAuth* token; `api.githubcopilot.com`
+// expects the short-lived Copilot token derived from it. Chat does that exchange
+// per request (src/ai-endpoints.js `exchangeCopilotTokenIfNeeded`, with an
+// in-process cache); dictation goes through the same function rather than a
+// second copy, so both products authenticate a Copilot connection identically —
+// the raw GitHub token was answered with a 401.
+//
+// Every other connection's credential is used exactly as stored, which is why
+// the HTTP handler awaits this once, before building the request, and the
+// request builders stay synchronous and testable.
+async function credentialFor(model, apiKey) {
+  if (!model || model.provider !== 'github-copilot' || !apiKey) return apiKey;
+  const { exchangeCopilotTokenIfNeeded } = require('./ai-endpoints.js');
+  const ex = await exchangeCopilotTokenIfNeeded(
+    { provider: 'github-copilot', __accessToken: apiKey },
+    { accessToken: apiKey }
+  );
+  return (ex && ex.token) || apiKey;
 }
 
 // extensionFor(mimeType) — the file name extension providers see. Only used
@@ -676,6 +782,7 @@ module.exports = {
   mimeTypeFor,
   audioFormatFor,
   buildTranscribeRequest,
+  credentialFor,
   parseTranscribeResponse,
   usageFromResponse,
   extensionFor,

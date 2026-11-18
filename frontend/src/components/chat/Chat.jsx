@@ -856,7 +856,7 @@ onRefreshCustomActions: refreshCustomActions
         // a picture — and each is *hidden*, not disabled: nothing else about
         // the composer changes.
         composerTools.dictation
-        ? h(MicButton, { projectDir, chatId, promptRef: refs.promptInput, onTranscript, onStatus: onMicStatus, onProgress: onMicProgress })
+        ? h(MicButton, { projectDir, chatId, onTranscript, onStatus: onMicStatus, onProgress: onMicProgress })
         : null,
         composerActions.length
         ? h('span', { class: 'ext-composer-actions' }, composerActions.map((s) => h('button', {

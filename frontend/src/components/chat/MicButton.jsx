@@ -68,7 +68,6 @@
 import { h } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
-import { nav } from '../../router.js';
 import { formatCost } from '../../usage.js';
 import {
 LIVE_CHUNK_MS,
@@ -103,7 +102,7 @@ const NO_MODEL_MESSAGE = 'No dictation model yet — ' + dictationPageHint();
 // remembered model. This button only reads it, so a user who dictates mostly
 // in the chat never has to open the page after the first setup.
 export function MicButton(props) {
-const { language = '', onTranscript, onStatus, onProgress, promptRef } = props;
+const { language = '', onTranscript, onStatus, onProgress } = props;
 const [recording, setRecording] = useState(false);
 const [status, setStatus] = useState('');
 const [statusState, setStatusState] = useState('');
@@ -125,7 +124,12 @@ const [sending, setSending] = useState(false);
 // fact transcribing, which is the loading state appearing exactly when it was
 // needed and nowhere else.
 const [finishing, setFinishing] = useState(false);
-const busy = resolving || sending;
+// `finishing` is part of `busy` for the same reason it is part of the loading
+// state: the take is not closed and its words are not in the draft yet. A tap
+// on the spinning button that started a *new* take would reset `takeRef` and
+// `costRef` under the previous take's last in-flight segment, which then has
+// nowhere to write its answer (and settles nothing).
+const busy = resolving || sending || finishing;
 // Which rendering of the resolve's delay the state actually is: `0` while it is
 // inside `MIC_WAIT_DELAY_MS`, the delay itself once it has outlasted it — the
 // answer to "has this wait been long enough to be worth a word?" (`micResolveNote`'s
@@ -151,16 +155,16 @@ const segmentsRef = useRef(null);
 // take knows must not wait for a re-render to be true.
 //
 //   takeRef      — the transcript so far, one slot per segment index
-//   liveStartRef — where the live region of the draft begins (the caret the
-//                  take started at), so the tail can be rewritten in place
-//   liveBaseRef  — the draft text before that region
 //   issuedRef    — how many segments were sent (vs. answered: see `pending()`)
 //   failedRef    — a segment failed, so the next answer must say so
 //   liveRef      — the per-take flag: live when the user has it on for this
 //                  take (see `start`, which is also where the rotator is built)
+//
+// Where the live tail lands is *not* tracked here. Chat.jsx owns that: it
+// remembers the region its last `live` write claimed (`dictationTailRef`), so a
+// user who types in front of or after the dictation keeps their text; this
+// button hands over the transcript and nothing else.
 const takeRef = useRef(null);
-const liveStartRef = useRef(0);
-const liveBaseRef = useRef('');
 const issuedRef = useRef(0);
 const failedRef = useRef(false);
 const liveRef = useRef(false);
@@ -215,18 +219,6 @@ setStatusState(state || '');
   function clearStopTimer() {
 if (stopTimerRef.current) { clearTimeout(stopTimerRef.current); stopTimerRef.current = null; }
 }
-// liveDraft() — { draft, text, base, caret } for the take in progress.
-//
-// `base` is the draft the user already had, `text` is the transcript so far,
-// and `draft` is the two joined the way Chat.jsx joins a whole transcript: one
-// space, never a newline, so a dictation dropped mid-sentence does not break
-// the paragraph.
-function liveDraft() {
-const base = liveBaseRef.current;
-const text = takeRef.current ? takeRef.current.text() : '';
-const lead = text && base && !/\s$/.test(base) ? ' ' : '';
-return { draft: base + lead + text, text, base: base + lead, caret: (base + lead + text).length };
-}
 // publishLive() — put the current transcript in the draft without closing the
 // turn. `live: true` is what tells the chat view that this write owns a *tail*
 // of the draft and the next one replaces it rather than appending again (see
@@ -235,8 +227,8 @@ return { draft: base + lead + text, text, base: base + lead, caret: (base + lead
 // it settles.
 function publishLive() {
 if (!onTranscript) return;
-const live = liveDraft();
-onTranscript(live.text, {
+const text = takeRef.current ? takeRef.current.text() : '';
+onTranscript(text, {
 live: true,
 model: modelRef.current ? { id: modelRef.current.id, provider: modelRef.current.provider || '' } : null,
 cost: null
@@ -251,7 +243,6 @@ function settleTake(cost) {
 const take = takeRef.current;
 const text = take ? take.text() : '';
 takeRef.current = null;
-liveBaseRef.current = '';
 issuedRef.current = 0;
 failedRef.current = false;
 // The next take starts from zero: this ref accumulates across the segments
@@ -314,7 +305,11 @@ if (out.cost) costRef.current.push(out.cost);
 if (recordingRef.current) publishLive();
 } catch (e) {
 if (!takeRef.current) return;
+// Remember the loss *and* retire the slot: `failedRef` is what the status line
+// reports, `fail(index)` is what keeps the take from waiting on a request that
+// is already over (see createLiveSegments.fail).
 failedRef.current = true;
+takeRef.current.fail(index);
 } finally {
 // A segment's answer ends this segment's request whatever it did — success,
 // failure, or a take that was closed while it was in flight (the early returns
@@ -548,14 +543,6 @@ modelRef.current = resolved.row;
     }
     streamRef.current = stream;
     const mime = pickRecorderMime(win.MediaRecorder, win);
-    // Where the live transcript starts. Captured before the first segment can
-    // arrive: the caret as the user left it when they tapped, which is where a
-    // finished transcript would have landed too.
-    const promptEl = props.promptRef && props.promptRef.current;
-    liveStartRef.current = promptEl && typeof promptEl.selectionStart === 'number'
-    ? promptEl.selectionStart
-    : (promptEl ? promptEl.value.length : 0);
-    liveBaseRef.current = promptEl ? promptEl.value.slice(0, liveStartRef.current) : '';
     issuedRef.current = 0;
     failedRef.current = false;
     costRef.current = [];
@@ -766,11 +753,4 @@ working
 // wording, and so the "go pick one" affordance and the message cannot drift.
 export function dictationPageHint() {
   return 'Open Settings → App defaults → Dictation to pick a dictation model.';
-}
-
-// goDictate() — navigate to the dictation page, which lives under Settings
-// (App defaults) rather than in the bottom tab bar. Exported for the
-// empty-state action; `nav` is the app's one hash writer.
-export function goDictate() {
-  nav('settings/dictation');
 }

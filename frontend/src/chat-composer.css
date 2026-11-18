@@ -1224,10 +1224,18 @@ line-height: 0;
 .chat-view__status[data-state="success"] { color: var(--success); }
 .chat-view__status[data-state="busy"]    { color: var(--accent); }
 /* "Status line under the composer" switched off: drop the text, keep the
-   home-indicator inset so the composer does not sit on the gesture bar.
-   An error still shows — a failed send must never go silent. */
+  home-indicator inset so the composer does not sit on the gesture bar.
+  Two states survive the preference, because a hidden line would otherwise be
+  the only report of work the user is waiting on, and mobile has no `title`
+  tooltip to fall back on:
+  error — a failed send must never go silent;
+  busy  — live dictation, the model resolve and a finished take all write
+        here ("Recording — N words so far…", "Finishing dictation…",
+        "Transcribing…"), and hiding them left a mic that looked idle
+        while it was listening.
+  A settled take's `success` line is advisory, so it does honour the switch. */
 .chat-view__status-row--hidden { padding-top: 0; }
-.chat-view__status-row--hidden .chat-view__status:not([data-state="error"]) { display: none; }
+.chat-view__status-row--hidden .chat-view__status:not([data-state="error"]):not([data-state="busy"]) { display: none; }
 
 .chat-view__image-btn {
   width: var(--tap-sm); height: var(--tap-sm); min-height: var(--tap-sm);

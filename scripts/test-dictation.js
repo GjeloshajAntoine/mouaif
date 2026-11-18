@@ -361,6 +361,89 @@ check('empty and oversized audio are refused with their own codes', () => {
   }), (e) => e.code === 'ETOOLARGE');
 });
 
+check('an Azure connection authenticates with api-key and carries api-version', () => {
+  // Azure rejects `Authorization: Bearer` for key auth and requires an
+  // `api-version` query parameter on every call; before this the dictation
+  // proxy hard-coded the Bearer header and no query, so every Azure
+  // transcription was a 401/400 rather than a transcript.
+  const built = transcribe.buildTranscribeRequest({
+    kind: 'openai-compatible',
+    model: {
+      id: 'whisper',
+      provider: 'azure',
+      baseUrl: 'https://example.openai.azure.com/openai/deployments/whisper',
+      transcription: { path: '/audio/transcriptions' },
+      apiVersion: '2024-10-21'
+    },
+    apiKey: 'azure-key',
+    audio: Buffer.from('abc')
+  });
+  assert.equal(built.url,
+    'https://example.openai.azure.com/openai/deployments/whisper/audio/transcriptions?api-version=2024-10-21');
+  assert.equal(built.headers['api-key'], 'azure-key');
+  assert.equal(built.headers.Authorization, undefined, 'Azure takes api-key, not Bearer');
+  // A version already in the configured path is not appended twice.
+  const pinned = transcribe.buildTranscribeRequest({
+    kind: 'openai-compatible',
+    model: {
+      id: 'whisper', provider: 'azure',
+      baseUrl: 'https://example.openai.azure.com/openai/deployments/whisper',
+      transcription: { path: '/audio/transcriptions?api-version=2023-01-01' }
+    },
+    apiKey: 'azure-key',
+    audio: Buffer.from('abc')
+  });
+  assert.equal(pinned.url.indexOf('api-version='), pinned.url.lastIndexOf('api-version='));
+});
+
+check('an Ollama connection is transcribed at its OpenAI-shaped /v1 surface', () => {
+  // Ollama's default base URL is its native API root (no /v1), which has no
+  // /audio/transcriptions at all — the request used to 404 on the bare host.
+  const built = transcribe.buildTranscribeRequest({
+    kind: 'openai-compatible',
+    model: { id: 'whisper', provider: 'ollama', baseUrl: 'http://127.0.0.1:11434' },
+    audio: Buffer.from('abc')
+  });
+  assert.equal(built.url, 'http://127.0.0.1:11434/v1/audio/transcriptions');
+  assert.equal(built.headers.Authorization, undefined, 'Ollama takes no credential');
+  // A base URL that already names a path is used as it is.
+  const explicit = transcribe.buildTranscribeRequest({
+    kind: 'openai-compatible',
+    model: { id: 'whisper', provider: 'ollama', baseUrl: 'http://host:11434/v1' },
+    audio: Buffer.from('abc')
+  });
+  assert.equal(explicit.url, 'http://host:11434/v1/audio/transcriptions');
+});
+
+check('an OpenRouter transcription carries the attribution headers', () => {
+  // A chat request to OpenRouter sends HTTP-Referer and the title headers; a
+  // transcription to the same connection has to look like the same client.
+  const built = transcribe.buildTranscribeRequest({
+    kind: 'openai-compatible',
+    model: { id: 'openai/whisper-1', provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' },
+    apiKey: 'sk-or-test',
+    audio: Buffer.from('abc')
+  });
+  assert.equal(built.headers.Authorization, 'Bearer sk-or-test');
+  assert.equal(built.headers['X-OpenRouter-Title'], 'mouaif');
+});
+
+check('a keyless OpenAI-compatible connection sends no auth header', () => {
+  const built = transcribe.buildTranscribeRequest({
+    kind: 'openai-compatible',
+    model: { id: 'whisper', provider: 'openai-compatible', baseUrl: 'http://127.0.0.1:8080/v1' },
+    audio: Buffer.from('abc')
+  });
+  assert.equal(built.headers.Authorization, undefined);
+});
+
+checkAsync('a Copilot connection is authorised with the exchanged Copilot token', async () => {
+  // The connection stores a GitHub OAuth token; api.githubcopilot.com wants the
+  // short-lived Copilot token. `credentialFor` is the one place dictation asks
+  // for that, and it is a no-op for every other provider.
+  assert.equal(await transcribe.credentialFor({ provider: 'groq' }, 'sk-test'), 'sk-test');
+});
+
 check('the Gemini request is inline JSON on the per-model action path', () => {
   const built = transcribe.buildTranscribeRequest({
     kind: 'gemini',
@@ -678,6 +761,17 @@ try { fs.rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ 
     assert.equal(take.text(), 'first words second words third words');
     assert.equal(take.pending(3), 0);
     assert.equal(take.answered(), 3);
+    // A failed chunk is answered with no text: its request is over, so the
+    // take must be able to settle. Before `fail()` the slot was never set and
+    // one transient failure kept `pending()` above zero forever, which held
+    // the take's `finishing` state and its spinner open with no way out.
+    const failing = dictation.createLiveSegments();
+    failing.set(0, 'first words');
+    assert.equal(failing.pending(2), 1);
+    failing.fail(1);
+    assert.equal(failing.pending(2), 0, 'a failed chunk is no longer in flight');
+    assert.equal(failing.answered(), 2);
+    assert.equal(failing.text(), 'first words', 'a failed chunk contributes no words');
     // Re-setting an index (a retry of the same chunk) replaces it rather than
     // appending a second copy.
     take.set(1, 'second words again');

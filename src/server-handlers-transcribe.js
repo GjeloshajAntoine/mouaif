@@ -313,6 +313,16 @@ async function handleTranscribe(req, res, parsed) {
         outputModalities: cached.outputModalities,
         kind: cached.kind
       });
+      // Price the run from the catalog row it was picked from. `resolveModel`
+      // only folds pricing in from the *chat* slice, so a speech-to-text model
+      // that exists only in the `transcription` slice (`openai/whisper-1` and
+      // the rest of OpenRouter's speech-to-text list) arrived with no pricing
+      // and was reported as an unknown cost even though the provider had
+      // published its rates. A model that already carries pricing keeps it —
+      // a project record's own rates are the most specific answer.
+      if (!model.pricing && cached.pricing && typeof cached.pricing === 'object') {
+        model = Object.assign({}, model, { pricing: cached.pricing });
+      }
     }
     // The picker's own decision wins when it is on the request: it read the
     // capability report directly and the user chose the model on that basis.
@@ -320,12 +330,21 @@ async function handleTranscribe(req, res, parsed) {
 
     const kind = transcribe.kindForModel(model);
     const descriptor = model.transcription && typeof model.transcription === 'object' ? model.transcription : {};
+    // The credential the *request* needs, not necessarily the stored one: a
+    // Copilot connection stores a GitHub OAuth token and is authorised with a
+    // short-lived Copilot token derived from it (transcribe.credentialFor).
+    let apiKey;
+    try {
+    apiKey = await transcribe.credentialFor(model, credentialForProvider(connectionIdOf(model)));
+    } catch (e) {
+    return sendJSON(res, statusFor(e.code || 'ENOAUTH'), { error: e.message, code: e.code || 'ENOAUTH' });
+    }
     let request;
     try {
-      request = transcribe.buildTranscribeRequest({
-        kind,
-        model,
-        apiKey: credentialForProvider(connectionIdOf(model)),
+    request = transcribe.buildTranscribeRequest({
+      kind,
+      model,
+      apiKey,
         audio: decoded.audio,
         mimeType: body.mimeType || transcribe.mimeTypeFor(body.filename),
         filename: body.filename,
