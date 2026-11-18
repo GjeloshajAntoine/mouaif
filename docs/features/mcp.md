@@ -17,18 +17,31 @@ Every MCP server can be configured in one of two scopes:
 
 A project sees the combination of both scopes, with project-level entries overriding global entries with the same name.
 
-The two scopes can be managed from Settings:
+Where you open MCP settings determines where new servers are saved. Adding, importing, and installing servers all use that same destination:
 
-- **Settings → App defaults → MCP servers** (`#/settings/mcp`) — the app-wide list, available in every project. No project is needed; Start/Stop work without one (the session lives in the shared `app` context and is reachable from every chat). A **Project servers** row at the bottom deep-links into a project's list by path. Tool-call permissions (the app-level gate) are deliberately *not* edited here — they live with the other tool checkboxes in **Settings → This project → Tools** and the chat tools card, so this page manages servers only and never shows a permission control that could be mistaken for a per-server toggle.
-- **Settings → This project → MCP servers** (under **More settings**; `#/settings/mcp?projectDir=…`) — the single per-project entry point. It shows the merged server list (app entries first, each marked with an **app** / **project** badge, and **sorted alphabetically by name** within each scope group) with compact, edge-to-edge rows that match the Agents list: status and tool count, inline lifecycle actions, and a link to the server editor (`#/settings/mcp/<id>?projectDir=…`). Per-server and shared-gate authorization live in **Settings → This project → Tools** (the MCP rows of the tool tree) and the per-tool layer lives in the server editor; see Authorization below.
+- **Settings → App defaults → MCP servers** (`#/settings/mcp`) — manages app-wide servers, the app-wide default MCP permission (`Off / Ask / Allow`), batch lifecycle (**Start all** / **Stop all**), search/status filtering, **Import JSON** / **Copy JSON**, and inline discovered-tool drawers.
+- **Settings → This project → MCP servers** (`#/settings/mcp?projectDir=…`) — the project's single MCP control center. It combines:
+   - **Quick actions** to **Browse store**, **+ Add server**, **Import JSON** (paste Claude Desktop / Cursor `mcpServers`, VS Code `servers`, `.mcp.json`, or a single server object), and **Copy JSON** (secret-redacted snippet).
+   - **Default MCP permission** (`Off / Ask / Allow`) for the project.
+   - **Server cards** (app entries first, then project entries, sorted alphabetically within each scope) showing scope, transport, OAuth / configured-key badges, command or URL summary, per-server `Off / Ask / Allow` permission with **Reset**, inline expandable **tools drawer** with per-tool `Inherit / Off / Ask / Allow` overrides, **Start / Restart / Stop / ↻ / Logs** controls, and **Start all / Stop all** plus live search and status filter chips.
+   - **On-the-fly MCP app** fold to build or import a single-file interactive HTML/JS view for the project.
 
-Each list row carries its lifecycle controls (**Start** / **Restart**, **Stop**, **↻** refresh on a ready server). There is no separate **Enabled** switch — the per-server authorization mode is the enable signal: `off` disables a server (never startable, tools hidden), anything else leaves it enabled (startable on demand). **Start** / **Restart** is available for any enabled server that isn't already starting or mid-action. Feedback for those actions is **inline on the row**: an in-flight action shows a neutral "starting…" / "refreshing…" line under the buttons, and a failure shows the typed error there with a next step ("tap the row to check the command/URL, then try again") — errors never land in a page-level status line away from the row that caused them. A server-side `errored` status renders the same slot with the typed code and a retry hint.
+Each server card carries its lifecycle controls (**Start** / **Restart**, **Stop**, **↻** refresh on a ready server, and **Logs** when stderr output is buffered). There is no separate **Enabled** switch — the per-server authorization mode is the enable signal: `off` disables a server (never startable, tools hidden), anything else leaves it enabled (startable on demand). Feedback for lifecycle actions stays **inline on the card**, with a **Details** button opening the full error and stderr modal.
+
+### Importing or exporting MCP JSON
+
+Tap **Import JSON** on the MCP page (or **Fill from JSON** when adding a single server) to paste standard configurations directly:
+
+- `{ "mcpServers": { "name": { "command": "npx", "args": [...] } } }` (Claude Desktop, Cursor, Windsurf)
+- `{ "servers": { ... } }` or `{ "servers": [ ... ] }` (VS Code, mouaif `.mcp.json`)
+- A single server object or a `"name": { ... }` snippet
+
+The sheet previews every parsed server, counts environment/header keys, and can optionally start imported servers immediately to discover their tools. Imports are saved to the app or project according to where you opened the MCP page. **Copy JSON** on the list or inside the server editor copies a clean `mcpServers` template with write-only secret values replaced by `<KEY_NAME>` placeholders.
 
 ### Adding a server
 
-1. Open the MCP servers page for the scope you want (the **+** button creates in that scope; the editor also shows an **App / This project** segmented control).
-2. Tap **+** to add a server. Fill in:
-   - **Scope** — *App (all projects)* or *This project*. Fixed at creation; delete and re-add to move a server.
+1. Open **Settings → App defaults → MCP servers** to add a shared server, or **This project → MCP servers** to add a project-only server.
+2. Tap **+ Add server**. Fill in:
    - **Name** — a short label (e.g. `filesystem`).
    - **Transport** — `Stdio` for a local child process, `HTTP` for an MCP Streamable HTTP endpoint, or `SSE (legacy)` for a server that only speaks the older HTTP+SSE transport.
    - **Command** — stdio only; the executable to spawn (e.g. `node`).
@@ -39,7 +52,7 @@ Each list row carries its lifecycle controls (**Start** / **Restart**, **Stop**,
    - **HTTP headers** — HTTP only; one `Name: value` or `Name=value` per line. Values are write-only in the API and UI so bearer tokens are not echoed back. With OAuth enabled, a manual `Authorization` header is ignored.
    - **Working directory** — stdio only; optional, relative to the project. Resolved against the project root; anything outside the project is rejected with `EOUTSIDE_PROJECT`. For an app-wide server started without a project context, a relative cwd resolves against the `mouaif` process cwd.
    - **Configured keys** — under Environment and HTTP headers, the editor lists the stored key names (values are never shown). Save replaces the whole set: leave the field blank to keep every key, type values to replace all of them (the line turns amber and says so), or tap **Clear all** to remove them. **Clear all** is a pending change with **Undo** until you save. Text with no valid `KEY=value` / `Name: value` line is rejected, so a typo cannot wipe the stored keys.
-3. Tap **Save**. The editor stays open and confirms the save (a new server opens its own editor), so OAuth sign-in and the configured-key list are right there. Go back to the list and tap **Start** on the row to spawn the child and discover tools. Saving stops a running server, so the next start uses the new settings.
+3. Tap **Save**. The editor stays open and confirms the save (a new server opens its own editor), showing a live **Runtime & tools** card at the top so you can sign in with OAuth, tap **Start / Test** right in the editor, inspect stderr logs, set the server's project permission, and filter or override its discovered tools without leaving the page. Saving stops a running server, so the next start uses the new settings.
 
 Configured servers are **enabled by default and start on demand** — there is no separate **Enabled** flag; the per-server authorization mode is the gate (`off` = disabled, anything else = enabled). Opening a chat no longer auto-starts a server. A server starts the first time the model calls one of its tools (transparent on-demand start), or when you tap Start/reload. Once running it advertises its tools until you Stop it or restart `mouaif`.
 
@@ -93,12 +106,12 @@ The app store has no server registry, so the app layer carries only the single s
 | `allowlist` | Calls whose summary matches an allowlist regex run without prompting. The rest fall through to `ask`. Allowlist patterns are edited from the raw project file / app store — there is no dedicated textarea in the UI. |
 | `allow` | Every covered call is auto-approved until the user flips the mode back. |
 
-The Settings UI mirrors the layering everywhere the tool tree appears:
+The Settings UI mirrors the layering everywhere MCP permissions appear:
 
-- **Chat tools card** — the transcript's Tools card shows one **Off / Ask / Allow** segment per configured MCP server. The segment shows the *effective* mode (the per-server override, or the gate when there is none); picking a mode writes `authorization.servers.<slug>`. Each server row's checkbox flips all its tools in the per-chat filter at once, and the leaves toggle single tools. The compact UI does not expose an override-reset button; clear an override by setting its `servers.<slug>` value to `null` in `.mcp.json`.
-- **Settings → This project → Tools** — the same tree: each server row carries its Off/Ask/Allow override segment. The row description states whether the mode is an override or inherited (`override: ask` / `default (ask)`). Each server row's checkbox is that override's Off ↔ Ask shortcut. Auto-approve patterns set in the project file are still honored, but project-level allowlists have no textarea here anymore — edit them from the raw `.mcp.json` / `.mouaif.json`.
-- **App-level gate** — the fallback mode (+ Auto-approve list) for every project without its own gate is persisted via `PUT /api/tools/authorization` with `{ scope: 'app', mcp: { mode?, allowlist? } }` and read with `GET /api/tools/authorization?scope=app`. It has no dedicated editor page; project permission rows live in **Settings → This project → Tools**.
-- **Server editor** (`#/settings/mcp/<id>`) — the per-tool layer as an **Inherit / Off / Ask / Allow** select under **Discovered tools** (project-scoped servers only).
+- **Settings → This project → MCP servers** (`#/settings/mcp?projectDir=…`) — manages every layer in one place: the project's **Default MCP permission** (`Off / Ask / Allow`), each server card's **Off / Ask / Allow** override (with **Reset** when overridden), and each server's inline expandable **tools drawer** with per-tool **Inherit / Off / Ask / Allow** selects.
+- **Settings → App defaults → MCP servers** (`#/settings/mcp`) — edits the **App-wide MCP permission** (`Off / Ask / Allow`), which acts as the fallback for every project without its own rule (`GET/PUT /api/tools/authorization?scope=app`).
+- **Server editor** (`#/settings/mcp/<id>`) — exposes the server's live **Runtime & tools** controls, its project permission (`Off / Ask / Allow` + **Reset** when opened with a project), and its searchable **Discovered tools** list (for both app-scoped and project-scoped servers; per-tool `Inherit / Off / Ask / Allow` overrides appear whenever a project is in scope).
+- **Settings → This project → Tools** & **Chat tools card** — mirror the same per-server `Off / Ask / Allow` segments alongside native tools; in a chat, picks apply to that chat only (`scope: 'chat'`).
 
 The rows write through `PUT /api/tools/authorization` with `{ projectDir, mcp: { mode?, servers?, tools? } }`; the app row writes `{ scope: 'app', mcp: { mode?, allowlist? } }`. A `null` value in a `servers` / `tools` map clears that override so the next layer up applies. `GET /api/tools/authorization?scope=app` reads the app-level gate on its own.
 

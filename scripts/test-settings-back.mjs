@@ -136,6 +136,7 @@ function harness(globals) {
     Fragment: 'fragment', ToolTree: 'tree', McpAuthSeg: 'seg', ToolAuthSeg: 'seg',
     TOOL_MODE_CHOICES: [], ASK_USER_MODE_CHOICES: [], segMode: (m) => m,
     AgentFilePicker: 'picker', WebpreviewModal: 'modal', PreviewUrlPrompt: 'prompt',
+    ToolViewEditor: 'tool-view-editor', normalizeToolView: (v) => v || { enabled: false, groups: [] }, toolViewSummary: () => '',
     projectsReload: { value: 0 }, getProjectStorage() {}, setProjectStorage() {}, requestWebpreview() {},
     sectionIcon: () => null, toolModeSegs: () => [], shortDesc: () => '',
     fetchJson: async () => ({ status: 200, body: {} })
@@ -197,9 +198,13 @@ function harness(globals) {
   const h = harness({
     activeProject: { value: { dir: '' } }, setActiveProject() {}, nav() {},
     Fragment: 'fragment', McpErrorModal: 'modal', InstantMcpApp: 'instant-app',
-    fetchJson: async () => ({ status: 200, body: { servers: [] } })
+    McpJsonImportSheet: 'import-sheet',
+    fetchJson: async () => ({ status: 200, body: { servers: [], projects: [], mcp: { mode: 'ask', servers: {}, tools: {} } } })
   });
+  h.evalFile('components/settings/projectQS.js');
   h.evalFile('components/settings/projectNavigation.js');
+  h.evalFile('components/settings/toolAuth.js');
+  h.evalFile('components/settings/mcpJsonImport.js');
   h.evalFile('components/SettingsMcp.jsx');
   const project = h.renderView('SettingsMcpView', { projectDir: PROJECT, chatId: CHAT, from: FROM });
   const projectBack = project.nodes.find((n) => n.attrs.class === 'view-back');

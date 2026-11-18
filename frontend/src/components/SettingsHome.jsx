@@ -64,24 +64,24 @@ export function SettingsHomeView() {
         rowLi('settings/notifications', 'Notifications', { sub: 'questions, approvals & completion' }),
         rowLi('settings/themes', 'Themes', { sub: 'colours, CSS & JS effects' }),
         rowLi('settings/extensions', 'Extensions', { sub: 'hooks, and files that add hooks, UI & a server' }),
-        rowLi('settings/mcp', 'MCP servers', { sub: 'servers; permissions live in project Tools' }),
+        rowLi('settings/mcp', 'MCP servers', { sub: 'app-wide servers, store & default permission' }),
         rowLi('settings/about', 'About & reset', { sub: 'storage · danger zone' })
       )
-    ),
-    // ---- This project: settings stored with the project. Header names the
-    // project so the scope is concrete. Rows describe the setting; the
-    // project page itself explains how each one relates to the app layer.
-    h('div', { class: 'group' },
+      ),
+      // ---- This project: settings stored with the project. Header names the
+      // project so the scope is concrete. Rows describe the setting; the
+      // project page itself explains how each one relates to the app layer.
+      h('div', { class: 'group' },
       h('div', { class: 'group__title' },
         'This project',
         h('span', { class: 'group__title-note' }, projectName || projectDir || 'none selected')
       ),
       projectDir
         ? h('ul', { class: 'group__list' },
-            rowLi('settings/project' + projectQS, 'Project settings', { sub: 'prompt style, tools, agents' }),
-            rowLi('settings/mcp' + projectQS, 'MCP servers', { sub: 'app servers + this project\'s own' }),
-            rowLi('settings/prompts' + projectQS, 'Custom prompts', { sub: 'system prompts for this project' })
-          )
+          rowLi('settings/project' + projectQS, 'Project settings', { sub: 'prompt style, tools, agents' }),
+          rowLi('settings/mcp' + projectQS, 'MCP servers', { sub: 'servers, permissions, tools & apps' }),
+          rowLi('settings/prompts' + projectQS, 'Custom prompts', { sub: 'system prompts for this project' })
+        )
         : h('p', { class: 'hint hint--compact settings-home__empty' },
             'Open a chat or pick a project first, then this project\'s settings (prompt style, tools, MCP servers, custom prompts) show up here.')
     ),

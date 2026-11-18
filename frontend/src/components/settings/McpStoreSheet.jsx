@@ -51,7 +51,7 @@ export function McpStoreSheet(props) {
   const [optionKey, setOptionKey] = useState(firstOk ? firstOk.key : '');
   const [values, setValues] = useState({});
   const [name, setName] = useState(friendlyName(entry));
-  const [scope, setScope] = useState(projectDir ? 'project' : 'app');
+  const scope = projectDir ? 'project' : 'app';
   const option = options.find((o) => o.key === optionKey) || null;
   const needsBearer = !!option && option.fields.some((f) => f.kind === 'header' && f.name.toLowerCase() === 'authorization');
   // Hosted servers without a declared key usually sign in with OAuth (the
@@ -156,20 +156,9 @@ export function McpStoreSheet(props) {
     );
   }
 
-  const scopeSeg = projectDir
-    ? h('div', { class: 'mcps-sheet__section' },
-        h('div', { class: 'mcps-sheet__label' }, 'Install for'),
-        h('div', { class: 'seg mcps-seg', role: 'radiogroup', 'aria-label': 'Install for' },
-          [['project', 'This project'], ['app', 'All projects']].map(([v, label]) =>
-            h('label', { key: v, class: 'seg__item' + (scope === v ? ' seg__item--on' : '') },
-              h('input', { type: 'radio', name: 'mcps-scope', value: v, checked: scope === v, onChange: () => setScope(v) }),
-              h('span', { class: 'seg__pill' }, label)))
-        ),
-        h('span', { class: 'hint hint--compact mcps-sheet__hint' }, scope === 'project'
-          ? 'Saved in this project\'s .mcp.json (secret values included — review before committing).'
-          : 'Saved in the app, available in every project.')
-      )
-    : null;
+  const installHint = h('p', { class: 'hint hint--compact mcps-sheet__hint' }, projectDir
+    ? 'Installed in this project. Review secrets before committing .mcp.json.'
+    : 'Installed in App defaults and available in every project.');
 
   const runtimeNeed = option && option.kind === 'local' ? RUNTIME_NEED[option.command] : '';
 
@@ -251,7 +240,7 @@ export function McpStoreSheet(props) {
               optional.map(fieldRow)
             )
           : null,
-        option ? scopeSeg : null
+        option ? installHint : null
       );
 
   const foot = created

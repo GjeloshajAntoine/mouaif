@@ -6,7 +6,7 @@ import './instantMcpApp.css';
 
 const MAX_SOURCE_BYTES = 512 * 1024;
 
-export function InstantMcpApp({ projectDir, onImported }) {
+export function InstantMcpApp({ projectDir, embedded = false, onImported }) {
   const [mode, setMode] = useState('request');
   const [name, setName] = useState('');
   const [request, setRequest] = useState('');
@@ -50,8 +50,8 @@ export function InstantMcpApp({ projectDir, onImported }) {
   }
 
   const id = 'instant-mcp-app';
-  return h('form', { class: 'group instant-mcp-app', onSubmit: submit, 'aria-label': 'On-the-fly MCP app' },
-    h('h3', { class: 'group__title' }, 'On-the-fly app'),
+  return h('form', { class: (embedded ? '' : 'group ') + 'instant-mcp-app' + (embedded ? ' instant-mcp-app--embedded' : ''), onSubmit: submit, 'aria-label': 'On-the-fly MCP app' },
+    embedded ? null : h('h3', { class: 'group__title' }, 'On-the-fly app'),
     h('p', { class: 'hint' }, 'Build from a request in a separate development chat, or import one HTML/browser-JS file. No server project or install needed.'),
     h('label', { class: 'label', for: id + '-mode' }, 'Create from'),
     h('select', { class: 'input', id: id + '-mode', value: mode, disabled: busy, onChange: event => { setMode(event.target.value); setStatus(''); } },
