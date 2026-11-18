@@ -124,10 +124,21 @@ export default defineConfig({
         // chat view only uses it when the file editor overlay is opened,
         // so a named manual chunk lets the browser cache it separately
         // and keeps the entry under the 500 kB warning line.
+        //
+        // The MCP app bridge and its Zod schemas are split the same way, as
+        // two eager chunks: they are still statically imported, so Vite
+        // preloads them with `<link rel="modulepreload">` next to the entry
+        // (no lazy loading, no change to what runs at startup). They are
+        // ~212 kB of starter-tool code that only changes when the pinned
+        // SDK changes, so keeping them out of `index-*.js` both shrinks the
+        // file every UI edit re-downloads and lets that vendor code stay
+        // cached across UI builds. See docs/features/frontend-js-size.md.
         manualChunks(id) {
-          if (id.includes('node_modules/@codemirror') || id.includes('node_modules/codemirror') || id.includes('node_modules/@lezer')) {
-            return 'codemirror';
-          }
+        if (id.includes('node_modules/@codemirror') || id.includes('node_modules/codemirror') || id.includes('node_modules/@lezer')) {
+        return 'codemirror';
+        }
+        if (id.includes('node_modules/@modelcontextprotocol')) return 'mcp-sdk';
+        if (id.includes('node_modules/zod')) return 'zod';
         }
       }
     }
