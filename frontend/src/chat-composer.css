@@ -2839,7 +2839,9 @@ position: static;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  row-gap: 2px;
+  column-gap: 8px;
   padding: 3px 8px;
   background: var(--surface-2);
   border-top: 1px solid var(--border);
@@ -2882,6 +2884,182 @@ position: static;
   color: var(--on-accent);
   outline: 0;
 }
+}
+/* ---- Web preview design loop: prompt bar, auto, compare ------------- */
+/* Footer: controls on one row, the metadata line below them. */
+.wp__foot .wp__foot-meta { order: 9; flex-basis: 100%; }
+.wp__foot .wp__open-link { margin-inline-start: auto; }
+/* Footer toggles reuse the mode buttons, framed on their own. */
+.wp__toggle {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.wp__toggle.wp__mode-btn--on { border-color: var(--accent); }
+/* Prompt bar: the last row of the sheet, above the home indicator. */
+.wp-prompt {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+.wp-prompt { flex-wrap: wrap; }
+.wp-prompt__error {
+  flex: 1 0 100%;
+  font-size: 0.74rem;
+  color: var(--danger, #c0392b);
+}
+.wp-prompt__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 32px;
+  max-height: 96px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 16px; /* no iOS zoom on focus */
+  line-height: 1.25;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  resize: none;
+}
+.wp-prompt__input:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.wp-prompt__working {
+  flex: 0 0 auto;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.wp-prompt__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: wp-pulse 1s ease-in-out infinite alternate;
+}
+.wp-prompt__send {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.wp-prompt__send:disabled { opacity: 0.4; cursor: default; }
+@keyframes wp-pulse { from { opacity: 0.35; } to { opacity: 1; } }
+/* Before / after compare. */
+.wp-cmp {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  max-height: 100%;
+  padding: 6px;
+  box-sizing: border-box;
+}
+.wp-cmp__picks {
+  display: flex;
+  gap: 4px;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.wp-cmp__pick {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 0.68rem;
+  color: var(--fg-soft);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.wp-cmp__pick--on { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
+.wp-cmp__stage {
+  position: relative;
+  min-height: 0;
+  width: min(100%, 26rem);
+  flex: 0 1 auto;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: #fff;
+}
+.wp-cmp__img {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+}
+.wp-cmp__img--before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+.wp-cmp__line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.wp-cmp__tag {
+  position: absolute;
+  top: 4px;
+  padding: 1px 6px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 999px;
+  pointer-events: none;
+}
+.wp-cmp__tag--before { left: 4px; }
+.wp-cmp__tag--after { right: 4px; }
+.wp-cmp__range { width: min(100%, 24rem); accent-color: var(--accent); }
+/* Dock: a working dot while the agent runs, a pulse when it updates. */
+.webpreview-dock__working {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg);
+  animation: wp-pulse 1s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+.webpreview-dock--pulse .webpreview-dock__image,
+.webpreview-dock--pulse .webpreview-dock__live {
+  animation: wp-updated 1.2s ease-out;
+}
+@keyframes wp-updated {
+  0% { box-shadow: 0 0 0 3px var(--accent); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wp-prompt__dot, .webpreview-dock__working, .webpreview-dock--pulse .webpreview-dock__image,
+  .webpreview-dock--pulse .webpreview-dock__live { animation: none; }
 }
 /* ---- Web preview URL prompt ---------------------------------------- */
 /* Small overlay asking for a URL to preview. Reuses the web-preview

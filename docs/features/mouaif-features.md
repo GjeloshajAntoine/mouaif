@@ -130,6 +130,7 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Progress tool](progress-tool.md) — a live progress bar for long operations.
 - [Legacy progress tool](legacy-progress-tool.md) — compatibility for older `report_progress` calls.
 - [Web preview tool](webpreview.md) — a phone-sized screenshot of a page above the composer.
+- [Preview design loop](preview-design-loop.md) — prompt from the preview viewer, auto-refresh after each reply, before/after compare.
 - [Web preview page](webpreview-project-page.md) — capture and view a URL from project settings.
 - [Local preview proxy](local-preview-proxy.md) — frame a dev server on the machine running mouaif, from any device.
 - [Subagent orchestration](subagent-tools.md) — background handles, parent steering/cancellation and turn-scoped sibling handoffs.

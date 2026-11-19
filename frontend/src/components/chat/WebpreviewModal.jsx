@@ -24,12 +24,18 @@
 // Props:
 //   preview     { url, title, thumbnail, width, height, sizeBytes, capturedAt, viewport }
 //   onClose     () => void
+//   working     bool — an agent turn is running (prompt bar shows it)
+//   onPrompt    (text) => bool — send a chat message without leaving the viewer
+//   autoRefresh, onAutoRefreshChange — reload/recapture after each turn
 //   onRecapture (viewport?) => void  — wired by ChatView to re-run the
 //                               capture at the chosen resolution. `viewport`
 //                               is a preset id or a 'WIDTHxHEIGHT' string.
 import { h } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useModal } from '../../hooks/useModal.js';
+import { getHistory, subscribeReload } from './webpreviewState.js';
+import { PreviewCompare } from './PreviewCompare.jsx';
+import { PreviewPromptBar } from './PreviewPromptBar.jsx';
 import { FRAME_ALLOW, frameScale as fitScale, frameSource, isLivePayload, previewProxyPath, viewportDims } from './webpreviewFrame.js';
 // Keep this small list aligned with VIEWPORTS in src/tools/webpreview.js.
 const VIEWPORT_PRESETS = [
@@ -73,7 +79,7 @@ function SizeSelect({ value, onChange, busy }) {
   );
 }
 
-export function WebpreviewModal({ preview, onClose, onRecapture }) {
+export function WebpreviewModal({ preview, onClose, onRecapture, working, onPrompt, autoRefresh, onAutoRefreshChange }) {
   // One value is enough: a preset id or a custom WIDTHxHEIGHT string.
   const initialViewport = viewportValue(preview && preview.viewport);
   const initialCustomSize = customSizeFromViewport(initialViewport, preview);
@@ -84,6 +90,10 @@ export function WebpreviewModal({ preview, onClose, onRecapture }) {
   // An agent-requested live preview opens live; otherwise the stored choice.
   const [viewMode, setViewModeState] = useState(() => (isLivePayload(preview) ? 'live' : readViewMode()));
   const [frameKey, setFrameKey] = useState(0);
+  // An agent turn ending with auto-refresh on reloads the Live frame in place.
+  useEffect(() => subscribeReload(() => setFrameKey((k) => k + 1)), []);
+  // Before/after: older captures of this URL, compared with the current one.
+  const [comparing, setComparing] = useState(false);
   const [bodySize, setBodySize] = useState({ width: 0, height: 0 });
   const bodyRef = useRef(null);
   // Fullscreen presentation of the whole viewer. The overlay — not the iframe —
@@ -241,6 +251,9 @@ const [recapturing, setRecapturing] = useState(false);
     setCustomError('');
     onRecaptureClick(widthValue + 'x' + heightValue);
   }
+  const captures = getHistory(url);
+  const canCompare = !live && !!thumbnail && captures.length >= 2;
+  const showCompare = comparing && canCompare;
   const isCustomViewport = !VIEWPORT_PRESETS.some((preset) => preset.id === selectedViewport);
   const meta = [];
   const frameDims = viewportDims(selectedViewport, preview, VIEWPORT_PRESETS);
@@ -364,7 +377,9 @@ h('path', { d: 'M6 6 18 18 M18 6 6 18', fill: 'none', stroke: 'currentColor', 's
           )
         : null,
       h('div', { class: 'wp__body' + (live ? ' wp__body--live' : ''), ref: bodyRef },
-        live
+        showCompare
+          ? h(PreviewCompare, { captures, current: preview })
+          : live
           ? h('div', {
               class: 'wp__frame-box',
               style: { width: Math.floor(frameDims.width * safeScale) + 'px', height: Math.floor(frameDims.height * safeScale) + 'px' }
@@ -409,6 +424,23 @@ h('path', { d: 'M6 6 18 18 M18 6 6 18', fill: 'none', stroke: 'currentColor', 's
               }, m.label))
             )
           : null,
+        canCompare
+          ? h('button', {
+              type: 'button',
+              class: 'wp__mode-btn wp__toggle' + (showCompare ? ' wp__mode-btn--on' : ''),
+              'aria-pressed': String(showCompare),
+              onClick: () => setComparing(!showCompare)
+            }, 'Compare')
+          : null,
+        onAutoRefreshChange && url
+          ? h('button', {
+              type: 'button',
+              class: 'wp__mode-btn wp__toggle' + (autoRefresh ? ' wp__mode-btn--on' : ''),
+              'aria-pressed': String(!!autoRefresh),
+              title: 'Refresh the preview after each agent reply',
+              onClick: () => onAutoRefreshChange(!autoRefresh)
+            }, 'Auto')
+          : null,
         h('span', { class: 'wp__foot-meta' }, meta.filter(Boolean).join(' · ')),
         url
           ? h('a', {
@@ -416,10 +448,12 @@ h('path', { d: 'M6 6 18 18 M18 6 6 18', fill: 'none', stroke: 'currentColor', 's
               href: url,
               target: '_blank',
               rel: 'noopener noreferrer',
-              'aria-label': 'Open ' + url + ' in a new tab'
-            }, 'Open in new tab')
+              'aria-label': 'Open ' + url + ' in a new tab',
+              title: 'Open in new tab'
+            }, 'Open ↗')
           : null
-      )
+      ),
+      onPrompt ? h(PreviewPromptBar, { working, onPrompt, url }) : null
     )
   );
 }

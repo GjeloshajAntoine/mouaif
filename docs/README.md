@@ -132,6 +132,7 @@ One page per feature: what it does and how to use it.
 - [Progress tool](features/progress-tool.md) — a live progress bar for long operations.
 - [Legacy progress tool](features/legacy-progress-tool.md) — compatibility for older `report_progress` calls.
 - [Web preview tool](features/webpreview.md) — a phone-sized screenshot of a page above the composer.
+- [Preview design loop](features/preview-design-loop.md) — prompt from the preview viewer, auto-refresh after each reply, before/after compare.
 - [Native chat and app tools](features/mouaif-tool.md) — the Chats and mouaif families: chat, model, attachment, settings, and project functions, plus the four tools the model uses inside a chat.
 - [Chat model tools](features/chat-model-tools.md) — search models, select one for a chat, and start a background response.
 - [Web preview page](features/webpreview-project-page.md) — capture and view a URL from project settings.

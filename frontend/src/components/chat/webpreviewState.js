@@ -6,6 +6,15 @@
 // above the composer and may be opened full-screen by the user.
 const listeners = new Set();
 let activePreview = null;
+// Recent screenshot captures, newest last, so the viewer can compare a
+// design before and after a prompt. Kept in memory only (screenshots are
+// data URLs); cleared with the active preview when the chat changes.
+const HISTORY_LIMIT = 6;
+let history = [];
+// Bumped whenever the dock and viewer should reload a Live frame in place
+// (after an agent turn ends while auto-refresh is on).
+let reloadStamp = 0;
+const reloadListeners = new Set();
 
 // A payload is either a screenshot ({ thumbnail }) or a Live iframe
 // ({ mode: 'live', url }) requested by the agent.
@@ -19,7 +28,45 @@ export function publish(payload) {
   if (!isPublishable(payload)) return;
   if (!isNewer(payload, activePreview)) return;
   activePreview = payload;
+  if (payload.thumbnail) remember(payload);
   emit();
+}
+
+function remember(payload) {
+  const last = history[history.length - 1];
+  if (last && last.thumbnail === payload.thumbnail) return;
+  history = history.concat([payload]).slice(-HISTORY_LIMIT);
+}
+
+// getHistory(url) -> captures of `url`, oldest first.
+export function getHistory(url) {
+  if (!url) return [];
+  return history.filter((item) => item.url === url);
+}
+
+export function requestReload() {
+  reloadStamp += 1;
+  for (const listener of reloadListeners) {
+    try { listener(reloadStamp); } catch { /* isolated */ }
+  }
+}
+
+export function getReloadStamp() {
+  return reloadStamp;
+}
+
+export function subscribeReload(listener) {
+  reloadListeners.add(listener);
+  return () => reloadListeners.delete(listener);
+}
+
+// Auto-refresh after each agent turn, remembered on the device.
+const AUTO_KEY = 'mouaif.webpreview.autoRefresh';
+export function readAutoRefresh() {
+  try { return localStorage.getItem(AUTO_KEY) !== 'off'; } catch { return true; }
+}
+export function writeAutoRefresh(on) {
+  try { localStorage.setItem(AUTO_KEY, on ? 'on' : 'off'); } catch { /* ignore */ }
 }
 
 // isNewer(next, current) -> bool
@@ -50,6 +97,7 @@ export function getActivePayload() {
 }
 
 export function clearActive() {
+  history = [];
   if (!activePreview) return;
   activePreview = null;
   emit();

@@ -37,7 +37,8 @@ import { PreviewUrlPrompt } from './PreviewUrlPrompt.jsx';
 import { authorizationCard } from './cards.js';
 import { requestWebpreview, setStatus } from '../../api.js';
 import { formatCost } from '../../usage.js';
-import { subscribe as subscribeWebPreview, clearActive as clearWebPreview, getActivePayload, publish as publishWebPreview } from './webpreviewState.js';
+import { subscribe as subscribeWebPreview, clearActive as clearWebPreview, getActivePayload, publish as publishWebPreview, requestReload as reloadWebPreview, readAutoRefresh, writeAutoRefresh } from './webpreviewState.js';
+import { isLivePayload } from './webpreviewFrame.js';
 import { teardownImageLightbox } from './toolRender.js';
 import { saveComposerDraftNow } from './composer.js';
 import { updateUsageSummary } from './usage.js';
@@ -426,6 +427,33 @@ const [webPreviewOpen, setWebPreviewOpen] = useState(false);
 // PreviewUrlPrompt — the "Preview" entry in the FileToolbar asks for a URL
 // and runs a fresh web-preview capture directly (no model round-trip).
 const [previewPromptOpen, setPreviewPromptOpen] = useState(false);
+// Auto-refresh: when an agent turn ends, reload a Live preview in place or
+// re-capture a screenshot at the same size, so the design change shows up
+// without a tap (and without the agent having to call webpreview again).
+const [webPreviewAuto, setWebPreviewAuto] = useState(readAutoRefresh);
+const wasRunningRef = useRef(runningVisible);
+useEffect(() => {
+  const was = wasRunningRef.current;
+  wasRunningRef.current = runningVisible;
+  if (!was || runningVisible || !webPreviewAuto) return;
+  const payload = getActivePayload();
+  if (!payload || !payload.url) return;
+  if (isLivePayload(payload)) { reloadWebPreview(); return; }
+  silentRecapture(payload, { projectDir, chatId });
+}, [runningVisible]);
+// Prompt from inside the viewer: goes through the composer like a typed
+// message, so /commands, drafts and the transcript behave the same.
+// Resolves to '' when sent, or the reason it was not (shown in the bar,
+// since the viewer covers the chat's status line).
+async function onPreviewPrompt(text) {
+  if (runningVisible) return 'The agent is still working.';
+  syncComposer(text);
+  await sendOrCommand();
+  const left = refs.promptInput.current ? refs.promptInput.current.value : '';
+  if (left.trim() !== text.trim()) return '';
+  const status = refs.status && refs.status.current ? refs.status.current.textContent.trim() : '';
+  return status || 'Not sent.';
+}
 
   // The web-preview viewer and the image annotator only open on a tap, so
   // they load on first use instead of riding the chat view's entry bundle.
@@ -802,7 +830,8 @@ h('div', { class: 'chat-view__dock' },
 h(WebpreviewDock, {
 preview: webPreviewPayload,
 onOpen: () => setWebPreviewOpen(true),
-onDismiss: () => clearWebPreview()
+onDismiss: () => clearWebPreview(),
+working: runningVisible
 }),
 // Delegation graph: who started whom and what they say to each other,
 // animated as messages travel. A bar in the bottom stack that expands in
@@ -954,6 +983,10 @@ webPreviewOpen && webPreviewPayload && WebpreviewModal
 ? h(WebpreviewModal, {
 preview: webPreviewPayload,
 onClose: () => setWebPreviewOpen(false),
+working: runningVisible,
+onPrompt: onPreviewPrompt,
+autoRefresh: webPreviewAuto,
+onAutoRefreshChange: (on) => { setWebPreviewAuto(on); writeAutoRefresh(on); },
 onRecapture: (viewport) => recaptureWebPreview(webPreviewPayload, viewport, {
 projectDir,
 chatId,
@@ -1044,6 +1077,20 @@ publishWebPreview(out.result);
 refs.status.current.textContent = 'Preview recapture failed: ' + ((out.result && out.result.error) || out.error || 'capture failed');
 }
 return out;
+}
+// silentRecapture — the auto-refresh capture after a turn. Same endpoint as
+// recaptureWebPreview at the payload's own size, but it never prompts: in
+// Ask mode (or on any error) it just keeps the current screenshot.
+async function silentRecapture(payload, ctx) {
+  const vp = payload.viewport;
+  const viewport = vp && vp.id && vp.id !== 'custom' ? vp.id : (vp && vp.width && vp.height ? vp.width + 'x' + vp.height : undefined);
+  const callId = 'ui_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  try {
+    const out = await requestWebpreview({ projectDir: ctx.projectDir, chatId: ctx.chatId, url: payload.url, viewport, callId });
+    // Publish only if the preview the user is looking at is still this one.
+    const active = getActivePayload();
+    if (out && out.ok && out.result && out.result.thumbnail && active && active.url === payload.url) publishWebPreview(out.result);
+  } catch { /* Ask gate or failure: keep the current capture */ }
 }
 // runPreviewFromPrompt — capture a preview for a URL typed into the
 // PreviewUrlPrompt. Uses the same direct /api/tools/webpreview path as

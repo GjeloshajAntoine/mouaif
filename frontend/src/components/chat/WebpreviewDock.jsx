@@ -16,11 +16,15 @@
 import { h } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { FRAME_ALLOW, frameSource, isLivePayload } from './webpreviewFrame.js';
+import { getReloadStamp, subscribeReload } from './webpreviewState.js';
 
 // Fallback card width before the first measurement (`min(26%, 6.5rem)`).
 const DOCK_WIDTH_PX = 104;
 
-export function WebpreviewDock({ preview, onOpen, onDismiss }) {
+// `working` marks the card while an agent turn runs, so the user knows the
+// design is about to change; the card pulses once when a new capture or a
+// Live reload lands.
+export function WebpreviewDock({ preview, onOpen, onDismiss, working }) {
   const live = isLivePayload(preview);
   const title = (preview && (preview.title || preview.url)) || 'Web preview';
   const vw = (preview && ((preview.viewport && preview.viewport.width) || preview.width)) || 375;
@@ -38,9 +42,20 @@ export function WebpreviewDock({ preview, onOpen, onDismiss }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, [live]);
+  const [reloadKey, setReloadKey] = useState(getReloadStamp);
+  useEffect(() => subscribeReload(setReloadKey), []);
+  const stamp = (preview && (preview.capturedAt || preview.thumbnail || preview.url)) + ':' + reloadKey;
+  const [pulse, setPulse] = useState(false);
+  const firstStamp = useRef(true);
+  useEffect(() => {
+    if (firstStamp.current) { firstStamp.current = false; return undefined; }
+    setPulse(true);
+    const t = setTimeout(() => setPulse(false), 1200);
+    return () => clearTimeout(t);
+  }, [stamp]);
   const scale = boxWidth / vw;
   if (!preview || (!preview.thumbnail && !live)) return null;
-  return h('aside', { class: 'webpreview-dock' + (live ? ' webpreview-dock--live' : ''), 'aria-label': 'Web preview' },
+  return h('aside', { class: 'webpreview-dock' + (live ? ' webpreview-dock--live' : '') + (pulse ? ' webpreview-dock--pulse' : ''), 'aria-label': 'Web preview' },
     h('button', {
       class: 'webpreview-dock__open',
       type: 'button',
@@ -54,6 +69,7 @@ export function WebpreviewDock({ preview, onOpen, onDismiss }) {
             style: { aspectRatio: vw + ' / ' + vh }
           },
             h('iframe', {
+            key: reloadKey,
             class: 'webpreview-dock__frame',
             src: frameSource(preview.url),
               title: 'Live preview of ' + title,
@@ -76,7 +92,8 @@ export function WebpreviewDock({ preview, onOpen, onDismiss }) {
             draggable: 'false',
             loading: 'lazy',
             decoding: 'async'
-          })
+          }),
+      working ? h('span', { class: 'webpreview-dock__working', role: 'status', 'aria-label': 'Agent working; preview refreshes when it finishes' }) : null
     ),
     h('button', {
       class: 'webpreview-dock__dismiss',
