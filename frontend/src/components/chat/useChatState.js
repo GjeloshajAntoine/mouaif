@@ -1422,6 +1422,22 @@ loadOlderMessages(state, refs, scrollPager).catch(() => {});
   useEffect(() => {
     session.current = ensureChatSession(session.current, projectDir, chatId);
   }, [chatId, projectDir]);
+
+  // A failed subagent card's Retry (renderSubagentChat). The run belonged to
+  // a turn that has ended, so it cannot be resumed; the button sends a
+  // follow-up that asks the model to delegate the same task again. The
+  // transcript element outlives chat navigation and `state` is this chat's
+  // own bag, so one listener serves every chat.
+  useEffect(() => {
+    const el = refs.transcript.current;
+    if (!el) return undefined;
+    const onRetry = (e) => {
+      const content = e.detail && e.detail.content;
+      if (typeof content === 'string' && content) sendTurn(state, refs, { content, attachments: [] });
+    };
+    el.addEventListener('mouaif:subagent-retry', onRetry);
+    return () => el.removeEventListener('mouaif:subagent-retry', onRetry);
+  }, []);
   // Scroll pinning is per-chat. ChatView is reused across chat
   // navigation (only props change, no remount), so a `pinnedToBottom`
   // left `false` by scrolling up in the previous chat would carry over
@@ -1701,9 +1717,10 @@ onComposerInput(refs, projectDir, chatId, updateChatBound);
     }),
     // Same, for a top-level tool card by call id (the agent dock's "Show in
     // chat" when the card is on an older page). `flash` highlights the card.
-    jumpToToolCard: (callId, flash) => jumpToSeqRow({
+    // `find` overrides the lookup (the dock lands on a nested agent card).
+    jumpToToolCard: (callId, flash, find) => jumpToSeqRow({
       root: refs.transcript.current,
-      find: (root) => findToolCard(root, callId),
+      find: find || ((root) => findToolCard(root, callId)),
       hasMore: () => { const pager = session.current.pager; return !!pager && pager.hasMore && pager.beforeSeq !== null; },
       loadOlder: () => loadOlderMessages(state, refs, session.current.pager),
       scrollTo: (row) => scrollToTranscriptRow(refs, row),

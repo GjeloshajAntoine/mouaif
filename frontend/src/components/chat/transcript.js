@@ -1687,6 +1687,13 @@ export function handleSubagentStreamEvent(ev, data, refs) {
   }
   const live = ensureSubagentLive(card);
   if (!live) return false;
+  if (ev.eventName === 'error') {
+    // The subagent's own failure, shown as it happens. The settled render
+    // replaces the live container and draws the result's error instead.
+    live.appendChild(buildSubagentError(data));
+    afterTranscriptAppend(refs, false);
+    return true;
+  }
   if (ev.eventName === 'image') {
     const row = document.createElement('div');
     row.className = 'chat-msg chat-msg--assistant tool-card__subagent-msg';
@@ -2275,6 +2282,48 @@ export function rememberSubagentCardCost(card) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+// buildSubagentError(error, args) -> the line a subagent card shows for a
+// failed run. textContent only, since provider error bodies may carry markup.
+// With the call's `args` (a settled card, live or rebuilt from a saved chat)
+// it also gets a Retry button; the live line has none, since the run may
+// still retry on its own.
+function buildSubagentError(error, args) {
+  const el = document.createElement('div');
+  el.className = 'tool-card__subagent-error';
+  el.setAttribute('role', 'alert');
+  const text = document.createElement('span');
+  const msg = (error && (error.message || error.code)) || 'Subagent failed';
+  text.textContent = '⚠ ' + String(msg);
+  el.appendChild(text);
+  const task = args && typeof args.task === 'string' ? args.task.trim() : '';
+  if (task) {
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'btn btn--small tool-card__subagent-retry';
+    retry.textContent = 'Retry';
+    // The bottom-of-chat SubagentRetryDock reads the prompt from here.
+    retry.dataset.prompt = subagentRetryPrompt(error, args);
+    retry.addEventListener('click', (e) => {
+      e.stopPropagation();
+      retry.dispatchEvent(new CustomEvent('mouaif:subagent-retry', {
+        bubbles: true, detail: { content: retry.dataset.prompt }
+      }));
+    });
+    el.appendChild(retry);
+  }
+  return el;
+}
+
+// subagentRetryPrompt(error, args) -> the follow-up a subagent Retry sends.
+// It names the same task, context and agent so the model can re-delegate it
+// as it was.
+function subagentRetryPrompt(error, args) {
+  const lines = ['The subagent call failed' + (error && error.message ? ' (' + error.message + ')' : '') + '. Run it again with the subagent tool, using the same task:', '', args.task.trim()];
+  if (typeof args.context === 'string' && args.context.trim()) lines.push('', 'Context:', args.context.trim());
+  if (typeof args.agent === 'string' && args.agent.trim()) lines.push('', 'Use agent: ' + args.agent.trim());
+  return lines.join('\n');
+}
+
 // renderSubagentChat(card, toolResult)
 //
 // Final render of a subagent's nested conversation as polished chat
@@ -2301,7 +2350,19 @@ export function renderSubagentChat(card, toolResult) {
   const settledCost = subagentCostFromResult(r);
   setSubagentCardCost(card, settledCost != null ? settledCost : carriedCost);
   const chat = r && Array.isArray(r.chat) ? r.chat : null;
-  if ((!chat || !chat.length) && !(r && typeof r.text === 'string' && r.text)) return;
+  // A failed run says why, after whatever it got through. Aborts are the
+  // user's own stop and need no message.
+  const failure = r && r.error && typeof r.error === 'object' && r.error.code !== 'EABORTED' ? r.error : null;
+  if ((!chat || !chat.length) && !(r && typeof r.text === 'string' && r.text)) {
+    if (failure) {
+      const wrap = document.createElement('div');
+      wrap.className = 'tool-card__subagent-chat';
+      wrap.appendChild(buildSubagentError(failure, card._toolArgs || (toolResult && toolResult.args)));
+      const body = card.querySelector('.tool-card__body');
+      if (body) body.appendChild(wrap);
+    }
+    return;
+  }
   const wrap = document.createElement('div');
   wrap.className = 'tool-card__subagent-chat';
   // Don't let taps inside the nested chat bubble up to the parent
@@ -2445,6 +2506,7 @@ export function renderSubagentChat(card, toolResult) {
   // Append inside the card's body so the body's max-height,
   // overflow, and expand/collapse mask control the nested chat.
   const body = card.querySelector('.tool-card__body');
+  if (failure) wrap.appendChild(buildSubagentError(failure, card._toolArgs || (toolResult && toolResult.args)));
   if (body) body.appendChild(wrap);
   else card.appendChild(wrap);
 }

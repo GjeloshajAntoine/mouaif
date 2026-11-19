@@ -79,6 +79,17 @@ A top-level `report_progress` call (not inside a subagent) still gets its own pr
 
 Regression test: `scripts/test-subagent-nested-progress.js`.
 
+## When a delegated run fails
+
+A failed delegation says why, in place, and offers to run it again.
+
+- **Live.** The nested `error` event is forwarded as a `subagent_event` with `kind: "error"` and appended to the live card body as a `.tool-card__subagent-error` line (`role="alert"`, `textContent` only — provider error bodies may contain markup). It carries no Retry button, because the run may still retry on its own.
+- **Settled.** `renderSubagentChat` draws the same line after whatever the run got through, from `result.error.code` / `.message`. Aborts (`EABORTED`) are the user's own Stop and draw nothing.
+- **Retry.** The settled line gets a **Retry** button when the call carried a task. It does not resume the run — its turn has ended — it sends a follow-up that names the same task, `context` and `agent`, so the model can re-delegate it as it was. The click dispatches `mouaif:subagent-retry` on the transcript; `useChatState` listens once and sends it as an ordinary turn.
+- **A bar at the bottom of the chat.** `SubagentRetryDock` reads the transcript DOM (not `state.messages`) for top-level subagent cards after the last top-level user message whose settled body carries a Retry. It shows `⚠ Subagent failed: <reason>` with **Show** (scrolls to the card through the transcript's own jump, which also pages in older history) and **Retry** — or **Retry all**, which sends one follow-up listing every failed delegation of the turn. Sending any message clears the bar.
+- **One automatic retry upstream.** A subagent has no retry button of its own in the tool loop, so a transient failure that happened **before any output streamed** (`ENETWORK`, or `EUPSTREAM` with 429/5xx; the error carries `beforeStream`) is retried once after 2 s by `streamChatInScope`. A retry cannot duplicate output because nothing was forwarded yet, and an aborted turn is never retried. This applies to nested runs only.
+- **The parent model is told what it can do.** A failed nested result reaches the parent with an added `error.hint`: for `ETRUNCATED` it says to call `subagent` again with a smaller task, otherwise that the partial work is in `chat` and it may delegate again or continue without it.
+
 ## Naming the agent
 
 A delegated run names the agent it dispatched, in two places:

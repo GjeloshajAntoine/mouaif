@@ -23,6 +23,7 @@ import { ToolPopup } from './ToolPopup.jsx';
 import { ModelPickerField } from '../ModelPickerField.jsx';
 import { WebpreviewDock } from './WebpreviewDock.jsx';
 import { AgentNetworkDock } from './AgentNetworkDock.jsx';
+import { SubagentRetryDock } from './SubagentRetryDock.jsx';
 import { RunDock } from './RunDock.jsx';
 import { WebhookDock } from './WebhookDock.jsx';
 import { HooksDock } from './HooksDock.jsx';
@@ -807,6 +808,9 @@ onDismiss: () => clearWebPreview()
 // animated as messages travel. A bar in the bottom stack that expands in
 // place or goes full screen; absent until the chat has a subagent.
 h(AgentNetworkDock, { transcriptRef: refs.transcript, onJumpToToolCard: jumpToToolCard }),
+// A failed subagent in the latest turn, with Retry, so the user never has to
+// open the card to find out; absent otherwise.
+h(SubagentRetryDock, { transcriptRef: refs.transcript, onJumpToToolCard: jumpToToolCard }),
 // Pause / resume / stop for a long-running run; absent until the chat has one.
 h(RunDock, { projectDir, chatId, onJumpToSeq: jumpToSeq }),
 // The chat's webhook link and the calls it received; absent until it has one.

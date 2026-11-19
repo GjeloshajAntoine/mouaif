@@ -294,20 +294,20 @@ export function AgentNetworkDock({ transcriptRef, onJumpToToolCard }) {
     setTimeout(() => card.classList.remove('is-agent-flash'), 1600);
   };
   const showInChat = (id) => {
-    const card = findAgentCard(transcriptRef && transcriptRef.current, net, id);
     if (mode === 'fullscreen') exitFullscreen();
-    if (card) {
-      setJump(null);
-      card.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
-      flashCard(card);
+    // The transcript's own jump unpins it from the bottom (else the next
+    // streamed row snaps back) and pages older history in until the card
+    // or its top-level run card appears.
+    const top = topLevelAncestor(net, net.nodes.get(id));
+    if (!onJumpToToolCard) {
+      const card = findAgentCard(transcriptRef && transcriptRef.current, net, id);
+      if (card) { setJump(null); card.scrollIntoView({ block: 'center' }); flashCard(card); }
+      else setJump({ id, state: 'missing' });
       return;
     }
-    // The card is on an older page: load pages until the run's top-level
-    // card appears, as the run list does.
-    const top = topLevelAncestor(net, net.nodes.get(id));
-    if (!top || !onJumpToToolCard) { setJump({ id, state: 'missing' }); return; }
+    if (!top) { setJump({ id, state: 'missing' }); return; }
     setJump({ id, state: 'loading' });
-    Promise.resolve(onJumpToToolCard(top.id, flashCard)).then((found) => {
+    Promise.resolve(onJumpToToolCard(top.id, flashCard, (root) => findAgentCard(root, net, id))).then((found) => {
       if (netRef.current !== net) return;
       setJump(found ? null : { id, state: 'missing' });
     }, () => setJump({ id, state: 'missing' }));

@@ -824,6 +824,17 @@ function agentLimits(projectDir, name) {
 }
 
 const warnedSubagentLimits = new Set();
+const NESTED_RETRY_DELAY_MS = 2000;
+
+// isTransientUpstreamFailure(result) -> true for a round that failed before
+// any output streamed, with a network error or an HTTP 429 / 5xx.
+function isTransientUpstreamFailure(result) {
+  if (!result || result.ok || !result.beforeStream || !result.error) return false;
+  const { code, status } = result.error;
+  if (code === 'ENETWORK') return true;
+  return code === 'EUPSTREAM' && (status === 429 || status >= 500);
+}
+
 function rootSubagentLimits(projectDir) {
   const { resolveLimits, DEFAULT_LIMITS, LIMIT_RANGES } = require('./tools/subagent-orchestration.js');
   let stored;
@@ -1228,7 +1239,17 @@ async function streamChatInScope(opts) {
     } catch { /* non-fatal; fall back to the per-chat filtered set */ }
     const release = opts.nestedSubagent ? await scope.acquire(signal) : () => {};
     let result;
-    try { result = await runUpstreamTurn(convo, effectiveToolSpecs); }
+    try {
+      result = await runUpstreamTurn(convo, effectiveToolSpecs);
+      // A subagent has no Retry button: one transient failure would throw
+      // away every round it already ran. Retry once, but only a failure that
+      // happened before the reply streamed (nothing was forwarded yet, so the
+      // retry cannot duplicate output) and only a transient one.
+      if (opts.nestedSubagent && isTransientUpstreamFailure(result) && !(signal && signal.aborted)) {
+        await new Promise((resolve) => setTimeout(resolve, NESTED_RETRY_DELAY_MS));
+        if (!(signal && signal.aborted)) result = await runUpstreamTurn(convo, effectiveToolSpecs);
+      }
+    }
     finally { release(); }
     if (!result.ok) {
     await scope.finish();
@@ -1475,7 +1496,7 @@ async function streamChatInScope(opts) {
       if (idle) return { ok: false, error: { code: 'ETIMEOUT', message: 'Provider sent nothing for 3 minutes — the request was cancelled. Try again.' } };
       return { ok: false, error: { code: 'EABORTED', message: 'aborted' } };
     }
-    return { ok: false, error: { code: 'ENETWORK', message: e.message || 'network error' } };
+    return { ok: false, error: { code: 'ENETWORK', message: e.message || 'network error' }, beforeStream: true };
   }
   if (!upstream.ok) {
     stopIdle();
@@ -1487,8 +1508,10 @@ async function streamChatInScope(opts) {
       error: {
         code: 'EUPSTREAM',
         message: 'Upstream ' + upstream.status + ' ' + upstream.statusText,
+        status: upstream.status,
         detail: detail.slice(0, 2000)
-      }
+      },
+      beforeStream: true
     };
   }
 
@@ -2748,7 +2771,7 @@ promptSize: callOpts && callOpts.promptSize,
           // / `message` it sees, so reusing those names would corrupt
           // the transcript with the subagent's internal turns.
           if (eventName === 'subagent_event' || eventName === 'tool_call' || eventName === 'tool_result' || eventName === 'message' || eventName === 'image'
-          || eventName === 'reasoning' || eventName === 'assistant_turn_end') {
+          || eventName === 'reasoning' || eventName === 'assistant_turn_end' || eventName === 'error') {
             onEvent('subagent_event', {
               parentCallId: (callOpts && callOpts.callId) || null,
               kind: eventName,
@@ -2846,7 +2869,16 @@ promptSize: callOpts && callOpts.promptSize,
       totalCost: nested && nested.totalCost != null ? nested.totalCost : (runCostKnown ? forwarded.cost : null),
       model: nestedModelRef
       };
-      if (!r.ok) r.error = nested && nested.error ? nested.error : { code: 'ESUBAGENT', message: 'subagent failed' };
+      if (!r.ok) {
+        r.error = nested && nested.error ? Object.assign({}, nested.error) : { code: 'ESUBAGENT', message: 'subagent failed' };
+        // The nested error text is written for a person ("Try again", "raise
+        // the chat's max output tokens"). Tell the parent model what it can do.
+        if (r.error.code !== 'EABORTED') {
+          r.error.hint = r.error.code === 'ETRUNCATED'
+            ? 'The subagent ran out of output tokens while writing a tool call. Call subagent again with a smaller, more focused task.'
+            : 'The subagent failed before finishing; its partial work is in `chat`. You may call subagent again (narrow the task if it was large) or continue without it.';
+        }
+      }
       // Record WHICH agent ran, when one was named. The name is not derivable
       // from the nested transcript (an agent's system message is its
       // instructions, not its name), and only the delegated call knows it, so

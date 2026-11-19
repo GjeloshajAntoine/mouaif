@@ -1227,3 +1227,38 @@ padding-right: 10px;
   overflow-wrap: anywhere;
 }
 .tool-card__hook-blocked strong { color: var(--danger); }
+
+/* A failed subagent run's reason, inside its card (live and settled). */
+.tool-card__subagent-error {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--danger);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tool-card__subagent-error > span { flex: 1; min-width: 0; }
+.tool-card__subagent-retry { flex: none; }
+
+/* Bottom-of-chat notice for a failed subagent (SubagentRetryDock.jsx). */
+.subagent-retry-dock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: var(--read-max, 44rem);
+  margin: 4px auto 0;
+  padding: 4px 8px;
+  box-sizing: border-box;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+.subagent-retry-dock__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.subagent-retry-dock__text strong { color: var(--danger); }
