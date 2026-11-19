@@ -756,7 +756,7 @@ export function renderFileBatchToolResult(body, r, name) {
 // reads the same way whichever kind of work it grouped. A still-running
 // background entry gets a hint instead of output, because its output lives
 // in the log file the section names.
-function renderGroupCliToolResult(body, r, args) {
+export function renderGroupCliToolResult(body, r, args) {
   body.classList.add('tool-preview', 'tool-preview--terminal');
   if (typeof r === 'string') r = coerceToolResult(r, 'group_cli');
   if (!r || r.error) {

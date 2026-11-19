@@ -26,6 +26,7 @@ import {
 import {
   renderToolResultBody,
   renderFileBatchToolResult,
+  renderGroupCliToolResult,
   zoomableImage
 } from './toolRender.js';
 import { publish as publishWebPreview } from './webpreviewState.js';
