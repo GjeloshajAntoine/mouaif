@@ -446,7 +446,7 @@ function buildTranscribeRequest(options) {
       contents: [{
         role: 'user',
         parts: [
-          { text: prompt || DEFAULT_TRANSCRIBE_PROMPT },
+          { text: prompt ? DEFAULT_TRANSCRIBE_PROMPT + '\n\nExpected terms: ' + prompt : DEFAULT_TRANSCRIBE_PROMPT },
           { inline_data: { mime_type: opts.mimeType || 'audio/webm', data: Buffer.from(audio).toString('base64') } }
         ]
       }],
@@ -479,7 +479,7 @@ function buildTranscribeRequest(options) {
       messages: [{
         role: 'user',
         content: [
-          { type: 'text', text: prompt || DEFAULT_TRANSCRIBE_PROMPT },
+          { type: 'text', text: prompt ? DEFAULT_TRANSCRIBE_PROMPT + '\n\nExpected terms: ' + prompt : DEFAULT_TRANSCRIBE_PROMPT },
           {
             type: 'input_audio',
             input_audio: {

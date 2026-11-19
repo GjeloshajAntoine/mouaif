@@ -53,6 +53,10 @@ Completed runs remain observable until the parent finishes. Ending the parent tu
 
 The background call card stays running until its **single final result** arrives, with the same nested conversation and cost rendering as a synchronous call. While a `subagent` card is running, it stays pinned at the bottom of the chat transcript (below any new parent or sibling messages, tool calls, progress updates, and live streaming text, and above mounted MCP App cards and active approval/question overlays); once its final result arrives, it returns to its original chronological slot in the conversation. The parent receives a bounded text answer through status; generated image pixels are not automatically inserted into its live background-result context. Prefer synchronous image delegation when the parent needs immediate vision content.
 
+## Retry behavior
+
+When a subagent fails, its card and the bottom notice show the reason and offer **Retry**. Retrying asks the parent model to delegate the same task again. It is treated as an explicit retry request, so any unrelated text or attachments already in the composer remain untouched.
+
 ## Limits and permissions
 
 - All twelve names resolve through the existing `tools.subagent` gate, with the normal family/per-leaf authorization behavior. No new permission bypass or REST endpoint is added. Direct composer `@agent` remains synchronous.

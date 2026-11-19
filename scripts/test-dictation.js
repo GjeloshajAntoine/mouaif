@@ -264,7 +264,7 @@ check('the inline-audio chat request carries the recording as an input_audio par
   assert.equal(body.messages[0].role, 'user');
   const [text, part, language] = body.messages[0].content;
   assert.equal(text.type, 'text');
-  assert.equal(text.text, 'mouaif', 'an explicit prompt is sent verbatim');
+  assert.equal(text.text, transcribe.DEFAULT_TRANSCRIBE_PROMPT + '\n\nExpected terms: mouaif', 'the transcription instruction is retained with vocabulary');
   // The container is named by label, not by MIME type: `audio/webm;codecs=opus`
   // is not a value this field accepts.
   assert.deepEqual(part, { type: 'input_audio', input_audio: { data: audio.toString('base64'), format: 'webm' } });
@@ -460,6 +460,7 @@ check('the Gemini request is inline JSON on the per-model action path', () => {
   const parts = body.contents[0].parts;
   assert.equal(parts[1].inline_data.mime_type, 'audio/webm');
   assert.equal(parts[1].inline_data.data, Buffer.from('audio-bytes').toString('base64'));
+  assert.equal(parts[0].text, transcribe.DEFAULT_TRANSCRIBE_PROMPT);
   assert.equal(body.generationConfig.temperature, 0);
   assert.ok(parts.some((p) => typeof p.text === 'string' && p.text.includes('"en"')));
 });

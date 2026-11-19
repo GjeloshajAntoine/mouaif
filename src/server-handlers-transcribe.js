@@ -116,7 +116,13 @@ function statusFor(code) {
     case 'ETOOLARGE':
       return 413;
     case 'ENOAUTH':
-      return 401;
+    case 'EOAUTH_BLOB':
+    case 'ETOKEN':
+    case 'ESSO_REQUIRED':
+    case 'ENOCOPILOT':
+    return 401;
+    case 'EMODULE':
+    return 500;
     case 'EUNREACHABLE':
       return 502;
     case 'ETIMEOUT':

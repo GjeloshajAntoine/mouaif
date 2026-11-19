@@ -1688,8 +1688,11 @@ export function handleSubagentStreamEvent(ev, data, refs) {
   const live = ensureSubagentLive(card);
   if (!live) return false;
   if (ev.eventName === 'error') {
-    // The subagent's own failure, shown as it happens. The settled render
-    // replaces the live container and draws the result's error instead.
+    // The subagent's own failure, shown as it happens. A replay can contain
+    // the same buffered event more than once, so keep one visible error line.
+    // The settled render replaces the live container and draws the result's
+    // error instead.
+    if (live.querySelector('.tool-card__subagent-error')) return true;
     live.appendChild(buildSubagentError(data));
     afterTranscriptAppend(refs, false);
     return true;
@@ -2360,8 +2363,9 @@ export function renderSubagentChat(card, toolResult) {
       wrap.appendChild(buildSubagentError(failure, card._toolArgs || (toolResult && toolResult.args)));
       const body = card.querySelector('.tool-card__body');
       if (body) body.appendChild(wrap);
-    }
-    return;
+      else card.appendChild(wrap);
+      }
+      return;
   }
   const wrap = document.createElement('div');
   wrap.className = 'tool-card__subagent-chat';

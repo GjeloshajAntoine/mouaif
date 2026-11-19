@@ -1433,7 +1433,11 @@ loadOlderMessages(state, refs, scrollPager).catch(() => {});
     if (!el) return undefined;
     const onRetry = (e) => {
       const content = e.detail && e.detail.content;
-      if (typeof content === 'string' && content) sendTurn(state, refs, { content, attachments: [] });
+      if (typeof content === 'string' && content) {
+      // Retry is an explicit follow-up, not the current composer draft. Keep
+      // the user's unrelated draft and attachments intact while it runs.
+      sendTurn(state, refs, { content, attachments: [], retry: true, manualRetry: true });
+      }
     };
     el.addEventListener('mouaif:subagent-retry', onRetry);
     return () => el.removeEventListener('mouaif:subagent-retry', onRetry);

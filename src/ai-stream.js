@@ -1247,7 +1247,8 @@ async function streamChatInScope(opts) {
       // retry cannot duplicate output) and only a transient one.
       if (opts.nestedSubagent && isTransientUpstreamFailure(result) && !(signal && signal.aborted)) {
         await new Promise((resolve) => setTimeout(resolve, NESTED_RETRY_DELAY_MS));
-        if (!(signal && signal.aborted)) result = await runUpstreamTurn(convo, effectiveToolSpecs);
+        const scopeStillActive = !scope.owner || scope.accepts(scope.owner);
+        if (!(signal && signal.aborted) && scopeStillActive) result = await runUpstreamTurn(convo, effectiveToolSpecs);
       }
     }
     finally { release(); }

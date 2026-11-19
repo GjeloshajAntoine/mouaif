@@ -301,7 +301,11 @@ export function AgentNetworkDock({ transcriptRef, onJumpToToolCard }) {
     const top = topLevelAncestor(net, net.nodes.get(id));
     if (!onJumpToToolCard) {
       const card = findAgentCard(transcriptRef && transcriptRef.current, net, id);
-      if (card) { setJump(null); card.scrollIntoView({ block: 'center' }); flashCard(card); }
+      if (card) {
+      setJump(null);
+      card.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
+      flashCard(card);
+      }
       else setJump({ id, state: 'missing' });
       return;
     }
