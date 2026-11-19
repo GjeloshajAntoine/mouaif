@@ -157,6 +157,8 @@ check('lookup helpers', () => {
   assert.equal(registry.typeForPath('toolOutput.size').id, 'toolOutput.size');
   assert.equal(registry.typeForPath('agents').id, 'agents');
   assert.equal(registry.typeForPath('themes.custom').id, 'themes');
+  assert.equal(registry.typeForPath('toolView').id, 'toolView');
+  assert.equal(registry.typeForPath('previewLinks').id, 'previewLinks');
   assert.equal(registry.typeForPath('unknownKey'), null);
   assert.deepStrictEqual(registry.typesForRoot('notifications').map((t) => t.id).sort(),
     ['notifications.authorization', 'notifications.login', 'notifications.quickActions', 'notifications.status']);

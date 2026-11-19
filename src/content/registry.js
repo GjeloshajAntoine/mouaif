@@ -644,6 +644,28 @@ const TYPES = [
     label: 'Extensions in this project', description: 'Which extensions are on in this project.',
     keywords: ['extension', 'plugin'],
     group: 'Automation', page: 'settings/extensions', writers: ALL_WRITERS
+  },
+  {
+    id: 'toolView', shape: 'value', scopes: ['project'], doc: 'settings', path: 'toolView',
+    field: { type: 'object' },
+    label: 'Chat tool list', description: 'Simplified tool categories shown in the chat Tools card and popup.',
+    keywords: ['tool', 'view', 'simplified', 'categories', 'chat'],
+    group: 'Tools', page: 'settings/project/tool-view', writers: ALL_WRITERS
+  },
+  {
+    id: 'previewLinks', shape: 'collection', scopes: ['project'], doc: 'settings', path: 'previewLinks',
+    container: 'array', itemId: 'url', itemLabel: 'title', merge: 'replace',
+    fields: {
+      title: { type: 'string', label: 'Title' },
+      mode: { type: 'enum', label: 'Mode', options: ['screenshot', 'live'] },
+      viewport: { type: 'string', label: 'Viewport' },
+      addedAt: { type: 'string', label: 'Added', hidden: true }
+    },
+    label: 'Web preview links', itemNoun: 'Preview link', description: 'Saved URLs listed on the project’s Web preview page.',
+    keywords: ['preview', 'webpreview', 'url', 'link', 'screenshot'],
+    group: 'Project', page: 'settings/project/preview',
+    searchFields: ['url', 'title'], searchCap: 20,
+    writers: ALL_WRITERS
   }
 ];
 
