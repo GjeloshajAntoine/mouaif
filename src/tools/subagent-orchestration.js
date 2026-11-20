@@ -20,7 +20,10 @@ const scopeKey = (projectDir, chatId) => String(projectDir || '') + '\0' + Strin
 function persistentScope(projectDir, chatId, limits) {
   const key = scopeKey(projectDir, chatId);
   let scope = persistentScopes.get(key);
-  if (!scope) {
+  // A reused scope runs each turn on the limits settings give now, so a
+  // change applies from the next message as documented.
+  if (scope && !scope.closed) { scope.setLimits(limits); return scope; }
+  if (!scope || scope.closed) {
     scope = new Scope(projectDir, chatId, null, limits);
     // Marked explicitly (not inferred from the signal): this root outlives
     // its turn, so dispatch/start/accepts keep working between turns.
@@ -63,13 +66,13 @@ const FAMILY_NAMES = Object.freeze(['subagent', ...TOOL_NAMES]);
 // and a grandchild delegate by default (root → child → grandchild → leaf);
 // the leaf level stops advertising launch/control tools. Settings may lower
 // it to 1 for non-recursive delegation or raise it without a maximum.
-const DEFAULT_LIMITS = Object.freeze({ maxDepth: 3, maxRuns: 32 });
+// There is no total-run budget: a chat may start any number of subagents.
+const DEFAULT_LIMITS = Object.freeze({ maxDepth: 3 });
 // Accepted integer range of each limit. The Scope constructor and the
 // settings registry (src/content/registry.js, checked on write) both read
 // this table, as does resolveLimits() below.
 const LIMIT_RANGES = Object.freeze({
-  maxDepth: Object.freeze({ min: 1 }),
-  maxRuns: Object.freeze({ min: 1 })
+  maxDepth: Object.freeze({ min: 1 })
 });
 const validLimit = (name, value) => Number.isInteger(value) && value >= LIMIT_RANGES[name].min;
 
@@ -187,6 +190,12 @@ class Scope {
     this.abort = () => { for (const row of this.runs.values()) this.stop(row); };
     if (signal) signal.addEventListener('abort', this.abort, { once: true });
   }
+  setLimits(limits = {}) {
+    for (const name of Object.keys(DEFAULT_LIMITS)) {
+      const value = limits[name] ?? DEFAULT_LIMITS[name];
+      if (validLimit(name, value)) this.limits[name] = value;
+    }
+  }
   start(id, agent, execute, complete, meta = {}) {
     if (this.closed || (!this.persistent && this.signal?.aborted)) throw error('EABORTED', 'parent turn has ended');
     if (this.owner && !this.parentScope.accepts(this.owner)) throw error('EABORTED', 'local parent is no longer active');
@@ -197,7 +206,6 @@ class Scope {
     // ancestor agent's explicit cap or the total (subagentLimits.maxDepth).
     const parentCap = this.owner ? this.owner.depthCap : this.root.limits.maxDepth;
     if (depth > parentCap) throw error('EDEPTH', this.owner ? 'this subagent cannot start subagents (nesting limit reached)' : 'root delegation depth budget exhausted');
-    if (this.root.allRuns.size >= this.root.limits.maxRuns) throw error('ETOOL_CAP', 'root total-run budget exhausted');
     // An ancestor agent's own maxRuns bounds every run started below it.
     for (let r = this.owner; r; r = r.scope.owner) {
       if (r.runsCap !== undefined && r.subRuns >= r.runsCap) throw error('ETOOL_CAP', 'run budget of agent ' + (r.agent || 'default') + ' exhausted');

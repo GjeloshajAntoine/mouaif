@@ -6,12 +6,11 @@ Subagents can delegate to their own nested subagents and create/coördinate thei
 
 ## Usage
 
-Recursion works out of the box. Two budgets, shared by one turn and every subagent below it, bound it:
+Recursion works out of the box. One limit, shared by a turn and every subagent below it, bounds how deep it goes. There is no limit on how many subagents a chat starts:
 
 | Setting | Default | Minimum | What it limits |
 | --- | --- | --- | --- |
 | `subagentLimits.maxDepth` | 3 | 1 | How many levels of subagents may stack. `1` turns nesting off: subagents cannot start their own. |
-| `subagentLimits.maxRuns` | 32 | 1 | How many subagents one turn may start in total, at every level together. |
 
 With the defaults, the root's child and grandchild can each launch subagents, and the depth-3 leaf cannot. With `maxDepth: 1`, children do not see the launch and control tools, and the `subagent` tool description no longer tells the model that subagents can delegate; at any other depth the description states the configured number of levels.
 
@@ -33,13 +32,12 @@ An empty field sets nothing: only the limits of whoever launched the agent apply
 ```json
 {
   "subagentLimits": {
-    "maxDepth": 3,
-    "maxRuns": 32
+    "maxDepth": 3
   }
 }
 ```
 
-A project value overrides the app value field by field: a project that sets only `maxDepth` keeps the app's `maxRuns`. A write replaces the whole `subagentLimits` object of its scope, so send every field you want that scope to keep.
+A project value overrides the app value. A stored `maxRuns` (from earlier versions) is ignored. A write replaces the whole `subagentLimits` object of its scope, so send every field you want that scope to keep.
 
 ### Validation
 
@@ -52,7 +50,7 @@ subagentLimits.maxDepth must be a whole number of at least 1
 A hand-edited `.mouaif.json` is not checked when it is saved. If it holds an invalid limit (`"maxDepth": "3"`, `0`, `2.5`), turns in that project still run: the invalid field uses its built-in default (not the app-wide value), the valid fields are kept, and the server log gets one warning that names the project, the bad value and the number used instead:
 
 ```text
-[mouaif] invalid subagentLimits in the settings of /path/to/project: maxDepth = "3" (using 3). Each limit must be an integer: maxDepth ≥ 1, maxRuns ≥ 1.
+[mouaif] invalid subagentLimits in the settings of /path/to/project: maxDepth = "3" (using 3). Each limit must be an integer: maxDepth ≥ 1.
 ```
 
 Limits are read when a root turn starts; a change applies from the next message, and a child cannot reset or increase them.
@@ -69,7 +67,7 @@ Named artifacts are scoped to the producing member's immediate-parent bus. A loc
 
 ## Permissions and budgets
 
-- Every level uses the real root chat/project authorization identity. Inherited tool names and permission modes cannot widen: disabled/unadvertised tools reject before approval; inherited Ask remains Ask even if a descendant changes settings. Inherited allowlists conservatively require approval rather than silently widening. Current stricter project gates also apply.
+- Every level uses the real root chat/project authorization identity. Inherited tool names and permission modes cannot widen: disabled/unadvertised tools reject before approval; inherited Ask remains Ask even if a descendant changes settings. Inherited allowlists conservatively require approval rather than silently widening. Current stricter project gates also apply. A subagent's approval card names the subagent, and its **Subagent** choice covers only that run and its own subagents (see [Tool authorization](./tool-authorization.md)).
 - Below the root, a subagent runs on the model of the subagent that launched it:
   - A nested `subagent` call that names no `agent` always uses its parent's model. The default subagent's instructions, tool list and thinking level still apply; its model pin and the chat or project subagent-model defaults do not (they apply to launches made by the root chat, as before).
   - A nested call that names an agent runs only when that agent resolves to the parent's model. If its pin (or, without a pin, the chat or project subagent-model default) selects another model, the launch is refused with `EDENIED`, unless the user picks a model on that launch's approval card.

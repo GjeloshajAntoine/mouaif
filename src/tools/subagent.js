@@ -18,8 +18,8 @@ const DESCRIPTION_HEAD_PERSISTENT = ' In this chat the callId stays valid in lat
 const DESCRIPTION_TAIL = ' For several subagents that depend on each other or split files between them, declare them first with subagent_group_create. Images are not passed on automatically: find them with list_chat_attachments and pass the chosen imageRef values in `images` (generated:<seq>:<i> refs select earlier subagent artwork to edit).';
 
 function depthSentence(maxDepth) {
-  if (maxDepth === 1) return ' Subagents cannot delegate further in this project (subagentLimits.maxDepth is 1), and all subagents of a turn share one budget of runs.';
-  return ' Subagents may delegate further, up to ' + maxDepth + ' levels deep in total (subagentLimits.maxDepth; an agent can set its own nesting limit), and the whole tree shares one budget of runs.';
+  if (maxDepth === 1) return ' Subagents cannot delegate further in this project (subagentLimits.maxDepth is 1).';
+  return ' Subagents may delegate further, up to ' + maxDepth + ' levels deep in total (subagentLimits.maxDepth; an agent can set its own nesting limit).';
 }
 
 // describe(maxDepth, { persistent }) -> the tool description for a turn whose

@@ -48,10 +48,10 @@ const server = http.createServer((req, res) => {
 (async () => {
   try {
     await new Promise((r) => server.listen(0, '127.0.0.1', r));
-    settings.setProject(tmp, { subagentLimits: { maxDepth: 3, maxRuns: 8 }, tools: { subagent: { mode: 'allow' }, shell: { mode: 'allow' } } });
+    settings.setProject(tmp, { subagentLimits: { maxDepth: 3 }, tools: { subagent: { mode: 'allow' }, shell: { mode: 'allow' } } });
     for (useGroup of [false, true]) {
     counts.root = counts.child = counts.grandchild = 0; peak = 0;
-    settings.setProject(tmp, { subagentLimits: { maxDepth: 3, maxRuns: 8 }, tools: { subagent: { mode: 'allow' }, shell: { mode: 'allow' } } });
+    settings.setProject(tmp, { subagentLimits: { maxDepth: 3 }, tools: { subagent: { mode: 'allow' }, shell: { mode: 'allow' } } });
     const events = [];
     const out = await streamChat({ projectDir: tmp, chatId: 'recursive', model: { id: 'mock', pricing: { inputPer1K: 2, outputPer1K: 4 }, provider: 'openai-compatible', baseUrl: 'http://127.0.0.1:' + server.address().port }, messages: [{ role: 'user', content: 'root task' }], enabledTools: ['subagent', 'subagent_group_create'], onEvent: (name, data) => events.push({ name, data }) });
     assert.equal(out.ok, true);

@@ -364,14 +364,6 @@ const TYPES = [
     group: 'Project', page: 'settings/agents',
     clientVisible: true, resettable: true, writers: ALL_WRITERS
   },
-  {
-    id: 'subagentLimits.maxRuns', shape: 'value', scopes: ['app', 'project'], doc: 'settings', path: 'subagentLimits.maxRuns',
-    field: subagentLimit('maxRuns'),
-    label: 'Subagent runs per turn', description: 'How many subagents one turn may start in total, at every level together.',
-    keywords: ['subagent', 'delegate', 'budget', 'runs', 'limit'],
-    group: 'Project', page: 'settings/agents',
-    clientVisible: true, resettable: true, writers: ALL_WRITERS
-  },
 
   // ---- Server-side app keys with defaults, not sent to the browser --------
   {

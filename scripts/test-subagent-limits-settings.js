@@ -53,15 +53,15 @@ const writeProject = (doc) => fs.writeFileSync(path.join(projectDir, '.mouaif.js
 async function main() {
   // ---- resolveLimits: the read boundary --------------------------------
   assert.deepEqual(resolveLimits(undefined), { limits: { ...DEFAULT_LIMITS }, invalid: [] });
-  assert.deepEqual(resolveLimits({ maxDepth: 20, maxRuns: 5000 }).limits, { maxDepth: 20, maxRuns: 5000 });
+  assert.deepEqual(resolveLimits({ maxDepth: 20, maxRuns: 5000 }).limits, { maxDepth: 20 }, 'a stored maxRuns is ignored');
   for (const bad of ['3', 0, 2.5, -1, Infinity, NaN, true, [], {}]) {
     const r = resolveLimits({ maxDepth: bad, maxRuns: 7 });
-    assert.deepEqual(r.limits, { maxDepth: 3, maxRuns: 7 }, 'maxDepth ' + String(bad));
+    assert.deepEqual(r.limits, { maxDepth: 3 }, 'maxDepth ' + String(bad));
     assert.equal(r.invalid.length, 1);
     assert.equal(r.invalid[0].name, 'maxDepth');
     assert.equal(r.invalid[0].fallback, 3);
   }
-  assert.deepEqual(resolveLimits({ maxDepth: 0, maxRuns: 0 }).invalid.map((i) => i.name), ['maxDepth', 'maxRuns']);
+  assert.deepEqual(resolveLimits({ maxDepth: 0, maxRuns: 0 }).invalid.map((i) => i.name), ['maxDepth']);
   for (const whole of ['3', 3, []]) {
     const r = resolveLimits(whole);
     assert.deepEqual(r.limits, { ...DEFAULT_LIMITS });
@@ -98,7 +98,6 @@ async function main() {
   const limitWarnings = warnings.filter((w) => w.includes('subagentLimits'));
   assert.equal(limitWarnings.length, 1, 'one warning for the same bad value, not one per turn: ' + JSON.stringify(warnings));
   assert.match(limitWarnings[0], /maxDepth = "3" \(using 3\)/);
-  assert.match(limitWarnings[0], /maxRuns = 2\.5 \(using 32\)/);
   assert.ok(limitWarnings[0].includes(projectDir), 'the warning names the project');
   assert.match(describedTool(requests[0]).function.description, /up to 3 levels deep in total/, 'the invalid depth fell back to 3');
   writeProject({ subagentLimits: 'lots', tools: { subagent: { mode: 'allow' } } });
@@ -209,12 +208,12 @@ async function main() {
     await handleSettings(req, res, { pathname, query: {} });
     return { status: res.statusCode, body: JSON.parse(res.body) };
   }
-  const appWrite = await put('/api/settings/app', { subagentLimits: { maxDepth: 2, maxRuns: 64 } });
+  const appWrite = await put('/api/settings/app', { subagentLimits: { maxDepth: 2 } });
   assert.equal(appWrite.status, 200, JSON.stringify(appWrite.body));
-  assert.deepEqual(appWrite.body.app.subagentLimits, { maxDepth: 2, maxRuns: 64 }, 'an app-scope write is accepted and returned to the client');
-  assert.deepEqual(settings.getResolved(projectDir).subagentLimits, { maxDepth: 2, maxRuns: 64 });
+  assert.deepEqual(appWrite.body.app.subagentLimits, { maxDepth: 2 }, 'an app-scope write is accepted and returned to the client');
+  assert.deepEqual(settings.getResolved(projectDir).subagentLimits, { maxDepth: 2 });
   for (const [pathname, extra] of [['/api/settings/app', {}], ['/api/settings/project', { projectDir }]]) {
-    for (const value of [{ maxDepth: '3' }, { maxDepth: 0 }, { maxDepth: 2.5 }, { maxRuns: 0 }]) {
+    for (const value of [{ maxDepth: '3' }, { maxDepth: 0 }, { maxDepth: 2.5 }, { maxDepth: -1 }]) {
       const refused = await put(pathname, { ...extra, subagentLimits: value });
       assert.equal(refused.status, 400, pathname + ' ' + JSON.stringify(value));
       assert.match(refused.body.error, /^subagentLimits\.max(Depth|Concurrent|Runs) must be a whole number of at least 1$/);
@@ -222,7 +221,7 @@ async function main() {
   }
   const projectWrite = await put('/api/settings/project', { projectDir, subagentLimits: { maxDepth: 1 } });
   assert.equal(projectWrite.status, 200, JSON.stringify(projectWrite.body));
-  assert.deepEqual(settings.getResolved(projectDir).subagentLimits, { maxDepth: 1, maxRuns: 64 }, 'project overrides app field by field');
+  assert.deepEqual(settings.getResolved(projectDir).subagentLimits, { maxDepth: 1 }, 'project overrides app');
   const tools = require('../src/tools/mouaif.js');
   const toolBad = await tools.runAppTool('update_settings', { scope: 'project', patch: { subagentLimits: { maxDepth: 0 } } }, { projectDir });
   assert.equal(toolBad.ok, false, JSON.stringify(toolBad));

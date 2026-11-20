@@ -4,8 +4,8 @@ const { Scope } = require('../src/tools/subagent-orchestration.js');
 const tick = () => new Promise((r) => setImmediate(r));
 const result = () => ({ ok: true, result: { text: 'done' } });
 (async () => {
-  for (const limits of [{ maxDepth: Infinity }, { maxRuns: 0 }]) assert.throws(() => new Scope('/p', 'c', null, limits), { code: 'EBADINPUT' });
-  const root = new Scope('/p', 'c', null, { maxDepth: 3, maxRuns: 4 });
+  for (const limits of [{ maxDepth: Infinity }, { maxDepth: 0 }]) assert.throws(() => new Scope('/p', 'c', null, limits), { code: 'EBADINPUT' });
+  const root = new Scope('/p', 'c', null, { maxDepth: 3 });
   let resolveA, resolveB;
   const a = root.start('a', '', () => new Promise((r) => { resolveA = r; }), () => {});
   const sibling = root.start('sibling', '', async () => result(), () => {});
@@ -34,13 +34,21 @@ const result = () => ({ ok: true, result: { text: 'done' } });
   assert.equal(local.dispatch('subagent_read', { name: 'to-local' }, a.author).author, 'b');
   const c = deep.start('c', '', async () => result(), () => {}); await c.promise;
   assert.throws(() => deep.child(c), { code: 'EABORTED' });
-  assert.throws(() => local.start('excess', '', async () => result(), () => {}), { code: 'ETOOL_CAP' });
+  // No total-run budget: a fifth run starts like the others.
+  const extra = local.start('extra', '', async () => result(), () => {}); await extra.promise;
   root.stop(a); assert.ok(b.controller.signal.aborted);
   resolveB(result()); resolveA(result()); await a.promise; await root.finish();
   assert.equal(root.allRuns.size, 0);
   // Default budget lets nested subagents delegate (root -> child -> grandchild -> leaf).
   const defaults = new Scope('/p', 'c');
-  assert.deepEqual(defaults.limits, { maxDepth: 3, maxRuns: 32 });
+  assert.deepEqual(defaults.limits, { maxDepth: 3 });
+  // A chat's persistent scope takes each turn's limits and never runs out of runs.
+  const orch = require('../src/tools/subagent-orchestration.js');
+  const ps = orch.persistentScope('/p', 'persist', { maxDepth: 2 });
+  for (let i = 0; i < 40; i++) await ps.start('p' + i, '', async () => result(), () => {}).promise;
+  assert.equal(orch.persistentScope('/p', 'persist', { maxDepth: 5 }), ps);
+  assert.equal(ps.limits.maxDepth, 5, 'a reused scope takes the new limits');
+  await orch.dropPersistentScope('/p', 'persist');
   const d1 = defaults.start('d1', '', () => new Promise(() => {}), () => {}); await tick();
   const d2 = defaults.child(d1).start('d2', '', () => new Promise(() => {}), () => {}); await tick();
   const d3 = defaults.child(d1).child(d2).start('d3', '', () => new Promise(() => {}), () => {}); await tick();

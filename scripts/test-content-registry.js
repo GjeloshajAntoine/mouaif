@@ -46,7 +46,7 @@ const EXPECTED_DEFAULTS = {
   toolFeedbackMaxBytes: 64 * 1024,
   notifications: { status: true, authorization: true, quickActions: true, login: true },
   flags: {},
-  subagentLimits: { maxDepth: 3, maxRuns: 32 }
+  subagentLimits: { maxDepth: 3 }
 };
 
 const EXPECTED_CLIENT_KEYS = [
@@ -137,11 +137,11 @@ check('enum defaults are among their options', () => {
   }
 });
 
-check('subagentLimits: two integer budgets at app and project scope, ranges from the scope', () => {
+check('subagentLimits: one integer budget at app and project scope, ranges from the scope', () => {
   const { DEFAULT_LIMITS, LIMIT_RANGES } = require(path.join(ROOT, 'src/tools/subagent-orchestration.js'));
   assert.deepStrictEqual(registry.typesForRoot('subagentLimits').map((t) => t.id),
-    ['subagentLimits.maxDepth', 'subagentLimits.maxRuns']);
-  for (const [name, min] of [['maxDepth', 1], ['maxRuns', 1]]) {
+    ['subagentLimits.maxDepth']);
+  for (const [name, min] of [['maxDepth', 1]]) {
     const t = registry.getType('subagentLimits.' + name);
     assert.deepStrictEqual(t.scopes, ['app', 'project']);
     assert.deepStrictEqual(t.field, { type: 'integer', min, default: DEFAULT_LIMITS[name] });
