@@ -193,6 +193,9 @@ return getChatDb().listMessages(projectDir, chatId);
 function listMessagesWindow(projectDir, chatId, opts) {
 return getChatDb().listMessagesWindow(projectDir, chatId, opts);
 }
+function listAgentRows(projectDir, chatId, beforeSeq) {
+return getChatDb().listAgentRows(projectDir, chatId, beforeSeq);
+}
 function listScheduledRuns(projectDir, chatId) {
 return getChatDb().listScheduledRuns(projectDir, chatId);
 }
@@ -430,6 +433,7 @@ assertChatId,
 messagesFilePath,
 listMessages,
 listMessagesWindow,
+listAgentRows,
 getMessage,
 getMessageCount,
 projectMessageCounts,

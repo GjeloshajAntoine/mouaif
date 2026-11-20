@@ -357,6 +357,23 @@ return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
 }
 }
 
+  // GET /api/chats/:id/agent-rows?projectDir=&beforeSeq=<seq> -> { messages }
+  // Subagent tool rows (and user-row markers) older than the loaded page,
+  // for the agent network dock (src/chatdb.js listAgentRows).
+  const agentRowsMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/agent-rows$/);
+  if (agentRowsMatch && method === 'GET') {
+    const id = safeDecode(agentRowsMatch[1]);
+    const dir = qs(q, 'projectDir');
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
+      const before = typeof q.beforeSeq === 'string' ? parseInt(q.beforeSeq, 10) : NaN;
+      return sendJSON(res, 200, { messages: messages.listAgentRows(dir, id, isFinite(before) ? before : undefined) });
+    } catch (e) {
+      return sendJSON(res, 500, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
   // GET /api/chats/:id/revision?projectDir= -> { nextSeq, running }
   // Lightweight run state for the reconcile/recovery poll. `nextSeq` is
   // the append-only transcript cursor; if it is ahead of the client cursor,

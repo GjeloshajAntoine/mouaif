@@ -10,11 +10,15 @@ import {
   ingestStreamEvent,
   settleRunning
 } from './agentNetwork.js';
+import { fetchJson } from '../../api.js';
 
 const listeners = new Set();
 let chatKey = '';
 let net = createAgentNetwork();
 let emittedVersion = -1;
+// Subagent rows older than the loaded page (see loadOlderAgentRows).
+let olderRows = [];
+let olderFetched = false;
 
 function keyOf(state) {
   const p = (state && state.props) || {};
@@ -27,6 +31,42 @@ function bind(state) {
   chatKey = key;
   net = createAgentNetwork();
   emittedVersion = -1;
+  olderRows = [];
+  olderFetched = false;
+}
+
+function firstSeq(messages) {
+  let min = Infinity;
+  for (const m of messages) if (m && Number.isInteger(m.seq) && m.seq < min) min = m.seq;
+  return min;
+}
+
+// A chat opens on its newest page only, so an idle chat whose delegations
+// are older than that page would show no network. Fetch just the subagent
+// rows (and user-row markers) below the page once per chat.
+function loadOlderAgentRows(state) {
+  if (olderFetched) return;
+  const p = (state && state.props) || {};
+  const before = firstSeq(state.messages);
+  if (!p.projectDir || !p.chatId || !Number.isFinite(before) || before <= 0) return;
+  olderFetched = true;
+  const key = chatKey;
+  const url = '/api/chats/' + encodeURIComponent(p.chatId) + '/agent-rows?projectDir=' +
+    encodeURIComponent(p.projectDir) + '&beforeSeq=' + before;
+  fetchJson(url).then((r) => {
+    if (key !== chatKey || r.status !== 200 || !r.body || !Array.isArray(r.body.messages)) return;
+    if (!r.body.messages.length) return;
+    olderRows = r.body.messages;
+    ingestMessages(net, rowsFor(state.messages));
+    emit();
+  }).catch(() => { if (key === chatKey) olderFetched = false; });
+}
+
+// The older rows not yet paged into the transcript, then the transcript.
+function rowsFor(messages) {
+  if (!olderRows.length) return messages;
+  const before = firstSeq(messages);
+  return olderRows.filter((m) => m.seq < before).concat(messages);
 }
 
 function emit(pulses) {
@@ -42,8 +82,9 @@ function emit(pulses) {
 export function syncAgentNetwork(state) {
   if (!state || !Array.isArray(state.messages)) return;
   bind(state);
-  ingestMessages(net, state.messages);
+  ingestMessages(net, rowsFor(state.messages));
   emit();
+  loadOlderAgentRows(state);
 }
 
 // agentNetworkEvent(state, parentCallId, kind, data) — one live frame.

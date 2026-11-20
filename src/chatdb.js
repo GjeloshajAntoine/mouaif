@@ -813,6 +813,29 @@ rows.reverse();
 return rows.map(rowToMessage);
 }
 
+// listAgentRows(projectDir, chatId, beforeSeq) -> Array<Message>
+//
+// The rows the agent network dock is built from, below `beforeSeq`: every
+// subagent tool row, plus each user row reduced to its role and seq (the
+// dock only needs where turns start). A chat opens on its newest page, so
+// without these an idle chat whose delegations are older than that page
+// shows no network at all.
+function listAgentRows(projectDir, chatId, beforeSeq) {
+ensureTables();
+const d = require('./settings.js').getDb();
+const before = Number.isInteger(beforeSeq) && beforeSeq >= 0 ? beforeSeq : Infinity;
+const rows = d.prepare(
+"SELECT * FROM message_store WHERE project_dir = ? AND chat_id = ? AND seq < ? AND role = 'tool' AND (name LIKE 'subagent%' OR name LIKE 'functions.subagent%') ORDER BY seq"
+).all(projectDir, chatId, before);
+const users = d.prepare(
+"SELECT seq FROM message_store WHERE project_dir = ? AND chat_id = ? AND seq < ? AND role = 'user' ORDER BY seq"
+).all(projectDir, chatId, before);
+if (!rows.length) return [];
+const out = rows.map(rowToMessage).concat(users.map((u) => ({ role: 'user', seq: u.seq })));
+out.sort((a, b) => a.seq - b.seq);
+return out;
+}
+
 function appendMessage(projectDir, chatId, msg) {
   ensureTables();
   const d = require('./settings.js').getDb();
@@ -1187,6 +1210,7 @@ module.exports = {
   // Message CRUD
 listMessages,
 listMessagesWindow,
+listAgentRows,
 listScheduledRuns,
 listWebhookRuns,
 appendMessage,
