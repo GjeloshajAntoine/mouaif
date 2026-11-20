@@ -29,6 +29,9 @@ function requestRestart(options = {}) {
   setTimeout(async () => {
     try { process.stdout.write('[mouaif] restart requested: ' + reason + '\n'); } catch (_) {}
     try { await mcp.stopAll(); } catch (_) { /* best-effort */ }
+    // Cancel every chat's still-running background subagents so no approval
+    // wait or delegated stream is left dangling across the relaunch.
+    try { await require('./tools/subagent-orchestration.js').shutdownPersistentScopes(); } catch (_) { /* best-effort */ }
     if (typeof lifecycle.restart === 'function') {
       try {
         await lifecycle.restart({ reason });

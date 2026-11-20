@@ -858,12 +858,16 @@ async function handleTools(req, res, parsed, sessionToken = '') {
         { id: callId, name: 'subagent', arguments: JSON.stringify(args) },
         {
           opts: {
-            projectDir,
-            chatId,
-            appSettings,
-            promptSize: chat.promptSize,
-            enabledTools: Array.isArray(chat.tools) ? chat.tools : null,
-            model
+          projectDir,
+          chatId,
+          appSettings,
+          promptSize: chat.promptSize,
+          enabledTools: Array.isArray(chat.tools) ? chat.tools : null,
+          model,
+          // The direct @agent dispatch is a one-shot synchronous call, not
+          // a chat turn: keep its orchestration scope turn-local so no
+          // chat-scoped persistent scope is created for it.
+          persistentScope: false
           },
           onEvent: (name, data) => {
           notifyAttention({ sessionId: push.sessionIdFromToken(sessionToken), projectDir, chatId, name, data });

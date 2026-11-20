@@ -16,7 +16,8 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
 const result = (text = 'done') => ({ ok: true, result: { text, model: { id: 'mock' } } });
 
 async function unit() {
-  const scope = new Scope('/p', 'chat');
+  // A turn-local root: it carries the turn's abort signal.
+  const scope = new Scope('/p', 'chat', new AbortController().signal);
   let resolve;
   const a = scope.start('a', 'Review', () => new Promise((r) => { resolve = r; }), () => {});
   await tick();
@@ -36,7 +37,10 @@ async function unit() {
   assert.deepEqual(scope.drain(a.author), []);
   for (const name of PARENT_TOOLS) assert.throws(() => scope.dispatch(name, { callId: 'a' }, a.author), { code: 'EPARENT_ONLY' });
   assert.throws(() => scope.get('alien'), { code: 'EUNKNOWN_CALL' });
-  const isolated = new Scope('/p', 'chat');
+  // A chat-scoped root via persistentScope() is persistent: it is not
+  // finished by a turn and keeps accepting controls after "turn end".
+  const isolated = require('../src/tools/subagent-orchestration.js').persistentScope('/p', 'chat-isolated', {});
+  assert.equal(isolated.persistent, true);
   assert.throws(() => isolated.get('a'), { code: 'EUNKNOWN_CALL' });
   const b = scope.start('b', '', async () => result(), () => {});
   scope.dispatch('subagent_publish', { name: 'review', summary: 'bounded handoff', files: ['src/ai-stream.js'] }, a.author);
@@ -64,7 +68,12 @@ async function unit() {
   parentCtl.abort();
   await abortedScope.finish();
   assert.equal(child.state, 'cancelled');
-  await scope.finish(); await isolated.finish();
+  await scope.finish();
+  // A persistent root survives its "turn": controls still work, and only an
+  // explicit finish() closes it.
+  assert.equal(isolated.closed, false);
+  assert.throws(() => isolated.dispatch('subagent_read', { name: 'missing' }), { code: 'EUNKNOWN_PUBLICATION' });
+  await isolated.finish();
   assert.equal(scope.runs.size, 0);
   assert.equal(scope.publications.size, 0);
   assert.throws(() => scope.dispatch('subagent_read', { name: 'review' }), { code: 'EABORTED' });
@@ -109,7 +118,14 @@ async function integration() {
           childPending = () => send('subagent_publish', { name: 'draft', summary: 'sibling handoff' }, 'duplicate');
           return;
         }
-        if (mode === 'cancel' || mode === 'end') return; // provider interrupted by child abort
+        if (mode === 'cancel') return; // provider interrupted by child abort
+        if (mode === 'end') {
+        // The child keeps running after the parent turn ended: answer its
+        // first request late (after the turn's stream has closed) so the
+        // run settles as completed purely on the persistent scope.
+        if (childRound === 1) return setTimeout(() => send(), 250);
+        return send();
+        }
         if (mode === 'approval') return send('shell', { cmd: 'echo must-not-run' }, 'approval');
         if (childRound === 2) {
           steeringObserved = body.messages.some((m) => m.content === 'Parent steering: revise scope');
@@ -123,25 +139,32 @@ async function integration() {
       assert.equal(parentToolResults[0].result.callId, 'child');
       assert.equal(parentToolResults[0].result.background, true);
       if (parentRound === 2) {
-        parentObservedRunning = true;
-        if (mode === 'steer') return send('subagent_send', { callId: 'child', message: 'revise scope' }, 'steer');
-        if (mode === 'end') return send();
-        // Wait for child fetch/tool approval before stopping it.
-        const wait = () => {
-          if (mode === 'approval' ? auth.listPending(currentProject, currentChat).length : childRound) send('subagent_stop', { callId: 'child' }, 'stop');
-          else setTimeout(wait, 5);
-        };
-        return wait();
+      parentObservedRunning = true;
+      if (mode === 'steer') return send('subagent_send', { callId: 'child', message: 'revise scope' }, 'steer');
+      if (mode === 'end') {
+      // The parent ends its turn here with no further tool call; the
+      // background child keeps running on the chat's persistent scope.
+      // Its final result is persisted when it settles, even though the
+      // SSE stream is gone by then.
+      send();
+      return;
+      }
+      // Wait for child fetch/tool approval before stopping it.
+      const wait = () => {
+      if (mode === 'approval' ? auth.listPending(currentProject, currentChat).length : childRound) send('subagent_stop', { callId: 'child' }, 'stop');
+      else setTimeout(wait, 5);
+      };
+      return wait();
       }
       if (parentRound === 3) {
-        if (mode === 'steer') {
-          const release = () => { if (childPending) childPending(); else setTimeout(release, 5); };
-          release();
-        }
-        // Fixture scheduling only; production status never waits.
-        return setTimeout(() => send('subagent_status', { callId: 'child' }, 'status'), 100);
+      if (mode === 'steer') {
+      const release = () => { if (childPending) childPending(); else setTimeout(release, 5); };
+      release();
       }
-      assert.equal(parentToolResults.at(-1).result.state, mode === 'steer' ? 'completed' : 'cancelled');
+      // Fixture scheduling only; production status never waits.
+      return setTimeout(() => send('subagent_status', { callId: 'child' }, 'status'), 100);
+      }
+      assert.equal(parentToolResults.at(-1).result.state, mode === 'steer' || mode === 'end' ? 'completed' : 'cancelled');
       send();
     });
   });
@@ -158,21 +181,28 @@ async function integration() {
         if (event === 'data') process.nextTick(() => cb(Buffer.from(JSON.stringify({ projectDir: currentProject, modelId: 'mock', content: 'parent task' }))));
         if (event === 'end') process.nextTick(cb);
       } };
-      const res = { body: '', writeHead() {}, write(chunk) { this.body += chunk; }, end() {}, setHeader() {}, getHeader() {}, on() {}, off() {} };
+      const res = { body: '', writableEnded: false, writeHead() {}, write(chunk) { if (this.writableEnded) { const e = new Error('write after end'); e.code = 'ERR_STREAM_WRITE_AFTER_END'; throw e; } this.body += chunk; }, end() { this.writableEnded = true; }, setHeader() {}, getHeader() {}, on() {}, off() {} };
       await handleChatStream(req, res, chat.id, null);
       const events = res.body.split('\n\n').map((frame) => {
         const match = /event: (.*)\ndata: (.*)/.exec(frame);
         return match ? { name: match[1], data: JSON.parse(match[2]) } : null;
       }).filter(Boolean);
       const settled = events.filter((e) => e.name === 'tool_result' && e.data.id === 'child');
+      if (mode === 'end') {
+      // Turn end no longer cancels the background child (persistent chat
+      // scope): its final result is not on this turn's stream, but it is
+      // persisted once the run settles.
+      assert.equal(settled.length, 0, 'end: no result on the ended turn\'s stream');
+      } else {
       assert.equal(settled.length, 1, mode + ': one persisted final result, not a receipt/result duplicate');
       assert.equal(settled[0].data.result.state, mode === 'steer' ? 'completed' : 'cancelled');
       assert.ok(events.findIndex((e) => e === settled[0]) < events.findIndex((e) => e.name === 'done'));
+      }
       assert.equal(auth.listPending(currentProject, chat.id).length, 0);
       assert.ok(parentObservedRunning);
       if (mode === 'steer') {
       assert.ok(steeringObserved);
-      const wireIds = settled[0].data.result.toolEvents.filter((e) => e.name === 'tool_call').map((e) => e.data.id);
+      const wireIds = settled.length ? settled[0].data.result.toolEvents.filter((e) => e.name === 'tool_call').map((e) => e.data.id) : [];
       assert.ok(wireIds.every((id) => /^[A-Za-z0-9_-]+$/.test(id)), 'namespaced tool IDs remain provider-compatible');
         // Default depth budget (3): a child is itself a local parent, so it
         // keeps launch/control tools for its own nested subagents.
@@ -184,10 +214,33 @@ async function integration() {
       }
       const persisted = require('../src/messages.js').listMessages(currentProject, chat.id);
       const childResults = persisted.filter((m) => m.role === 'tool' && m.phase === 'result' && m.toolCallId === 'child');
-      assert.equal(childResults.length, 1);
-      assert.ok(JSON.parse(childResults[0].content).chat, 'saved nested transcript survives');
+      if (mode === 'end') {
+      // The child outlived the turn: its final result row lands after the
+      // stream ended (written by the emit() catch), and the chat's
+      // persistent scope still lists it as controllable.
+      await new Promise((r) => setTimeout(r, 300));
+      const after = require('../src/messages.js').listMessages(currentProject, chat.id)
+      .filter((m) => m.role === 'tool' && m.phase === 'result' && m.toolCallId === 'child');
+      assert.equal(after.length, 1, 'end: late background result is persisted after turn end');
+      assert.equal(JSON.parse(after[0].content).state, 'completed');
+      } else {
+        assert.equal(childResults.length, 1);
+        assert.ok(JSON.parse(childResults[0].content).chat, 'saved nested transcript survives');
+      }
       const history = require('../src/messages.js').reconstructUpstreamHistory(persisted);
-      assert.equal(history.filter((m) => m.role === 'tool' && m.name === 'subagent').length, 1, 'delayed result survives history reconstruction');
+      assert.equal(history.filter((m) => m.role === 'tool' && m.name === 'subagent').length, mode === 'end' ? 0 : 1, 'delayed result survives history reconstruction');
+      // The chat's scope is persistent: after the turn ended, the background
+      // child of mode 'end' is still observable on the chat's long-lived
+      // scope, and can still be controlled from a later turn.
+      const orch = require('../src/tools/subagent-orchestration.js');
+      if (mode === 'end') {
+      const live = orch.persistentScope(currentProject, chat.id, { maxDepth: 3, maxRuns: 32 });
+      const runs = live.dispatch('subagent_status', {});
+      assert.equal(runs.runs.length, 1, 'background child survives turn end on the chat scope');
+      assert.equal(runs.runs[0].state, 'completed');
+      assert.deepEqual(live.dispatch('subagent_stop', { callId: 'child' }), { callId: 'child', state: 'completed', alreadyFinished: true });
+      }
+      await orch.dropPersistentScope(currentProject, chat.id);
     }
   } finally {
     server.closeAllConnections();

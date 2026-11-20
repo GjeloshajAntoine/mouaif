@@ -263,6 +263,9 @@ const chat = chats.updateChat(dir, id, safeBody);
       try { const c = chats.getChat(dir, id); doomedTitle = (c && c.title) || ''; } catch { /* unknown chat */ }
       const removed = chats.deleteChat(dir, id);
       if (!removed) return sendJSON(res, 404, { error: 'Chat not found', id });
+      // A deleted chat's long-lived subagent scope is dropped: its still-
+      // running background runs are cancelled and settle.
+      try { require('./tools/subagent-orchestration.js').dropPersistentScope(dir, id); } catch { /* non-fatal */ }
       try { require('./hookTurns.js').fireChatLifecycle('chat.delete', { projectDir: dir, chatId: id, title: doomedTitle }); } catch { /* non-fatal */ }
       // Chat storage and trace export are independent. Deleting a chat
       // removes its transcript, but deliberately keeps the user-owned trace
@@ -1031,9 +1034,38 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
     // frame per tool round to draw a single card.
     cursor = liveChat.replaceLive(runKey, name, data, liveChat.progressKey(data));
     }
+    // A background subagent that outlives its turn finishes after the
+    // owner's SSE stream has ended; its final tool_result must still be
+    // persisted, or the call card stays on "running" after a reload. The
+    // normal path below already persists every tool_result row, so this
+    // only covers the late case: the turn's response is already ended when
+    // the run settles.
+    const lateSubagentResult = name === 'tool_result' && data && data.name === 'subagent'
+    && res.writableEnded === true && !turnPersistedToolResults.has(data.id || '');
     try {
-      res.write('event: ' + name + '\ndata: ' + JSON.stringify(cursor ? Object.assign({}, data, cursor) : data) + '\n\n');
-    } catch { /* socket closed */ }
+    res.write('event: ' + name + '\ndata: ' + JSON.stringify(cursor ? Object.assign({}, data, cursor) : data) + '\n\n');
+    } catch {
+    if (lateSubagentResult) {
+      try {
+      messages.appendMessage(projectDir, chatId, {
+        role: 'tool', phase: 'result', toolCallId: data.id || '', name: data.name,
+        ok: !!data.ok, content: JSON.stringify(data.result || {}), hooks: data.hooks
+      });
+      } catch { /* non-fatal */ }
+      return;
+    }
+    }
+    if (lateSubagentResult) {
+    // The response is already ended but the write did not throw (some
+    // mocks/sockets swallow it): persist the late result and stop here.
+    try {
+      messages.appendMessage(projectDir, chatId, {
+      role: 'tool', phase: 'result', toolCallId: data.id || '', name: data.name,
+      ok: !!data.ok, content: JSON.stringify(data.result || {}), hooks: data.hooks
+      });
+    } catch { /* non-fatal */ }
+    return;
+    }
     if (traceStream) trace.write(traceStream, name, data);
     // Fan the remaining live events out to followers (live-chat.js).
     if (cursor) { /* buffered above */ } else if (name === 'tool_result') {
@@ -1540,6 +1572,10 @@ function accumulateRoundUsage(roundUsage) {
     };
   }
 
+  // Tool-result ids already persisted by the normal in-turn path, so the
+  // late-persistence branch below never writes a second row for the same
+  // background subagent result.
+  const turnPersistedToolResults = new Set();
   let result;
   try {
     result = await ai.streamChat({
@@ -1561,6 +1597,9 @@ promptSize: resolvedProfileId,
     thinkingLevel: thinkingLevel || chat.thinkingLevel || '',
     maxOutputTokens: maxOutputTokens || chat.maxOutputTokens || '',
     signal: runController.signal,
+    // Chat-scoped orchestration: background subagents of this chat keep
+    // running across turns and stay controllable from later turns.
+    persistentScope: true,
     // Per-chat tool filter (decisions: chat.tools). null/undefined
     // means "all tools available to the project"; an array (even an
     // empty one) means "restrict to exactly these tool names". The
@@ -1671,14 +1710,15 @@ promptSize: resolvedProfileId,
           });
         } catch { /* non-fatal */ }
       } else if (name === 'tool_result') {
-        // A recurring task's run that found nothing relevant asked to finish quietly.
-        if (data && data.name === 'skip_notification' && data.ok) skipCompletionPush = true;
-        try {
-          messages.appendMessage(projectDir, chatId, {
-            role: 'tool', phase: 'result', toolCallId: data.id || '', name: data.name || '',
-            ok: !!data.ok, content: JSON.stringify(data.result || {}), hooks: data.hooks
-          });
-        } catch { /* non-fatal */ }
+      // A recurring task's run that found nothing relevant asked to finish quietly.
+      if (data && data.name === 'skip_notification' && data.ok) skipCompletionPush = true;
+      if (data && data.id) turnPersistedToolResults.add(String(data.id));
+      try {
+      messages.appendMessage(projectDir, chatId, {
+        role: 'tool', phase: 'result', toolCallId: data.id || '', name: data.name || '',
+        ok: !!data.ok, content: JSON.stringify(data.result || {}), hooks: data.hooks
+      });
+      } catch { /* non-fatal */ }
       } else if (name === 'authorization_required' || name === 'ask_user_required') {
       notifyAttention({ sessionId: _pushSessionId, projectDir, chatId, name, data, preferences: notificationPrefs, broadcast: hasRecurringTask(), origin: hookOrigin });
       } else if (name === 'progress_update') {

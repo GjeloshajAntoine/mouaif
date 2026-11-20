@@ -2,6 +2,59 @@
 
 const { randomUUID } = require('node:crypto');
 const { Groups } = require('./subagent-groups.js');
+
+// Chat-scoped scopes that outlive their parent turn: one per (projectDir,
+// chatId), created when a root turn detaches a background run and reused by
+// every later turn of the same chat, so its background subagents keep running
+// and stay controllable across turns. Turn-local roots (no chatId, one-shot
+// callers) stay in-memory and are finished with the turn as before. Worker
+// restart loses these like every other in-memory state.
+const persistentScopes = new Map();
+const scopeKey = (projectDir, chatId) => String(projectDir || '') + '\0' + String(chatId || '');
+
+// persistentScope(projectDir, chatId, limits) -> Scope
+//
+// The long-lived root scope of one chat, created on first use. Its runs are
+// NOT tied to a turn signal, so they survive turn end; they are cancelled
+// only by an explicit subagent_stop, the chat's deletion or process exit.
+function persistentScope(projectDir, chatId, limits) {
+  const key = scopeKey(projectDir, chatId);
+  let scope = persistentScopes.get(key);
+  if (!scope) {
+    scope = new Scope(projectDir, chatId, null, limits);
+    // Marked explicitly (not inferred from the signal): this root outlives
+    // its turn, so dispatch/start/accepts keep working between turns.
+    scope.persistent = true;
+    persistentScopes.set(key, scope);
+  }
+  return scope;
+}
+
+// dropPersistentScope(projectDir, chatId) -> Scope | null
+//
+// Forget a chat's long-lived scope (chat deleted, worker shutting down). The
+// scope is finished first: its still-running background runs are cancelled
+// and their final results settle, so no promise or approval wait is left
+// dangling. Returns the scope so callers can await its finish().
+async function dropPersistentScope(projectDir, chatId) {
+  const key = scopeKey(projectDir, chatId);
+  const scope = persistentScopes.get(key);
+  if (!scope) return null;
+  persistentScopes.delete(key);
+  await scope.finish();
+  return scope;
+}
+
+// shutdownPersistentScopes() -> Promise
+//
+// Finish every long-lived scope, e.g. before a worker relaunch/exit, so
+// background subagents are cancelled instead of dying with the process.
+async function shutdownPersistentScopes() {
+  const scopes = [...persistentScopes.values()];
+  persistentScopes.clear();
+  await Promise.all(scopes.map((s) => s.finish()));
+}
+
 const PARENT_TOOLS = Object.freeze(['subagent_messages', 'subagent_status', 'subagent_stop', 'subagent_send', 'subagent_group_create', 'subagent_group_update']);
 const SIBLING_TOOLS = Object.freeze(['subagent_publish', 'subagent_read', 'subagent_group_status', 'subagent_decision', 'subagent_conflict']);
 const TOOL_NAMES = Object.freeze([...PARENT_TOOLS, ...SIBLING_TOOLS]);
@@ -50,15 +103,15 @@ const spec = (name, description, properties, required = []) => ({ type: 'functio
 const callId = { type: 'string', description: 'callId returned by a subagent call you made with background: true.' };
 const keyDesc = '1–80 letters, digits, dots, underscores, or hyphens ([A-Za-z0-9_.-]).';
 const SPECS = [
-  spec('subagent_status', 'For subagents you started with background: true this turn: their current state, returned at once (it never waits). subagent_status, subagent_messages, subagent_group_status and subagent_read share a budget of 256 calls per turn, so do not poll in a tight loop.', {
+  spec('subagent_status', 'For subagents started with background: true: their current state, returned at once (it never waits). In this chat the handles of earlier turns are still listed and controllable until they settle or are stopped. subagent_status, subagent_messages, subagent_group_status and subagent_read share a budget of 256 calls per turn, so do not poll in a tight loop.', {
     callId: { ...callId, description: 'Optional; omit to list all your subagents, the shared budgets, and any escalated conflicts.' }
   }),
-  spec('subagent_messages', 'For a subagent you started with background: true this turn: read the lines it has written so far, and whether your subagent_send messages reached it. Returns at once.', {
+  spec('subagent_messages', 'For a subagent started with background: true: read the lines it has written so far, and whether your subagent_send messages reached it. Returns at once.', {
     callId,
     since: { type: 'integer', minimum: 0, description: 'Cursor from a previous nextCursor (default 0).' },
     limit: { type: 'integer', minimum: 1, maximum: 50, description: 'Maximum lines to return (1–50, default 20).' }
   }, ['callId']),
-  spec('subagent_send', 'For a subagent you started with background: true this turn: send it guidance. The message is added to its context before its next model call; it does not interrupt the current one. The receipt says queued, delivered or undelivered (the subagent had already finished).', {
+  spec('subagent_send', 'For a subagent started with background: true: send it guidance. The message is added to its context before its next model call; it does not interrupt the current one. The receipt says queued, delivered or undelivered (the subagent had already finished).', {
     callId, message: { type: 'string', minLength: 1, maxLength: 4096, description: 'Guidance text (1–4096 chars).' }
   }, ['callId', 'message']),
   spec('subagent_group_create', 'Plan a team of background subagents before starting them: a shared objective and the members, each with a role, the files it owns and the members it depends on. Then start each member with subagent (groupId, memberId, background: true); a member starts only once its dependencies succeeded. Members can propose shared decisions (subagent_decision) for you to approve, and escalate conflicts (subagent_conflict) for you to settle, both with subagent_group_update. Workspace and file ownership are notes for the members: they grant no permissions and create no checkout.', {
@@ -92,7 +145,7 @@ const SPECS = [
     summary: { type: 'string', maxLength: 4096, description: 'What conflicts and why (max 4096 chars).' },
     members: { type: 'array', minItems: 1, maxItems: 32, items: { type: 'string', maxLength: 80 }, description: '1–32 declared memberIds involved in the conflict.' }
   }, ['name', 'summary', 'members']),
-  spec('subagent_stop', 'For a subagent you started with background: true this turn: cancel it, with its own subagents and pending approvals; your other subagents keep running. Safe to call twice; the subagent stops at its next step.', { callId }, ['callId']),
+  spec('subagent_stop', 'For a subagent started with background: true: cancel it, with its own subagents and pending approvals; your other subagents keep running. Safe to call twice; the subagent stops at its next step.', { callId }, ['callId']),
   spec('subagent_publish', 'Leave a named handoff for the agent that started you and for sibling subagents: a summary plus project-relative file paths, not file contents. It lasts for the current turn; a name cannot be reused. Members of another group cannot read it.', {
     name: { type: 'string', maxLength: 80, description: 'Immutable artifact name: ' + keyDesc },
     summary: { type: 'string', maxLength: 8192, description: 'What you found or did (max 8192 chars).' },
@@ -127,11 +180,15 @@ class Scope {
     this.observations = 0;
     this.closed = false;
     this.signal = signal;
+    // Turn-local by default; persistentScope() marks a chat's long-lived
+    // root explicitly (it is created with a null signal but outlives its
+    // turn, so the flag cannot be inferred from the signal alone).
+    this.persistent = false;
     this.abort = () => { for (const row of this.runs.values()) this.stop(row); };
     if (signal) signal.addEventListener('abort', this.abort, { once: true });
   }
   start(id, agent, execute, complete, meta = {}) {
-    if (this.closed || this.signal?.aborted) throw error('EABORTED', 'parent turn has ended');
+    if (this.closed || (!this.persistent && this.signal?.aborted)) throw error('EABORTED', 'parent turn has ended');
     if (this.owner && !this.parentScope.accepts(this.owner)) throw error('EABORTED', 'local parent is no longer active');
     const depth = (this.owner?.depth || 0) + 1;
     // Depth cap: the deepest level a run below this parent may reach. The
@@ -172,9 +229,11 @@ class Scope {
     // Defer dispatch until the receipt is returned; completion owns the single
     // persisted tool_result, while the model gets a background handle immediately.
     row.promise = new Promise((resolve) => setImmediate(resolve)).then(async () => {
-    if (!await this.groups.ready(row) || row.controller.signal.aborted || this.closed) {
-      const result = { error: { code: 'EDEPENDENCY', message: 'run cancelled or dependency did not complete' } };
-      return { ok: false, result };
+    // A persistent (chat-scoped) root is not bound to a turn signal, so its
+    // runs keep going after the turn that started them ended.
+    if (!await this.groups.ready(row) || row.controller.signal.aborted || this.closed || (!this.persistent && this.signal?.aborted)) {
+    const result = { error: { code: 'EDEPENDENCY', message: 'run cancelled or dependency did not complete' } };
+    return { ok: false, result };
     }
     row.state = 'running';
     return execute(row);
@@ -235,7 +294,7 @@ class Scope {
     return { callId: row.callId, state: row.state, alreadyFinished };
   }
   validateControl(name, args, author) {
-    if (this.closed || this.root.closed || this.signal?.aborted) throw error('EABORTED', 'scope ended');
+    if (this.closed || this.root.closed || (!this.persistent && this.signal?.aborted)) throw error('EABORTED', 'scope ended');
     if (author && author !== this.owner?.author) throw error('EPARENT_ONLY', 'only the local parent controls children');
     if (['subagent_stop', 'subagent_messages', 'subagent_send'].includes(name) || name === 'subagent_status' && args.callId) this.get(args.callId);
     if (name === 'subagent_group_update' && !this.groups.rows.has(args.groupId)) {
@@ -257,7 +316,7 @@ class Scope {
   // acquire(signal) -> release(). Subagent model requests are not limited in
   // number: this only refuses a request whose run or scope already ended.
   async acquire(signal) {
-    if (signal?.aborted || this.closed || this.root.closed) throw error('EABORTED', 'run cancelled before provider dispatch');
+    if (signal?.aborted || this.closed || this.root.closed || (!this.persistent && this.root.signal?.aborted)) throw error('EABORTED', 'run cancelled before provider dispatch');
     return () => {};
   }
   event(row, kind, data) {
@@ -291,7 +350,9 @@ class Scope {
     if (!row || !this.accepts(row)) return [];
     return row.inbox.splice(0).map((receipt) => { receipt.state = 'delivered'; return receipt.message; });
   }
-  accepts(row) { return !this.closed && !this.root.closed && !this.signal?.aborted && !row.finalized && !row.controller.signal.aborted; }
+  // A persistent (chat-scoped) root has no turn signal, so its runs stay
+  // acceptable between turns; a turn-local root refuses once the turn ended.
+  accepts(row) { return !this.closed && !this.root.closed && (this.persistent || !this.signal?.aborted) && !row.finalized && !row.controller.signal.aborted; }
   undelivered(row) {
     for (const receipt of row.inbox.splice(0)) receipt.state = 'undelivered';
   }
@@ -305,7 +366,10 @@ class Scope {
       ...(row.exec?.subagentEnd?.context ? { hookContext: row.exec.subagentEnd.context } : {}) };
   }
   dispatch(name, args, author, workspace) {
-    if (this.closed || this.signal?.aborted) throw error('EABORTED', 'parent turn has ended');
+    // A chat's persistent root has no turn signal; only a closed scope (chat
+    // deleted or worker shutting down) refuses. Turn-local roots keep the
+    // turn-end refusal.
+    if (this.closed || (!this.parentScope && !this.persistent && this.signal?.aborted)) throw error('EABORTED', 'parent turn has ended');
     const localParent = !!this.owner && author === this.owner.author;
     const child = localParent ? this.owner : author && [...this.runs.values()].find((r) => r.author === author);
     if (author && (!child || !(localParent ? this.parentScope.accepts(child) : this.accepts(child)))) throw error('EABORTED', 'child is no longer active');
@@ -431,4 +495,4 @@ class Scope {
   }
 }
 
-module.exports = { Scope, SPECS, DEFAULT_LIMITS, LIMIT_RANGES, resolveLimits, TOOL_NAMES, FAMILY_NAMES, PARENT_TOOLS, SIBLING_TOOLS };
+module.exports = { Scope, SPECS, DEFAULT_LIMITS, LIMIT_RANGES, resolveLimits, TOOL_NAMES, FAMILY_NAMES, PARENT_TOOLS, SIBLING_TOOLS, persistentScope, dropPersistentScope, shutdownPersistentScopes };

@@ -857,14 +857,26 @@ function rootSubagentLimits(projectDir) {
 
 async function streamChat(opts) {
   opts = opts || {};
-  const ownsScope = !opts.orchestrationScope;
-  const scope = ownsScope
-    ? new (require('./tools/subagent-orchestration.js').Scope)(opts.projectDir, opts.chatId, opts.signal, rootSubagentLimits(opts.projectDir))
-    : opts.orchestrationScope;
+  const orchestration = require('./tools/subagent-orchestration.js');
+  if (opts.orchestrationScope) {
+    // A nested run reuses its parent's scope; only the root turn owns one.
+    return await streamChatInScope(Object.assign({}, opts, { orchestrationScope: opts.orchestrationScope }));
+  }
+  // A root turn of a real chat runs on the chat's long-lived scope when the
+  // caller opted in (the chat stream handler does), so background subagents
+  // survive turn end and stay controllable from later turns of the same chat.
+  // Every other caller (direct @agent dispatch, /api/ai/chat, the shell
+  // reviewer, tests) gets a turn-local scope that is finished below.
+  const persistent = !!(opts.persistentScope && opts.projectDir && opts.chatId);
+  const scope = persistent
+    ? orchestration.persistentScope(opts.projectDir, opts.chatId, rootSubagentLimits(opts.projectDir))
+    : new orchestration.Scope(opts.projectDir, opts.chatId, opts.signal, rootSubagentLimits(opts.projectDir));
   try {
     return await streamChatInScope(Object.assign({}, opts, { orchestrationScope: scope }));
   } finally {
-    await scope.finish();
+    // Only a turn-local root is finished here; the chat's persistent scope
+    // stays open across turns and is dropped with the chat or on shutdown.
+    if (!persistent) await scope.finish();
   }
 }
 
@@ -930,11 +942,13 @@ function collectToolSpecs(opts) {
     try {
       if (opts && opts.projectDir) agentNames = require('./agents.js').list(opts.projectDir).map((a) => a.name);
     } catch { /* no agents */ }
-    // The description states the depth budget this turn runs with. A caller
-    // without a scope (the chat tool preview) reads it from the settings, as
-    // a root turn would.
+    // The description states the depth budget this turn runs with and,
+    // for a chat whose scope outlives the turn, that background handles stay
+    // valid in later turns. A caller without a scope (the chat tool preview)
+    // reads the depth from the settings, as a root turn would.
     const maxDepth = scope ? (scope.owner?.depthCap ?? scope.root.limits.maxDepth) : rootSubagentLimits(opts && opts.projectDir).maxDepth;
-    toolSpecs.push(sub.buildSpec ? sub.buildSpec(agentNames, { maxDepth }) : sub.SPEC);
+    const persistent = !!(scope && !scope.owner && scope.persistent);
+    toolSpecs.push(sub.buildSpec ? sub.buildSpec(agentNames, { maxDepth, persistent }) : sub.SPEC);
     toolSpecs.push(...orchestration.SPECS);
   }
   catch { /* subagent tool module unavailable; skip */ }
@@ -1223,10 +1237,23 @@ async function streamChatInScope(opts) {
     });
   }
 
+  // A root turn of a real chat runs on the chat's long-lived scope, whose
+  // background runs outlive the turn; only a turn-local root is settled at
+  // turn end. `finishTurn()` is the per-turn settlement point: billing and
+  // cancellation for turn-local roots, nothing for persistent ones.
+  const persistentRoot = !scope.owner && scope.persistent === true;
+  const finishTurn = () => (persistentRoot ? Promise.resolve() : scope.finish());
+  // In a nested run, "the turn ended" must not stop a background child on a
+  // persistent chat scope: only the run's own abort signal counts.
+  const runSignalAborted = () => (persistentRoot && opts.nestedSubagent ? false : !!(signal && signal.aborted));
+
   while (true) {
+    // A nested background run on a persistent chat scope keeps running after
+    // the parent turn ended: only its own abort signal stops it here.
+    if (runSignalAborted()) break;
     if (signal && signal.aborted) {
-    await scope.finish();
-    return { ok: false, error: { code: 'EABORTED', message: 'aborted' }, usage: usageWithDelegated(), providerCost: totalProviderCost(), delegatedCost: delegatedCostTotal(), totalCost: totalRunCost() };
+      await finishTurn();
+      return { ok: false, error: { code: 'EABORTED', message: 'aborted' }, usage: usageWithDelegated(), providerCost: totalProviderCost(), delegatedCost: delegatedCostTotal(), totalCost: totalRunCost() };
     }
     if (opts.orchestrationAuthor) {
       for (const message of (scope.parentScope || scope).drain(opts.orchestrationAuthor)) convo.push({ role: 'user', content: 'Parent steering: ' + message });
@@ -1244,16 +1271,18 @@ async function streamChatInScope(opts) {
       // A subagent has no Retry button: one transient failure would throw
       // away every round it already ran. Retry once, but only a failure that
       // happened before the reply streamed (nothing was forwarded yet, so the
-      // retry cannot duplicate output) and only a transient one.
-      if (opts.nestedSubagent && isTransientUpstreamFailure(result) && !(signal && signal.aborted)) {
-        await new Promise((resolve) => setTimeout(resolve, NESTED_RETRY_DELAY_MS));
-        const scopeStillActive = !scope.owner || scope.accepts(scope.owner);
-        if (!(signal && signal.aborted) && scopeStillActive) result = await runUpstreamTurn(convo, effectiveToolSpecs);
+      // retry cannot duplicate output) and only a transient one. A background
+      // run on a chat's persistent scope also retries after its turn ended:
+      // its signal is the run's own, not the turn's.
+      if (opts.nestedSubagent && isTransientUpstreamFailure(result) && !(runSignalAborted())) {
+      await new Promise((resolve) => setTimeout(resolve, NESTED_RETRY_DELAY_MS));
+      const scopeStillActive = !scope.owner || scope.accepts(scope.owner);
+      if (!runSignalAborted() && scopeStillActive) result = await runUpstreamTurn(convo, effectiveToolSpecs);
       }
     }
     finally { release(); }
     if (!result.ok) {
-    await scope.finish();
+    await finishTurn();
     return { ok: false, error: result.error, usage: usageWithDelegated(), providerCost: totalProviderCost(), delegatedCost: delegatedCostTotal(), totalCost: totalRunCost() };
     }
 
@@ -1288,9 +1317,11 @@ async function streamChatInScope(opts) {
       // prompt tokens stay last-round-wins, but delegated subagent
       // requests are separate upstream calls and must be added so the
       // chat's total usage/cost matches what providers billed.
-      // A handle cannot outlive its parent turn. Settle cancellation and
-      // final delegated billing before the parent emits done/persists cost.
-      await scope.finish();
+      // A turn-local handle cannot outlive its parent turn: settle
+      // cancellation and final delegated billing before the parent emits
+      // done/persists cost. A chat's persistent scope keeps its background
+      // runs across turns, so nothing is settled here for it.
+      await finishTurn();
       const finalUsage = usageWithDelegated();
       const finalProviderCost = totalProviderCost();
       const finalDelegatedCost = delegatedCostTotal();
@@ -1400,6 +1431,12 @@ async function streamChatInScope(opts) {
     emptyPostToolRetries = 0;
     // Loop: request again with the tool results in context.
   }
+
+  // A nested background run on a persistent chat scope was aborted (its own
+  // signal, e.g. subagent_stop or scope shutdown) after the parent turn had
+  // already ended: settle it as cancelled without emitting a turn result.
+  await finishTurn();
+  return { ok: false, error: { code: 'EABORTED', message: 'aborted' }, usage: usageWithDelegated(), providerCost: totalProviderCost(), delegatedCost: delegatedCostTotal(), totalCost: totalRunCost() };
 
   // ---- One upstream request (stream + accumulate) --------------------
   // Performs a single request/response against the provider, streaming
@@ -2346,7 +2383,12 @@ async function streamChatInScope(opts) {
     let row;
     try {
     row = scope.start(id, args.agent, (run) => runDelegation(run), (exec) => {
-      if (args.background) onEvent('tool_result', { id, name: 'subagent', ok: exec.ok, result: exec.result, hooks: exec.subagentEnd ? hooksMeta(exec.subagentEnd.notes, exec.subagentEnd.context || '') : undefined });
+    // A background run on a chat's persistent scope outlives this turn.
+    // Its final result still rides this onEvent: the chat stream handler
+    // persists the tool_result row even after the SSE socket closed (the
+    // write itself is best-effort), so the call card settles on the next
+    // reconcile instead of staying on "running" forever.
+    if (args.background) onEvent('tool_result', { id, name: 'subagent', ok: exec.ok, result: exec.result, hooks: exec.subagentEnd ? hooksMeta(exec.subagentEnd.notes, exec.subagentEnd.context || '') : undefined });
     }, { groupId: args.groupId, memberId: args.memberId, workspace: workingDir, agentLimits: agentLimits(opts.projectDir, args.agent), onEnd: (ended, exec, state) => {
       const hookCtx = hookContextFor(callOpts);
       // subagent.end fires at every depth: its payload carries `depth`.
@@ -2361,18 +2403,27 @@ async function streamChatInScope(opts) {
     return { ok: false, result, content: JSON.stringify(result) };
     }
     if (!args.background) return row.promise;
-    const result = { callId: id, rootId: row.rootId, parentCallId: row.parentCallId, depth: row.depth, background: true, state: row.state, groupId: row.groupId || null, memberId: row.memberId || null, nextSuggested: 'Use immediate subagent_status/messages, explicit subagent_send or stop. Avoid tight polling; unfinished children cancel at turn end.' };
+    const persistent = persistentRoot;
+    const result = { callId: id, rootId: row.rootId, parentCallId: row.parentCallId, depth: row.depth, background: true, state: row.state, groupId: row.groupId || null, memberId: row.memberId || null,
+    nextSuggested: persistent
+      ? 'Use subagent_status/messages, explicit subagent_send or stop — the handle stays valid in later turns of this chat until the run settles or is stopped. Avoid tight polling.'
+      : 'Use immediate subagent_status/messages, explicit subagent_send or stop. Avoid tight polling; unfinished children cancel at turn end.' };
     return { ok: true, backgroundPending: true, result, content: JSON.stringify(result) };
 
     async function runDelegation(run) {
     const signal = run.controller.signal;
     const onEvent = (eventName, data) => {
+    // A background run on a chat's persistent scope outlives its turn: keep
+    // recording its lines and forwarding events even after the starting turn
+    // ended; the stream handler persists the final result when it lands.
+    // `accepts` already covers the persistent root (no turn signal), so this
+    // guard only stops runs that were stopped or whose scope closed.
     if (!scope.accepts(run)) return;
     if (eventName === 'subagent_event') {
     scope.event(run, data.kind, data.data);
-      if (data.kind === 'start') run.modelId = data.data?.model?.id || null;
-      } else if (eventName === 'progress_update') scope.event(run, eventName, data);
-      opts.onEvent(eventName, data);
+    if (data.kind === 'start') run.modelId = data.data?.model?.id || null;
+    } else if (eventName === 'progress_update') scope.event(run, eventName, data);
+    opts.onEvent(eventName, data);
     };
     const task = args && typeof args.task === 'string' ? args.task.trim() : '';
       let context = args && typeof args.context === 'string' ? args.context.trim() : '';
@@ -2740,9 +2791,14 @@ promptSize: callOpts && callOpts.promptSize,
         orchestrationAuthor: run.author,
         allowedImageRefs: Array.isArray(args.images) ? args.images.slice() : [],
         onEvent: (eventName, data) => {
-        if (!scope.accepts(run)) return;
+        // A background run on a chat's persistent scope outlives its turn:
+        // keep forwarding its live frames even when the starting turn (and
+        // its SSE socket) is gone, so a later turn or a follower can still
+        // watch it. The stream handler drops the write on a dead socket but
+        // persists the final tool_result row.
+        if (!scope.accepts(run) && !(persistentRoot && eventName === 'tool_result')) return;
         nestedEvents.push({ name: eventName, data });
-          if (typeof onEvent !== 'function') return;
+        if (typeof onEvent !== 'function') return;
           // Authorization (and ask_user) still ride the normal event
           // so the parent chat popup/card handles the nested
           // approval. The `parentTool` tag tells the chat UI to
