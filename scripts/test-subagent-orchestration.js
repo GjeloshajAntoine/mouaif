@@ -124,7 +124,7 @@ async function integration() {
       const send = (name, args, id) => {
         res.writeHead(200, { 'Content-Type': 'text/event-stream' });
         const delta = name ? { tool_calls: [{ index: 0, id, function: { name, arguments: JSON.stringify(args) } }] } : { content: nested ? 'child final' : 'parent final' };
-        res.write('data: ' + JSON.stringify({ choices: [{ index: 0, delta, finish_reason: name ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 5 }, cost: 0.001 }) + '\n\n');
+        res.write('data: ' + JSON.stringify({ choices: [{ index: 0, delta, finish_reason: name ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.001 } }) + '\n\n');
         res.end('data: [DONE]\n\n');
       };
       if (nested) {
@@ -257,9 +257,13 @@ async function integration() {
       const follower = response();
       liveChat.addSubscriber(runningKey(currentProject, chat.id), null, follower);
       nextResponse.destroyed = true; // The follower stays connected.
+      const chatCost = () => require('../src/chats.js').getChat(currentProject, chat.id).totalCost.total;
+      const costAtTurnEnd = chatCost();
       try {
       finishChild();
       await scope.get('child').promise;
+      // The child's rounds after its turn ended are billed to the chat too.
+      assert.ok(chatCost() > costAtTurnEnd + 0.0005, 'late background rounds reach the chat total: ' + costAtTurnEnd + ' -> ' + chatCost());
       const results = require('../src/messages.js').listMessages(currentProject, chat.id)
         .filter((m) => m.role === 'tool' && m.phase === 'result' && m.toolCallId === 'child');
       assert.equal(results.length, 1, 'late background result is persisted once');

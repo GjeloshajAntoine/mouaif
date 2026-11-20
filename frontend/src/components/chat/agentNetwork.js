@@ -434,7 +434,13 @@ export function ingestMessages(net, messages) {
     const ts = m.ts ? Date.parse(m.ts) : NaN;
     net.ingestAt = Number.isFinite(ts) ? ts : 0;
     if (m.phase === 'call') noteToolCall(net, ROOT, { id: m.toolCallId, name, args: m.args }, false);
-    else if (m.phase === 'result') noteToolResult(net, ROOT, { id: m.toolCallId, name, args: m.args, ok: m.ok, result: m.content }, false);
+    else if (m.phase === 'result') {
+      noteToolResult(net, ROOT, { id: m.toolCallId, name, args: m.args, ok: m.ok, result: m.content }, false);
+      // Only turn-local runs (before chat-scoped background runs) saved a
+      // "still running" receipt row; those runs ended with their turn.
+      const node = name === 'subagent' && net.nodes.get(String(m.toolCallId));
+      if (node && node.background && /"backgroundPending":true/.test(String(m.content || ''))) node.turnLocal = true;
+    }
   }
   net.ingestAt = 0;
   noteLatestTurn(net, turnOf);
@@ -443,6 +449,7 @@ export function ingestMessages(net, messages) {
   for (const [id, idx] of callRow) if (idx < lastUser) endedRoots.add(id);
   for (const node of net.nodes.values()) {
     if (node.status !== 'running' && node.status !== 'waiting') continue;
+    if (outlivesTurn(net, node)) continue;
     if (topLevelAncestor(net, node) && endedRoots.has(topLevelAncestor(net, node).id)) setStatus(net, node, 'ended');
   }
 }
@@ -519,12 +526,21 @@ export function ingestStreamEvent(net, parentCallId, kind, data) {
   return [];
 }
 
-// settleRunning(net) — the parent turn ended: background children that never
-// reported back ended with it (handles do not outlive the turn).
+// outlivesTurn(net, node) — the node is a background run, or runs under
+// one. A chat's background runs keep going after their turn ends (the
+// chat's persistent scope, src/tools/subagent-orchestration.js), so only
+// their own result or status report settles them.
+function outlivesTurn(net, node) {
+  for (let n = node; n && n.id !== ROOT; n = net.nodes.get(n.parentId)) if (n.background && !n.turnLocal) return true;
+  return false;
+}
+
+// settleRunning(net) — the parent turn ended: foreground delegations that
+// never reported back ended with it. Background runs keep running.
 export function settleRunning(net) {
   net.liveTurn = false;
   for (const node of net.nodes.values()) {
-    if (node.id === ROOT || node.ghost) continue;
+    if (node.id === ROOT || node.ghost || outlivesTurn(net, node)) continue;
     if (node.status === 'running' || node.status === 'waiting') setStatus(net, node, 'ended');
   }
 }

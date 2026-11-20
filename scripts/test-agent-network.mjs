@@ -10,7 +10,8 @@
 //   3. Cooperative groups show declared members before they launch, their
 //      dependency edges, and swap the placeholder for the real run.
 //   4. Status only moves forward, except the soft "ended" a finished turn
-//      gives a delegation that never reported back.
+//      gives a foreground delegation that never reported back (background
+//      runs outlive their turn).
 //   5. Re-ingesting the same rows is a no-op (it runs on every reconcile).
 //   6. Feed entries keep a growing seq past the cap, nested exchanges come
 //      before the answer, repeated polls add nothing, background answers
@@ -115,8 +116,17 @@ check('a settled node never goes back to running; ended is soft', () => {
   ingestStreamEvent(net, null, 'tool_call', { id: 'b1', name: 'subagent', args: { task: 'bg', background: true } });
   ingestStreamEvent(net, null, 'tool_result', { id: 'b1', name: 'subagent', ok: true, result: { callId: 'b1', backgroundPending: true, state: 'running' } });
   assert.equal(net.nodes.get('b1').status, 'running');
+  // A background run outlives its turn (the chat's persistent scope), and so
+  // do the subagents it starts; a foreground one ends with the turn.
+  ingestStreamEvent(net, 'b1', 'tool_call', { id: 'b1k', name: 'subagent', args: { task: 'kid' } });
+  ingestStreamEvent(net, null, 'tool_call', { id: 'f1', name: 'subagent', args: { task: 'fg' } });
   settleRunning(net);
-  assert.equal(net.nodes.get('b1').status, 'ended');
+  assert.equal(net.nodes.get('b1').status, 'running');
+  assert.equal(net.nodes.get('b1k').status, 'running');
+  assert.equal(net.nodes.get('f1').status, 'ended');
+  // A later user turn on reload does not end it either.
+  ingestMessages(net, [{ role: 'tool', phase: 'call', toolCallId: 'b1', name: 'subagent', args: { task: 'bg', background: true } }, { role: 'user', content: 'next' }]);
+  assert.equal(net.nodes.get('b1').status, 'running');
   ingestStreamEvent(net, null, 'tool_result', { id: 'st', name: 'subagent_status', ok: true, result: { runs: [{ callId: 'b1', state: 'completed' }] } });
   assert.equal(net.nodes.get('b1').status, 'done');
 });

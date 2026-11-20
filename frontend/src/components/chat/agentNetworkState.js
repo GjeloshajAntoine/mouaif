@@ -54,7 +54,9 @@ function loadOlderAgentRows(state) {
   const url = '/api/chats/' + encodeURIComponent(p.chatId) + '/agent-rows?projectDir=' +
     encodeURIComponent(p.projectDir) + '&beforeSeq=' + before;
   fetchJson(url).then((r) => {
-    if (key !== chatKey || r.status !== 200 || !r.body || !Array.isArray(r.body.messages)) return;
+    if (key !== chatKey) return;
+    // A failed reply is retried on the next sync, like a thrown request.
+    if (r.status !== 200 || !r.body || !Array.isArray(r.body.messages)) { olderFetched = false; return; }
     if (!r.body.messages.length) return;
     olderRows = r.body.messages;
     ingestMessages(net, rowsFor(state.messages));

@@ -1342,6 +1342,11 @@ let persistedSegmentCost = 0;
 // `usage_update` deltas as they arrive so a turn that throws or fails before
 // `done` still knows what completed subagent rounds cost.
 let delegatedCost = null;
+// Set once the turn's delegated cost was saved (on `done` or a failure).
+// A background subagent on the chat's persistent scope can keep running
+// after that; its later `usage_update` deltas are added to the chat total
+// directly, or they would never be billed.
+let delegatedSettled = false;
 let liveDelegatedCost = 0;
 let liveDelegatedCostKnown = false;
 function accumulateRoundUsage(roundUsage) {
@@ -1551,6 +1556,7 @@ function accumulateRoundUsage(roundUsage) {
   // aborted (completed parent rounds not yet saved on a segment, plus any
   // completed subagent rounds).
   function unpersistedBilledCost(resObj) {
+    delegatedSettled = true;
     const del = resObj && typeof resObj.delegatedCost === 'number' && isFinite(resObj.delegatedCost) && resObj.delegatedCost >= 0
       ? resObj.delegatedCost
       : (liveDelegatedCostKnown ? liveDelegatedCost : null);
@@ -1618,6 +1624,12 @@ promptSize: resolvedProfileId,
         ok: !!data.ok, content: JSON.stringify(data.result || {}), hooks: data.hooks
       });
       } catch { /* non-fatal */ }
+    } else if (name === 'usage_update' && delegatedSettled) {
+      const late = data && data.cost;
+      if (late && late.known && typeof late.total === 'number' && isFinite(late.total) && late.total > 0) {
+        try { messages.addChatCost(projectDir, chatId, late.total); } catch { /* non-fatal */ }
+      }
+      return;
     } else if (name === 'authorization_required' || name === 'ask_user_required') {
       notifyAttention({ sessionId: _pushSessionId, projectDir, chatId, name, data, preferences: notificationPrefs, broadcast: hasRecurringTask(), origin: hookOrigin });
     }
@@ -1775,6 +1787,7 @@ promptSize: resolvedProfileId,
         delegatedCost = data && typeof data.delegatedCost === 'number' && isFinite(data.delegatedCost) && data.delegatedCost >= 0
           ? data.delegatedCost
           : null;
+        delegatedSettled = true;
         try {
           const app = settings.getApp();
           const providerCost = data && typeof data.providerCost === 'number' && isFinite(data.providerCost) && data.providerCost >= 0
