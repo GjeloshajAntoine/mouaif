@@ -43,7 +43,7 @@ The page's stylesheet values are anonymous; a peer is a referent the user can go
 Keywords · valid for any property   [ inherit ] [ initial ] [ unset ] [ revert ]
 ```
 The word already in the field is not offered back, and an enum-shaped property (`cursor`, `display`) does not get the group: it renders its own chips, and the same list twice is worse than once.
-9. **Tapping a chip only rewrites the field.** Apply still commits, so a suggestion, a snap, a sibling value, a keyword and a palette pick are exactly as reversible as anything typed — one property, one undo entry.
+9. **Tapping a chip writes it.** A suggestion, a snap, a sibling value, a keyword and a palette pick apply straight to the element (debounced, newest wins) — that is what makes a palette or a rail usable on a phone. A value you *type* still waits for **Apply**, because a half-typed value is not a value. Either way it is one property and one undo entry, and the **was …  · Reset** line under the field returns to the value the sheet opened on.
 
 ![The colour palette with a WCAG contrast badge per swatch at 360 px](./images/inspector/value-contrast-360.png)
 

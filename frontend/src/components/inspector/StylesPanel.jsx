@@ -556,6 +556,36 @@ const shape = shapeRef.current.shape;
 // shown never changes what Apply will do.
 const railShape = shape === 'rail' || shape === 'time' || shape === 'angle';
 const onField = (next) => { setValue(next); setApplied(false); setDirty(true); setError(''); };
+// onLive — the mockup's inline editor has no Apply step for its controls: the
+// rail, the swatches and the keyword segments write to the page as they change
+// (debounced, newest wins), so the element updates under the finger. Typing in
+// the field still waits for Apply, because a half-typed value is not a value.
+const liveTimer = useRef(null);
+const liveSerial = useRef(0);
+useEffect(() => () => { if (liveTimer.current) clearTimeout(liveTimer.current); }, []);
+function onLive(next) {
+onField(next);
+if (liveTimer.current) clearTimeout(liveTimer.current);
+liveTimer.current = setTimeout(() => {
+liveTimer.current = null;
+const verdict = validateDeclaration(propName, next,
+typeof CSS !== 'undefined' && CSS.supports ? (p, v) => CSS.supports(p, v) : null);
+if (!verdict.ok || !props.onApply) return;
+const serial = ++liveSerial.current;
+Promise.resolve(props.onApply(verdict.prop, verdict.value, priority)).then(() => {
+if (!alive.current || serial !== liveSerial.current) return;
+setApplied(true);
+if (props.onRefreshShot) props.onRefreshShot();
+}).catch((e) => {
+if (alive.current && serial === liveSerial.current) setError((e && e.message) || 'Could not set ' + propName);
+});
+}, 120);
+}
+// The value the editor opened on, for the "was … · Reset" line.
+const openedWith = useRef({ prop: props.prop, value: props.value || '' });
+if (openedWith.current.prop !== props.prop) openedWith.current = { prop: props.prop, value: props.value || '' };
+const wasValue = props.from != null ? props.from : openedWith.current.value;
+const showReset = applied && !!wasValue && value !== wasValue;
 // valueInputRef — the typed field, which the rail's double-tap focuses.
 const valueInputRef = useRef(null);
 const valueChangers = [
@@ -576,7 +606,7 @@ const el = valueInputRef.current;
 if (!el) return;
 try { el.focus(); if (el.select) el.select(); } catch (err) { /* older engines */ }
 },
-onChange: onField
+onChange: onLive
 })
 : null,
 // The per-kind views (R2): the colour rails and palette, the shorthand fan-out,
@@ -601,7 +631,7 @@ hideUnits: true,
 candidates: props.colourCandidates,
 background: props.contrastCtx && props.contrastCtx.bg,
 contrastCtx: props.contrastCtx,
-onChange: onField
+onChange: onLive
 })
 ];
 async function commit(p, v) {
@@ -637,8 +667,17 @@ await commit(verdict.prop, verdict.value);
 // pinned preview is the fastest way to size something.
 async function nudge(next) {
 if (!propName || next == null) return;
+if (liveTimer.current) { clearTimeout(liveTimer.current); liveTimer.current = null; }
+liveSerial.current++;
 setValue(next);
 await commit(propName, next);
+}
+async function resetValue() {
+if (!propName || !wasValue) return;
+if (liveTimer.current) { clearTimeout(liveTimer.current); liveTimer.current = null; }
+liveSerial.current++;
+setValue(wasValue);
+await commit(propName, wasValue);
 }
 async function remove() {
 if (!propName) { setError('Property is required.'); return; }
@@ -661,66 +700,53 @@ role: 'region',
 'aria-label': 'Edit ' + (propName || 'style')
 },
 h('div', { class: 'inspector__value-editor-head' },
-h('strong', null, propName ? 'Edit ' + propName : 'Add style'),
-h('button', { class: 'btn inspector__value-editor-close', type: 'button', disabled: busy, onClick: dismiss }, applied ? 'Done' : 'Cancel'),
-h('button', { class: 'btn inspector__style-apply', type: 'button', disabled: busy || !check.ok,
-title: check.ok ? 'Apply this declaration to the element' : check.error, onClick: apply }, busy ? 'Applying…' : 'Apply')
+h('strong', null, propName || 'Add style'),
+h('button', { class: 'btn inspector__value-editor-close', type: 'button', disabled: busy, onClick: dismiss }, applied || !dirty ? 'Done' : 'Cancel')
 ),
-h('p', { class: 'inspector__value-editor-context' }, 'Editing element.style — this element only'),
 h('div', { class: 'inspector__value-editor-body' },
-h('label', { class: 'label', for: 'inspector-edit-value' }, 'Value'),
-// The actual field comes first; units and suggestions should never push it
-// several screens down. One scroller: the Styles panel, not an overlay body.
-h('div', { class: 'inspector__style-valuerow' },
+// Mockup layout: − big value + on one line, then the property's own control
+// (rail, swatches or keyword segments) applying live, then "was … · Reset".
+h('div', { class: 'inspector__style-valuerow inspector__style-valuerow--big' },
 h('button', { class: 'inspector__style-step', type: 'button', disabled: busy || down == null,
 'aria-label': 'Decrease ' + (propName || 'value'), onClick: () => nudge(down) }, '−'),
 h('input', { class: 'input inspector__style-input inspector__style-input--value',
 id: 'inspector-edit-value', type: 'text', ref: valueInputRef, value,
 'aria-label': 'Value for ' + propName, autocapitalize: 'off', autocorrect: 'off', spellcheck: false,
-onInput: (e) => onField(e.currentTarget.value) }),
+onInput: (e) => onField(e.currentTarget.value),
+onKeyDown: (e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } } }),
 h('button', { class: 'inspector__style-step', type: 'button', disabled: busy || up == null,
 'aria-label': 'Increase ' + (propName || 'value'), onClick: () => nudge(up) }, '+')
 ),
+...valueChangers,
+showReset
+? h('div', { class: 'inspector__value-was' },
+h('span', null, 'was ' + wasValue),
+h('button', { class: 'btn', type: 'button', disabled: busy, onClick: resetValue }, 'Reset'))
+: null,
+h('details', { class: 'inspector__value-editor-options' },
+h('summary', null, 'Units, suggestions & page values'),
 h(ValueUnitPicker, { prop: propName, value, ctx: props.unitCtx, onChange: onField,
 accepts: (next) => validateDeclaration(propName, next,
 typeof CSS !== 'undefined' && CSS.supports ? (p, v) => CSS.supports(p, v) : null).ok }),
-h(ValuePresets, { key: 'presets-' + propName, prop: propName, value, onChange: onField }),
-// The page's own values and tokens for this property, once there is a property
-// to look up. Placed under the type switch so the order reads "what form, then
-// which value". `value` goes along so the row can place the value being typed on
-// the page's own scale, and `contrastCtx` carries the element's resolved
-// background and text colours for the colour chips' WCAG ratios.
-//
-// `ownColour` is set once the sheet has decided a colour value gets its own view:
-// the three rails and the palette below already show the palette with a ratio
-// badge per swatch, so this row drops its colour group rather than rendering the
-// same candidates twice.
+h(ValuePresets, { key: 'presets-' + propName, prop: propName, value, onChange: onLive }),
 h(Suggestions, {
 index: props.valueIndex,
 prop: propName,
 value,
 contrastCtx: props.contrastCtx,
 ownColour: shape === 'colour',
-// The view the sheet picked. A `text` value has no per-kind view of its own, so
-// this is what tells the row that the keyword forms are the only chips worth
-// adding (see Suggestions.jsx).
 shape: shape,
-// What the peers use for this property — the one group the page's own
-// stylesheets cannot answer.
 siblings: siblings,
-onPick: onField
+onPick: onLive
 }),
-...valueChangers,
 h(NumericValueParts, { prop: propName, value, ctx: props.unitCtx, onChange: onField }),
-
-// The page's step and where the typed value sits on it. The nudge pair moves in
-// whole steps, so this line is the answer to "why did + jump by 4?".
 pageStep && snap
 ? h('p', { class: 'inspector__style-step-note' },
 'Stepping by ' + pageStep + (pageScale.unit || '') + ' — this page\'s own scale',
 snap.offScale && snap.nearest ? ' · nearest ' + snap.nearest.value : ''
 )
-: null,
+: null
+),
 h('details', { class: 'inspector__value-editor-options' },
 h('summary', null, 'More options: property, type & priority'),
 h('label', { class: 'label', for: 'inspector-edit-property' }, 'Property'),
@@ -784,7 +810,6 @@ h('p', { class: 'inspector__scope-note inspector__scope-kept' }, 'Every other de
 );
 })()
 ),
-applied ? h('p', { class: 'inspector__style-applied', role: 'status' }, 'Applied — keep editing or tap Done') : null,
 // The live verdict from declaration.js. Shown in place of the post-write error
 // while the user is still typing, so an invalid value is named *before*
 // Apply — the write path itself would silently discard it (see declaration.js).
@@ -1073,6 +1098,7 @@ setCopyStatus('Copied ' + shortenValue(value, 40));
 if (copyTimer.current) clearTimeout(copyTimer.current);
 copyTimer.current = setTimeout(() => setCopyStatus(''), 1500);
 }
+useEffect(() => () => { if (copyTimer.current) clearTimeout(copyTimer.current); }, []);
 function openEditor(next) {
 if (!edit) {
 editScroll.current = panelRef.current ? panelRef.current.scrollTop : 0;
@@ -1468,8 +1494,8 @@ Promise.resolve(props.readElementTree(objectId))
 // highlight all in sync for free.
 function selectAncestor(levels) {
 const objectId = modelRef.current && modelRef.current.objectId;
-if (!objectId || !props.selectAncestorNode) return;
-loadModel(() => props.selectAncestorNode(objectId, levels).then((m) => {
+if (!objectId || !props.selectAncestorNode) return Promise.resolve(false);
+return loadModel(() => props.selectAncestorNode(objectId, levels).then((m) => {
 if (!m) throw new Error('Nothing above this element.');
 return m;
 }));
@@ -1478,21 +1504,21 @@ return m;
 // child `index` (null = stay on the ancestor). See selectRelativeNode.
 function selectRelative(levels, index) {
 const objectId = modelRef.current && modelRef.current.objectId;
-if (!objectId) return;
+if (!objectId) return Promise.resolve(false);
 if (!props.selectRelativeNode) {
-if (index == null && levels > 0) selectAncestor(levels);
-else if (levels === 0 && index != null) selectChild(index);
-return;
+if (index == null && levels > 0) return selectAncestor(levels);
+if (levels === 0 && index != null) return selectChild(index);
+return Promise.resolve(false);
 }
-loadModel(() => props.selectRelativeNode(objectId, levels, index).then((m) => {
+return loadModel(() => props.selectRelativeNode(objectId, levels, index).then((m) => {
 if (!m) throw new Error('That element is no longer on the page.');
 return m;
 }));
 }
 function selectChild(index) {
 const objectId = modelRef.current && modelRef.current.objectId;
-if (!objectId || !props.selectChildNode) return;
-loadModel(() => props.selectChildNode(objectId, index).then((m) => {
+if (!objectId || !props.selectChildNode) return Promise.resolve(false);
+return loadModel(() => props.selectChildNode(objectId, index).then((m) => {
 if (!m) throw new Error('That child is no longer on the page.');
 return m;
 }));
@@ -1506,7 +1532,15 @@ function applyModel(m) {
 // keeps it.
 const prevId = modelRef.current && modelRef.current.objectId;
 const sameElement = !!(m && m.objectId === prevId);
-if (!sameElement) { setChanged([]); if (props.onSelectionReset) props.onSelectionReset(); }
+if (!sameElement) {
+setChanged([]);
+if (props.onSelectionReset) props.onSelectionReset();
+// An open edit/add sheet names a property of the *old* element; left open after
+// a tree hop it would write the old value onto the new one.
+setEdit(null);
+setAddOpen(false);
+setTouchGroup('');
+}
 setModelBoth(m);
 setShotBusy(false);
 // The preview is cleared only after the replacement is *ready*, never before.
@@ -1551,16 +1585,24 @@ if (serial === rulesSerial.current) setRulesBusy(false);
 
 // Dim down the inline-style list while stale after an edit. The page
 // recomputes, so we hold the previous model and keep a "refresh" affordance.
+// modelSerial — newest-read-wins for selections, like the tree/rules/shot
+// serials: a slow hop that lands after a newer hop, a Clear or arming pick mode
+// must not bring back the element the user moved away from.
+const modelSerial = useRef(0);
 async function loadModel(fn) {
+const serial = ++modelSerial.current;
 setLoading(true);
 setError('');
 try {
 const m = await fn();
-if (m) applyModel(m);
+if (serial !== modelSerial.current) return false;
+if (m) { applyModel(m); return true; }
+return false;
 } catch (e) {
-setError((e && e.message) || 'Could not inspect element');
+if (serial === modelSerial.current) setError((e && e.message) || 'Could not inspect element');
+return false;
 } finally {
-setLoading(false);
+if (serial === modelSerial.current) setLoading(false);
 }
 }
 
@@ -1568,9 +1610,11 @@ setLoading(false);
 // preview in "pick" mode (see InspectorView's StylesPanel wiring).
 async function pickFromPoint(x, y) {
 if (!props.pickNodeAt) return false;
+const serial = ++modelSerial.current;
 setError('');
 try {
 const m = await props.pickNodeAt(x, y);
+if (serial !== modelSerial.current) return false;
 if (m) { applyModel(m); return true; }
 setError('Nothing selectable at that point.');
 return false;
@@ -1586,14 +1630,16 @@ async function pickBySelector() {
 if (!props.selectBySelector || !(selValue || '').trim()) return;
 setLoading(true);
 setError('');
+const serial = ++modelSerial.current;
 try {
 const m = await props.selectBySelector(selValue);
+if (serial !== modelSerial.current) return;
 if (m) applyModel(m);
 else setError('No element matches “' + selValue.trim() + '”.');
 } catch (e) {
-setError((e && e.message) || 'Selector failed');
+if (serial === modelSerial.current) setError((e && e.message) || 'Selector failed');
 } finally {
-setLoading(false);
+if (serial === modelSerial.current) setLoading(false);
 }
 }
 
@@ -1679,14 +1725,7 @@ props.onPickModeChange(next);
 // Turning pick mode on clears any stale selection so the tap lands on
 // a fresh element; turning it off hides the highlight.
 if (next) {
-modelRef.current = null;
-setModel(null);
-setShot(null);
-setTree(null);
-setRules(null);
-treeSerial.current++;
-rulesSerial.current++;
-setError('');
+dropSelection();
 } else if (props.hideNodeHighlight) {
 props.hideNodeHighlight().catch(() => {});
 }
@@ -1913,6 +1952,31 @@ if (!objectId) return;
 loadModel(() => props.refreshNodeModel(objectId));
 }
 
+// dropSelection — forget the selected element and everything read for it. Shared
+// by Clear and by arming pick mode, which used to keep its own shorter copy and
+// left the edit sheet, the changed set and in-flight reads behind.
+function dropSelection() {
+modelRef.current = null;
+modelSerial.current++;
+shotSerial.current++;
+treeSerial.current++;
+rulesSerial.current++;
+lastShotData.current = '';
+setModel(null);
+setLoading(false);
+setShot(null);
+setShotBusy(false);
+setTree(null);
+setRules(null);
+setRulesBusy(false);
+setEdit(null);
+// The card sheet names a property to add *to this element*, so with no element
+// there is nothing for it to add to.
+setAddOpen(false);
+setTouchGroup('');
+setChanged([]);
+setError('');
+}
 function clearPick() {
 // Mark the retained id as handled *before* dropping the model: with the model
 // gone this panel is in the state the adopt effect looks for, and without the
@@ -1920,19 +1984,7 @@ function clearPick() {
 // itself (see adoptRestored above).
 adoptedRef.current = props.restoreObjectId || adoptedRef.current;
 modelRef.current = null;
-shotSerial.current++;
-treeSerial.current++;
-rulesSerial.current++;
-setModel(null);
-setShot(null);
-setShotBusy(false);
-setTree(null);
-setRules(null);
-setEdit(null);
-// The card sheet names a property to add *to this element*, so with no element
-// there is nothing for it to add to.
-setAddOpen(false);
-setError('');
+dropSelection();
 // The receipt describes edits made to the element that was selected, and the
 // Inspector owns it: with no selection there is nothing to undo, so it is
 // cleared there rather than here.
@@ -2102,6 +2154,9 @@ onRemove: removeEdit,
 onDone: closeEditor,
 onCancel: closeEditor
 }) : null;
+// The mockup opens the editor right under the row that was tapped; an edit
+// started elsewhere (a rule, Computed, Add) keeps the top slot.
+const editInDeclared = !!(edit && declaredRows.some((r) => r.prop === edit.prop));
 return h('div', {
 class: 'inspector__styles' + (edit ? ' is-editing' : ''),
 ref: panelRef,
@@ -2163,7 +2218,7 @@ copyStatus
 ? h('p', { class: 'inspector__style-copied', role: 'status' }, '✓ ' + copyStatus)
 : null
 ),
-valueEditor,
+editInDeclared ? null : valueEditor,
 // Section rail — a row of chips pinned under the identity row that scrolls to
 // each named section, and **reports which one the user is in**.
 //
@@ -2224,17 +2279,20 @@ count ? h('span', { class: 'inspector__styles-jump-count', 'aria-hidden': 'true'
 // and a 56 px strip of an element is exactly where the user is trying to read
 // small type. The caption also carries the "Updating…" state, so the strip
 // never changes height and the list below never shifts.
-shot
+// The strip is always present while an element is selected (empty until its
+// first capture lands) and has a fixed height, so neither a capture arriving
+// nor a different element's aspect ratio shifts the rows below.
+model
 ? h('div', { class: 'inspector__styles-shotwrap' },
 h('button', {
 class: 'inspector__styles-shot',
 type: 'button',
 title: 'Tap to refresh the element preview',
 'aria-label': 'Refresh the element preview for ' + label,
-disabled: shotBusy,
+disabled: shotBusy || !shot,
 onClick: captureShot
 },
-h('img', {
+shot && h('img', {
 class: 'inspector__styles-shot-img',
 src: shot.src,
 alt: 'Preview of ' + label,
@@ -2242,9 +2300,9 @@ draggable: 'false'
 })
 ),
 h('p', { class: 'inspector__styles-shot-note', role: 'status' },
-h('span', null, shotBusy ? 'Updating…' : 'Live element preview — tap to refresh'),
+h('span', null, shotBusy || !shot ? 'Updating…' : 'Live element preview — tap to refresh'),
 h('span', { class: 'inspector__styles-shot-dims' },
-shot.width && shot.height ? shot.width + '×' + shot.height : '')
+shot && shot.width && shot.height ? shot.width + '×' + shot.height : '')
 )
 )
 : null,
@@ -2385,7 +2443,8 @@ row.priority === 'important'
 valueSwatch(row.prop, row.value),
 h(ValueText, { value: row.value, kind: valueKindOf(row.prop, row.value) })
 ),
-row.value ? h(CopyValueButton, { value: row.value, name: row.prop, onCopy: handleCopyValue }) : null
+row.value ? h(CopyValueButton, { value: row.value, name: row.prop, onCopy: handleCopyValue }) : null,
+editInDeclared && edit.prop === row.prop ? valueEditor : null
 ))
 )
 : h('p', { class: 'inspector__styles-none' }, 'No inline styles yet.', h('br'), 'Tap Add property above to set one.')

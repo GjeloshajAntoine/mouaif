@@ -145,3 +145,28 @@
 .inspector__value-discard .btn { min-height: 2.75rem; }
 /* While reading the editor, a second pinned chip strip must not cover it. */
 .inspector__styles.is-editing .inspector__touch-tabs { position: static; }
+
+/* Inline under its row (Styles mockup): the row wraps so the editor takes the
+   full width below the property, instead of a separate card above the list. */
+.inspector__styles-row:has(> .inspector__value-editor) { flex-wrap: wrap; }
+.inspector__styles-row > .inspector__value-editor { flex: 1 0 100%; margin: 4px 0 8px; }
+/* The value itself is the headline, centred between − and +. */
+.inspector__value-editor .inspector__style-valuerow--big { flex-wrap: nowrap; }
+.inspector__value-editor .inspector__style-valuerow--big .inspector__style-input--value {
+  text-align: center;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+.inspector__value-was {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.inspector__value-was > span {
+  min-width: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.8rem;
+  color: var(--fg-soft);
+}

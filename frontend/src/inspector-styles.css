@@ -601,12 +601,18 @@ straight out of the property rows: the cap is what keeps the element visible
 image is as tall as its own aspect ratio needs), so this only bites on a tall
 one — and there the capture is letterboxed rather than cropped. */
 .inspector__panel-body .inspector__styles-shot:not(.inspector__styles-shot--sheet) .inspector__styles-shot-img {
-max-height: 132px;
+height: 100%;
+max-height: none;
+}
+/* Fixed strip height: the capture is letterboxed inside it, so the strip never
+grows or shrinks with the element's aspect ratio or while a capture loads. */
+.inspector__panel-body .inspector__styles-shot:not(.inspector__styles-shot--sheet) {
+height: 132px;
 }
 @media (min-width: 900px) {
 /* The grown panel has the room, so the element can be shown larger there. */
-.inspector__panel--grow .inspector__panel-body .inspector__styles-shot:not(.inspector__styles-shot--sheet) .inspector__styles-shot-img {
-max-height: 220px;
+.inspector__panel--grow .inspector__panel-body .inspector__styles-shot:not(.inspector__styles-shot--sheet) {
+height: 220px;
 }
 }
 /* The refresh hint is a caption *under* the capture, not a badge on top of
@@ -615,9 +621,8 @@ corner — on a page of body text, on the text — and a 56 px strip of an
 element is exactly where the user is trying to read small type. The caption
 also carries the "Updating…" state and the capture's pixel size, and the
 "Updating…" swap is a same-length word on the same line, so a refresh in flight
-does not move the rows below. (A *different* element does resize the strip, and
-that is the point: the strip is as tall as the element it shows, up to the cap,
-so a short element does not reserve space it never uses.) */
+does not move the rows below. The strip has a fixed height whatever element
+it shows, so switching elements does not move them either. */
 .inspector__styles-shotwrap {
 display: flex;
 flex-direction: column;

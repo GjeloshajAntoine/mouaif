@@ -10,7 +10,7 @@ The edit sheet's value field is the source of truth, but it is poor at *choosing
 
 Open the edit sheet for a numeric property (tap a declared row, or a quick-add chip such as **padding**). The rail sits directly above the value field, under the page's own values and tokens.
 
-1. **Drag the thumb.** The value field updates live; nothing is written to the page. Release, then **Apply** to commit — exactly like the type switch and the suggestion chips.
+1. **Drag the thumb.** The value field updates live and the page follows it: the rail writes as the drag settles (debounced, newest wins), so the element changes under the finger instead of after a second tap. **Apply** is still there for a typed value, and **Reset** under the value field puts back the value the sheet opened on.
    - **Drag normally for whole steps, slowly for fine.** The coarse step is what makes the gesture usable; a slow drag drops to the family's finest step so 13 px and 14 px are both reachable. The header says `fine 1px` while it is in force.
    - **Double-tap the track for the keypad.** One tap writes the value under the finger; a second tap in the same place focuses the typed field, because "nearly 14 px" is the moment exact typing is the next move.
    - **Tap-hold a tick to lock to it.** A 500 ms press writes the tick's value and marks the tick, and the header reads `locked · --space-3`. The next gesture releases it.

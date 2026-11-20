@@ -488,9 +488,15 @@ async function main() {
     'nothing in the panel crops a capture again — cover is what hid the element');
   const panelShotImg = /\.inspector__panel-body \.inspector__styles-shot:not\(\.inspector__styles-shot--sheet\) \.inspector__styles-shot-img\s*\{([^}]*)\}/.exec(panelCss);
   assert.ok(panelShotImg, 'the in-panel preview is capped separately');
-  assert.ok(!/(^|[;\s])height:\s*\d+px/.test(panelShotImg[1]),
-    'the in-panel preview is capped, not fixed — a short element must not reserve a tall strip');
-  assert.match(panelShotImg[1], /max-height:\s*\d+px/, 'the cap is a max-height');
+  assert.match(panelShotImg[1], /max-height:\s*none/,
+    'the image fills its fixed strip instead of carrying a second cap');
+  // The strip itself is a fixed height, so a capture arriving, or a different
+  // element with a different aspect ratio, never shifts the rows below it.
+  // The whole capture is still letterboxed inside it (`object-fit: contain`).
+  const panelShotStrips = [...panelCss.matchAll(/\.inspector__panel-body \.inspector__styles-shot:not\(\.inspector__styles-shot--sheet\)\s*\{([^}]*)\}/g)];
+  assert.ok(panelShotStrips.length, 'the in-panel preview strip is sized separately');
+  assert.match(panelShotStrips.map((m) => m[1]).join('\n'), /(^|[;\s])height:\s*\d+px/,
+    'the strip has a fixed height, so switching elements does not move the rows below');
   const shotBtn = /\.inspector__styles-shot\s*\{([^}]*)\}/.exec(panelCss);
   assert.ok(shotBtn, 'the preview button has its own rule');
   assert.match(shotBtn[1], /min-height:\s*var\(--tap\)/,
