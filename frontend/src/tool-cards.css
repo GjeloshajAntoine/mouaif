@@ -597,6 +597,18 @@ color: var(--fg-soft);
 }
 .tool-card__subagent-msg.chat-msg .chat-msg__body { max-width: 100%; }
 
+/* Footer of an expanded subagent card: which model the delegated run used
+   and how large its context grew ("gpt-5 · context 14.8K"). Same muted
+   mono scale as the head's cost label so the card reads model/cost above,
+   model/context below. */
+.tool-card__subagent-meta {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 /* The card body sets tool-output type (0.72 rem, muted); the nested chat opts
    back into the transcript's own scale and foreground colour, which its
    bubbles and the nested tool rows inherit. */

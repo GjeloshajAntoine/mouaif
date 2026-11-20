@@ -56,6 +56,10 @@ Live updates from a background subagent belong to the turn that launched it. If 
 
 The background call card stays running until its **single final result** arrives, with the same nested conversation and cost rendering as a synchronous call. While a `subagent` card is running, it stays pinned at the bottom of the chat transcript (below any new parent or sibling messages, tool calls, progress updates, and live streaming text, and above mounted MCP App cards and active approval/question overlays); once its final result arrives, it returns to its original chronological slot in the conversation. The parent receives a bounded text answer through status; generated image pixels are not automatically inserted into its live background-result context. Prefer synchronous image delegation when the parent needs immediate vision content.
 
+### Card model and context line
+
+An expanded subagent card ends with a muted footer line, `model · context N` (e.g. `gpt-5 · context 14.8K`): which model the delegated run used and how large its context grew by the final round. The model id arrives with the live `start` frame and each `usage_update`; the context size is the settled result's last `usage.promptTokens` (every round re-sends the conversation, so the last report is the run's final context). The card head separately shows the running delegated cost.
+
 ## Retry behavior
 
 When a subagent fails, its card and the bottom notice show the reason and offer **Retry**. Retrying asks the parent model to delegate the same task again. It is treated as an explicit retry request, so any unrelated text or attachments already in the composer remain untouched.
