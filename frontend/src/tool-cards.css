@@ -602,12 +602,14 @@ color: var(--fg-soft);
    mono scale as the head's cost label so the card reads model/cost above,
    model/context below. */
 .tool-card__subagent-meta {
-  margin-top: 2px;
+  /* 1px body border + 6px body padding: lines up with the nested chat. */
+  padding: 0 7px 4px;
   font-family: var(--font-mono);
   font-size: 0.62rem;
   color: var(--muted);
   overflow-wrap: anywhere;
 }
+.tool-card:not(.is-expanded) > .tool-card__subagent-meta { display: none; }
 
 /* The card body sets tool-output type (0.72 rem, muted); the nested chat opts
    back into the transcript's own scale and foreground colour, which its

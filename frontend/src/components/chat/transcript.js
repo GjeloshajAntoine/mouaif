@@ -1669,12 +1669,6 @@ export function handleSubagentStreamEvent(ev, data, refs) {
   }
   if (ev.eventName === 'usage_update') {
     setSubagentCardCost(card, subagentCostFromResult(data));
-    // The frame names the model that ran the round; the meta line under the
-    // expanded card shows it. Context size rides the settled result.
-    if (data && typeof data.modelId === 'string' && data.modelId) {
-      const prior = card._subagentMeta || {};
-      setSubagentCardMeta(card, { modelId: data.modelId, contextTokens: prior.contextTokens });
-    }
     return true;
   }
   if (ev.eventName === 'start') {
@@ -1683,7 +1677,6 @@ export function handleSubagentStreamEvent(ev, data, refs) {
     // Replayed start frames only replace the initial prompt/task, never
     // streamed activity. The settled render replaces this whole section.
     card._subagentStart = data;
-    if (data && data.model && data.model.id) setSubagentCardMeta(card, { modelId: data.model.id });
     renderSubagentChat(card, { name: 'subagent', result: data });
     const body = card.querySelector('.tool-card__body');
     const initial = card.querySelector('.tool-card__subagent-chat');
@@ -2292,46 +2285,32 @@ export function rememberSubagentCardCost(card) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-// setSubagentCardMeta(card, { modelId, contextTokens })
+// setSubagentCardMeta(card, result)
 //
-// Draw the "model · context N" line at the bottom of an expanded subagent
-// card: which model the delegated run used and how large its context grew.
-// Both ride the result payload (`model.id`, `usage.promptTokens` — the last
-// round's prompt size, i.e. the run's final context) and the live `start` /
-// `usage_update` frames, so the line is present while the run streams and
-// correct when it settles. Context size is last-round-wins on the server
-// (every round re-sends the conversation), so no client-side sum is needed.
-export function setSubagentCardMeta(card, meta) {
-  if (!card || !card.querySelector) return;
-  const m = meta && typeof meta === 'object' ? meta : {};
-  const modelId = typeof m.modelId === 'string' && m.modelId.trim() ? m.modelId.trim() : '';
-  const ctx = Number(m.contextTokens);
-  const hasCtx = Number.isFinite(ctx) && ctx > 0;
-  // A run that reported neither a model nor a context size has no line at
-  // all — an empty meta row would just add noise under the nested chat.
-  if (!modelId && !hasCtx) {
-    const stale = card.querySelector('.tool-card__subagent-meta');
-    if (stale) stale.remove();
-    card._subagentMeta = null;
-    return;
-  }
-  card._subagentMeta = { modelId: modelId || null, contextTokens: hasCtx ? ctx : null };
-  let el = card.querySelector('.tool-card__subagent-meta');
-  if (!el) {
-    el = document.createElement('div');
-    el.className = 'tool-card__subagent-meta';
-    // Below the nested chat when it is rendered, at the end of the body
-    // otherwise, so the line reads as the card's footer.
-    const body = card.querySelector('.tool-card__body');
-    const chatWrap = card.querySelector('.tool-card__subagent-chat');
-    if (chatWrap && chatWrap.parentNode) chatWrap.parentNode.insertBefore(el, chatWrap.nextSibling);
-    else if (body) body.appendChild(el);
-    else card.appendChild(el);
-  }
+// Show "model · context N" on an expanded subagent card, right under its
+// head line (above the nested chat). Display
+// only: everything comes from the result being rendered, nothing is kept on
+// the card. `usage.promptTokens` is the last round's prompt, i.e. the run's
+// final context size.
+export function setSubagentCardMeta(card, r) {
+  const old = card.querySelector('.tool-card__subagent-meta');
+  if (old) old.remove();
+  const modelId = r && r.model && typeof r.model.id === 'string' ? r.model.id : '';
+  const ctx = Number(r && r.usage && r.usage.promptTokens);
   const parts = [];
   if (modelId) parts.push(modelId);
-  if (hasCtx) parts.push('context ' + formatTokens(ctx));
+  if (ctx > 0) parts.push('context ' + formatTokens(ctx));
+  if (!parts.length) return;
+  const el = document.createElement('div');
+  el.className = 'tool-card__subagent-meta';
   el.textContent = parts.join(' · ');
+  // Right under the head line, above the nested chat. `insertBefore` rather
+  // than `after`/`prepend` so a minimal DOM stub can render the card too.
+  const head = card.querySelector('.tool-card__head');
+  const body = card.querySelector('.tool-card__body');
+  if (head && head.parentNode === card) card.insertBefore(el, head.nextSibling);
+  else if (body) card.insertBefore(el, body);
+  else card.appendChild(el);
 }
 
 // buildSubagentError(error, args) -> the line a subagent card shows for a
@@ -2401,15 +2380,7 @@ export function renderSubagentChat(card, toolResult) {
   // render's caller replaced the head.
   const settledCost = subagentCostFromResult(r);
   setSubagentCardCost(card, settledCost != null ? settledCost : carriedCost);
-  // Model + final context size under the expanded card, from the settled
-  // result (`model.id`, `usage.promptTokens` — last round wins server-side,
-  // so it is the run's final context size). Falls back to whatever the live
-  // frames already drew so a replayed start frame's model is not lost.
-  const priorMeta = card._subagentMeta || {};
-  setSubagentCardMeta(card, {
-    modelId: (r && r.model && r.model.id) || priorMeta.modelId || '',
-    contextTokens: r && r.usage && Number(r.usage.promptTokens) > 0 ? Number(r.usage.promptTokens) : priorMeta.contextTokens
-  });
+  setSubagentCardMeta(card, r);
   const chat = r && Array.isArray(r.chat) ? r.chat : null;
   // A failed run says why, after whatever it got through. Aborts are the
   // user's own stop and need no message.
@@ -2571,10 +2542,6 @@ export function renderSubagentChat(card, toolResult) {
   if (failure) wrap.appendChild(buildSubagentError(failure, card._toolArgs || (toolResult && toolResult.args)));
   if (body) body.appendChild(wrap);
   else card.appendChild(wrap);
-  // Keep the model/context meta line as the card's footer, below the
-  // nested chat this render just appended.
-  const metaEl = card.querySelector('.tool-card__subagent-meta');
-  if (metaEl && metaEl.parentNode) metaEl.parentNode.appendChild(metaEl);
 }
 
 // getOrCreateProgressCard(refs, callId, title)

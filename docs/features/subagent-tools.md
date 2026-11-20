@@ -58,7 +58,7 @@ The background call card stays running until its **single final result** arrives
 
 ### Card model and context line
 
-An expanded subagent card ends with a muted footer line, `model · context N` (e.g. `gpt-5 · context 14.8K`): which model the delegated run used and how large its context grew by the final round. The model id arrives with the live `start` frame and each `usage_update`; the context size is the settled result's last `usage.promptTokens` (every round re-sends the conversation, so the last report is the run's final context). The card head separately shows the running delegated cost.
+An expanded subagent card shows a muted line right under its head line, above the nested chat, `model · context N` (e.g. `gpt-5 · context 14.8K`): which model the delegated run used and how large its context grew by the final round. It is display only, drawn from the result being rendered (`model.id` and the last round's `usage.promptTokens`); nothing is stored on the card. The card head separately shows the running delegated cost.
 
 ## Retry behavior
 
