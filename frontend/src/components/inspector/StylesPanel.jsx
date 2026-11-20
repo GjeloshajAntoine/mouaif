@@ -448,6 +448,9 @@ typeof CSS !== 'undefined' && CSS.supports ? (p, v) => CSS.supports(p, v) : null
 // flips on the first edit in this sheet session.
 const [dirty, setDirty] = useState(false);
 const showCheck = dirty && !check.ok;
+// typed — the field holds keyboard input not yet applied. Only then does the
+// editor show Apply: the rail, swatches and segments write live and need none.
+const [typed, setTyped] = useState(false);
 // The sibling read. Guarded on the property (and on the panel actually giving us
 // a reader) so opening the sheet for a property the page cannot answer for costs
 // nothing. The reader is held in a ref rather than in the effect's dependencies:
@@ -642,6 +645,7 @@ try {
 await props.onApply(p, v, priority);
 if (!alive.current) return;
 setApplied(true);
+setTyped(false);
 // The element's box can change size with the property (padding, font
 // size) — re-read the pinned preview so the sheet shows the new state.
 if (props.onRefreshShot) props.onRefreshShot();
@@ -699,7 +703,7 @@ ref: props.editorRef,
 role: 'region',
 'aria-label': 'Edit ' + (propName || 'style')
 },
-h('div', { class: 'inspector__value-editor-head' },
+props.inline ? null : h('div', { class: 'inspector__value-editor-head' },
 h('strong', null, propName || 'Add style'),
 h('button', { class: 'btn inspector__value-editor-close', type: 'button', disabled: busy, onClick: dismiss }, applied || !dirty ? 'Done' : 'Cancel')
 ),
@@ -712,16 +716,19 @@ h('button', { class: 'inspector__style-step', type: 'button', disabled: busy || 
 h('input', { class: 'input inspector__style-input inspector__style-input--value',
 id: 'inspector-edit-value', type: 'text', ref: valueInputRef, value,
 'aria-label': 'Value for ' + propName, autocapitalize: 'off', autocorrect: 'off', spellcheck: false,
-onInput: (e) => onField(e.currentTarget.value),
+onInput: (e) => { onField(e.currentTarget.value); setTyped(true); },
 onKeyDown: (e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } } }),
 h('button', { class: 'inspector__style-step', type: 'button', disabled: busy || up == null,
 'aria-label': 'Increase ' + (propName || 'value'), onClick: () => nudge(up) }, '+')
 ),
 ...valueChangers,
-showReset
+(showReset || props.inline)
 ? h('div', { class: 'inspector__value-was' },
-h('span', null, 'was ' + wasValue),
-h('button', { class: 'btn', type: 'button', disabled: busy, onClick: resetValue }, 'Reset'))
+showReset ? h('span', null, 'was ' + wasValue) : h('span', null),
+h('div', { class: 'inspector__value-was-actions' },
+showReset ? h('button', { class: 'btn', type: 'button', disabled: busy, onClick: resetValue }, 'Reset') : null,
+props.inline && props.copyButton ? props.copyButton(value) : null,
+props.inline ? h('button', { class: 'btn inspector__value-editor-close', type: 'button', disabled: busy, onClick: dismiss }, applied || !dirty ? 'Done' : 'Cancel') : null))
 : null,
 h('details', { class: 'inspector__value-editor-options' },
 h('summary', null, 'Units, suggestions & page values'),
@@ -749,6 +756,9 @@ snap.offScale && snap.nearest ? ' · nearest ' + snap.nearest.value : ''
 ),
 h('details', { class: 'inspector__value-editor-options' },
 h('summary', null, 'More options: property, type & priority'),
+props.inline && props.isRemove
+? h('button', { class: 'btn btn--danger inspector__style-remove', type: 'button', disabled: busy, onClick: remove }, 'Remove ' + propName)
+: null,
 h('label', { class: 'label', for: 'inspector-edit-property' }, 'Property'),
 h('input', { class: 'input inspector__style-input', id: 'inspector-edit-property', type: 'text', value: prop,
 'aria-label': 'CSS property', autocapitalize: 'off', autocorrect: 'off', spellcheck: false,
@@ -815,7 +825,7 @@ h('p', { class: 'inspector__scope-note inspector__scope-kept' }, 'Every other de
 // Apply — the write path itself would silently discard it (see declaration.js).
 showCheck && !error ? h('p', { class: 'inspector__style-error', role: 'status' }, check.error) : null,
 error ? h('p', { class: 'inspector__style-error', role: 'alert' }, error) : null,
-h('div', { class: 'inspector__sheet-actions' },
+(props.inline && !typed) ? null : h('div', { class: 'inspector__sheet-actions' },
 h('button', {
 class: 'btn inspector__style-apply',
 type: 'button',
@@ -825,7 +835,7 @@ disabled: busy || !check.ok,
 title: check.ok ? 'Apply this declaration to the element' : check.error,
 onClick: apply
 }, busy ? 'Applying…' : 'Apply'),
-props.isRemove
+props.isRemove && !props.inline
 ? h('button', {
 class: 'btn btn--danger inspector__style-remove',
 type: 'button',
@@ -1189,6 +1199,13 @@ const modelRef = useRef(null);
 const treeSerial = useRef(0);
 // crumbsKey — the selection identity; several effects below re-run on it.
 const crumbsKey = (model && model.objectId) || '';
+// offDecls — declarations switched off with the row checkbox, keyed by property:
+// { value, priority }. Switching off removes the declaration from the element
+// (so the page shows the result) while the row stays in the list, struck
+// through, so one tap brings it back with its value and priority. Per element:
+// another selection starts with none.
+const [offDecls, setOffDecls] = useState({});
+useEffect(() => { setOffDecls({}); }, [crumbsKey]);
 // panelRef — this panel's own scroller, and the handle every reveal below uses.
 // The panel scrolls itself rather than the page: the panels are stacked in
 // `.app__main`, and scrolling that instead would drag the whole Inspector —
@@ -1935,6 +1952,25 @@ setChanged((prev) => written.reduce((acc, name) => unmarkChanged(acc, name), pre
 await revalidate();
 captureShot();
 }
+// toggleDecl — the Declared row's checkbox. Off removes the declaration (a
+// normal, undoable removal) and remembers it in offDecls; on writes it back with
+// the value and priority it had. Failures land in the panel's error line.
+async function toggleDecl(row, on) {
+try {
+if (on) {
+const saved = offDecls[row.prop];
+if (!saved) return;
+await applyEdit(row.prop, saved.value, saved.priority);
+setOffDecls((prev) => { const next = { ...prev }; delete next[row.prop]; return next; });
+} else {
+if (edit && edit.prop === row.prop) closeEditor();
+setOffDecls((prev) => ({ ...prev, [row.prop]: { value: row.value, priority: row.priority || '' } }));
+await removeEdit(row.prop);
+}
+} catch (e) {
+setError((e && e.message) || ('Could not switch ' + row.prop + (on ? ' on' : ' off')));
+}
+}
 // The undo handlers left this panel with the receipt: the LIST is owned by the
 // Inspector now (see its receipt state), which reverses entries against the
 // objectId it retains, so an undo works while this panel is switched off. This
@@ -2131,8 +2167,11 @@ if (id === 'rules') return rules && rules.counts ? (rules.counts.author || 0) : 
 if (id === 'computed') return computedVisible.length;
 return 0;
 }
+const editInDeclared = !!(edit && declaredRows.some((r) => r.prop === edit.prop));
 const valueEditor = edit ? h(StyleValueEditor, {
 key: 'editor-' + edit.prop,
+inline: editInDeclared,
+copyButton: (v) => (v ? h(CopyValueButton, { value: v, name: edit.prop, onCopy: handleCopyValue }) : null),
 editorRef,
 prop: edit.prop,
 value: edit.value,
@@ -2156,7 +2195,12 @@ onCancel: closeEditor
 }) : null;
 // The mockup opens the editor right under the row that was tapped; an edit
 // started elsewhere (a rule, Computed, Add) keeps the top slot.
-const editInDeclared = !!(edit && declaredRows.some((r) => r.prop === edit.prop));
+// Switched-off declarations stay listed (struck through) after the live ones
+// until switched back on; one that was re-added another way drops out here.
+const offRows = Object.keys(offDecls)
+.filter((p) => !groupedRows.some((r) => r.prop === p))
+.map((p) => ({ prop: p, value: offDecls[p].value, priority: offDecls[p].priority, off: true }));
+const listedRows = declaredRows.concat(offRows);
 return h('div', {
 class: 'inspector__styles' + (edit ? ' is-editing' : ''),
 ref: panelRef,
@@ -2404,48 +2448,60 @@ h('h3', { class: 'inspector__styles-h' }, 'Declared styles'),
 inlineRows.length ? h('span', { class: 'inspector__rules-count' }, String(groupedRows.length)) : null,
 h('span', { class: 'inspector__declared-where' }, 'element.style')
 ),
-h('p', { class: 'inspector__styles-guide' }, 'Written on this element. Tap any property to edit.'),
-inlineRows.length
+h('p', { class: 'inspector__styles-guide' }, 'Written on this element. Tap a value to edit it, or untick a property to switch it off.'),
+(inlineRows.length || offRows.length)
 ? h('ul', { class: 'inspector__styles-list' },
-declaredRows.map((row) => h('li', {
+listedRows.map((row) => {
+const isOff = !!row.off;
+const isChangedRow = !isOff && groupChanged(row, changed);
+const isEditing = !isOff && editInDeclared && edit.prop === row.prop;
+return h('li', {
 class: 'inspector__styles-row inspector__styles-row--declared'
-+ (groupChanged(row, changed) ? ' inspector__styles-row--changed' : ''),
-key: (model.rev || 0) + ':' + row.prop
++ (isChangedRow ? ' inspector__styles-row--changed' : '')
++ (isOff ? ' inspector__styles-row--off' : '')
++ (isEditing ? ' is-editing' : ''),
+key: (model.rev || 0) + ':' + row.prop + (isOff ? ':off' : '')
 },
+// Mockup row: checkbox · property · changed dot … value chip. The checkbox
+// switches the declaration off (struck through, still listed) and back on.
+h('label', { class: 'inspector__decl-toggle', title: (isOff ? 'Switch on ' : 'Switch off ') + row.prop },
+h('input', {
+type: 'checkbox',
+checked: !isOff,
+'aria-label': (isOff ? 'Switch on ' : 'Switch off ') + row.prop,
+onChange: (e) => toggleDecl(row, e.currentTarget.checked)
+})
+),
 h('button', {
 class: 'inspector__styles-row-main',
 type: 'button',
-// Accessible name must contain the visible text (WCAG 2.5.3 Label in
-// Name): the row visibly shows `{prop} {value}`, so echo both in the
-// label alongside the edit action — a bare "Edit color" would fail the
-// label-content-name-mismatch check and be confusing for screen-reader
-// users who see "color #00ff00" on screen. Changed rows also announce
-// that state, since the highlight is colour-only for sighted users.
-'aria-label': (groupChanged(row, changed) ? 'Changed. ' : '')
+disabled: isOff,
+'aria-expanded': String(isEditing),
+// Label in Name (WCAG 2.5.3): the row visibly shows `{prop} {value}`.
+'aria-label': (isChangedRow ? 'Changed. ' : '')
 + (row.value ? 'Edit ' + row.prop + ', value ' + row.value : 'Edit ' + row.prop),
-// A shorthand row names what it stands for, so the grouping is never a
-// mystery: `border` sets these 17 properties, all of them in Computed.
+// A shorthand row names what it stands for.
 title: 'Edit ' + row.prop + (row.longhands && row.longhands.length
 ? ' — shorthand for ' + memberNames(row).slice(1).join(', ')
 : ''),
-onClick: () => openEditor({ prop: row.prop, value: row.value, priority: row.priority || '' })
+// The chip toggles: tapping the open row's value closes its editor.
+onClick: () => (isEditing
+? closeEditor()
+: openEditor({ prop: row.prop, value: row.value, priority: row.priority || '' }))
 },
 h('span', { class: 'inspector__styles-prop' }, row.prop),
-groupChanged(row, changed) ? h('span', { class: 'inspector__styles-changed', 'aria-hidden': 'true' }, 'changed') : null,
-// A declaration the element stores as `!important` says so on the row. It is a
-// different thing from a normal one — it beats later normal declarations and
-// every stylesheet rule except another `!important` — so hiding it would leave
-// the user unable to explain the cascade, and unable to tell which of their own
-// edits is carrying priority.
+isChangedRow ? h('span', { class: 'inspector__decl-dot', 'aria-hidden': 'true' }) : null,
+// `!important` is a different kind of declaration; the row says so.
 row.priority === 'important'
 ? h('span', { class: 'inspector__styles-important', title: 'Stored as !important on this element' }, '!important')
 : null,
+h('span', { class: 'inspector__decl-chip' },
 valueSwatch(row.prop, row.value),
-h(ValueText, { value: row.value, kind: valueKindOf(row.prop, row.value) })
+h(ValueText, { value: row.value, kind: valueKindOf(row.prop, row.value) }))
 ),
-row.value ? h(CopyValueButton, { value: row.value, name: row.prop, onCopy: handleCopyValue }) : null,
-editInDeclared && edit.prop === row.prop ? valueEditor : null
-))
+isEditing ? valueEditor : null
+);
+})
 )
 : h('p', { class: 'inspector__styles-none' }, 'No inline styles yet.', h('br'), 'Tap Add property above to set one.')
 ),

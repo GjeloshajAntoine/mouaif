@@ -18,7 +18,7 @@ box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.2);
 box-shadow: 0px 2px 1rem rgba(0, 0, 0, 0.2);
 ```
 
-6. Tap **Apply** at the bottom of the editor to commit a typed value without closing; **Enter** in the value field does the same. The property's own control (rail, swatches, keyword segments) writes as it changes, so those need no Apply. **was 24px · Reset** under the value returns to the value the editor opened on. **Cancel / Done** returns to the list's previous scroll position and focus. Pending edits get **Keep editing / Discard** in the same panel, not another modal.
+6. Once you type in the value field, **Apply** appears at the bottom of the editor to commit it without closing; **Enter** does the same. The property's own control (rail, swatches, keyword segments) writes as it changes, so those need no Apply. **was 24px · Reset** under the value returns to the value the editor opened on. **Cancel / Done** returns to the list's previous scroll position and focus. Pending edits get **Keep editing / Discard** in the same panel, not another modal.
 7. Expand **More options: property, type & priority** only when needed; it contains the property-name field, value-type conversion, `!important` control and scope summary. Common editing does not require another tab or screen.
 
 ## Limitations

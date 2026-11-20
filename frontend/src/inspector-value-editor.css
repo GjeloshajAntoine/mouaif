@@ -170,3 +170,47 @@
   font-size: 0.8rem;
   color: var(--fg-soft);
 }
+
+/* Declared row, Styles mockup: checkbox · property · changed dot … value chip.
+   The row itself is the editor's header, so the inline editor has none. */
+.inspector__styles .inspector__styles-row--declared { gap: 0.25rem; padding: 0 0.5rem 0 0; }
+.inspector__decl-toggle {
+  flex: none;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  min-height: 2.75rem;
+  cursor: pointer;
+}
+.inspector__decl-toggle input { width: 1.25rem; height: 1.25rem; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.inspector__styles .inspector__styles-row--declared .inspector__styles-row-main { flex-wrap: nowrap; gap: 0.5rem; }
+.inspector__styles .inspector__styles-row--declared .inspector__styles-prop { flex: 0 1 auto; }
+.inspector__styles-row--declared .inspector__styles-prop::after { content: none; }
+.inspector__decl-dot { flex: none; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--warning, #f2a765); }
+.inspector__decl-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.inspector__decl-chip .inspector__styles-val { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inspector__styles-row--declared.is-editing { background: var(--surface-2); }
+.inspector__styles-row--declared.is-editing .inspector__decl-chip { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+/* Switched off: struck through, still listed so one tap brings it back. */
+.inspector__styles-row--off .inspector__styles-prop,
+.inspector__styles-row--off .inspector__styles-val { text-decoration: line-through; color: var(--muted); }
+.inspector__styles-row--off .inspector__styles-row-main:disabled { cursor: default; opacity: 1; }
+/* Inline editor sits flush under its row: no second accent frame. */
+.inspector__styles-row > .inspector__value-editor { border-width: 1px; border-color: var(--border); margin: 0 0 0.5rem; }
+.inspector__value-was-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.5rem; }
+.inspector__value-was-actions .btn { min-height: 2.75rem; }

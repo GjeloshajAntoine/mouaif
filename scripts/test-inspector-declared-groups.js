@@ -142,7 +142,8 @@ const events = read('frontend/src/components/inspector/events.js');
 check('the panel renders the grouped rows, ordered by their most recent member', () => {
   assert.ok(/const groupedRows = groupDeclared\(inlineRows, model\.inlineCss\)/.test(panel));
   assert.ok(/orderChangedFirst\(groupedRows, changed, \(row\) => changedKey\(row, changed\)\)/.test(panel));
-  assert.ok(/declaredRows\.map/.test(panel));
+  assert.ok(/const listedRows = declaredRows\.concat\(offRows\)/.test(panel));
+  assert.ok(/listedRows\.map/.test(panel));
 });
 check('an edit of a shorthand row records the serialised value it replaces', () => {
   assert.strictEqual((panel.match(/\|\| findDeclaration\(modelRef\.current && modelRef\.current\.inlineCss, prop\)/g) || []).length, 2);

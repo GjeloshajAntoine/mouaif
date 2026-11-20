@@ -34,6 +34,7 @@ const bundle = await build({
         selectBySelector: async selector => { if (selector === '.missing') throw Error('No matching element'); return model(); },
         refreshNodeModel: async () => model(),
         setInlineStyleProperty: async (id, prop, value) => { values[prop] = value; window.writes.push({ prop, value }); return {}; },
+        removeInlineStyleProperty: async (id, prop) => { delete values[prop]; window.writes.push({ prop, value: null }); return {}; },
         readElementStyles: async () => ({ inline: { ...values }, computed: { ...values }, cssText: model().inlineCss }),
         readElementTree: async () => ({ ancestors: [{ label: 'main#app', levels: 1 }], children: [{ label: 'h2.title' }], childCount: 1 }),
         readMatchedRules: async () => ({ rules: [{ id: 'rule-1', selector: '.card', group: 'author', props: [{ name: 'padding', value: '16px' }] }], counts: { author: 1, userAgent: 0 } })
@@ -117,6 +118,15 @@ try {
   await evaluate("document.documentElement.style.fontSize = '16px'");
   await click('.inspector__styles-row--declared .inspector__styles-row-main');
   await checkLayout('editor');
+  if (process.env.STYLES_EDITOR_SHOT) {
+    await evaluate(`(() => { const row = document.querySelector('.inspector__styles-row--declared.is-editing'); const panel = document.querySelector('.inspector__styles'); panel.scrollTop += row.getBoundingClientRect().top - panel.getBoundingClientRect().top - 150; })()`);
+    await settle();
+    const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+    fs.writeFileSync(process.env.STYLES_EDITOR_SHOT, Buffer.from(shot.data, 'base64'));
+  }
+  assert.equal(await evaluate('document.querySelector(".inspector__styles-row--declared").classList.contains("is-editing")'), true, 'the tapped row is marked as editing');
+  assert.equal(await evaluate('!!document.querySelector(".inspector__value-editor-head")'), false, 'inline editor has no header strip: the row is its header');
+  assert.equal(await evaluate('!!document.querySelector(".inspector__value-editor .inspector__style-apply")'), false, 'no Apply until a value is typed');
   const tokens = await evaluate(`(() => {
     const css = getComputedStyle(document.querySelector('.inspector__value-editor'));
     return Object.fromEntries(['surface','surface-2','surface-3','fg','fg-soft','muted','muted-2','accent','border-strong'].map(k => [k, css.getPropertyValue('--'+k).trim()]));
@@ -128,8 +138,23 @@ try {
   await evaluate(`(() => { const el = document.querySelector('#inspector-edit-value'); el.value = 'grid'; el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   await settle(); await click('.inspector__style-apply');
   assert.deepEqual(await evaluate('window.writes'), [{ prop: 'display', value: 'grid' }], 'Apply still writes just the selected property');
-  await click('.inspector__value-editor-head .btn');
+  await click('.inspector__value-editor-close');
   assert.equal(await evaluate('!!document.querySelector(".inspector__value-editor")'), false, 'Done returns to styles');
+  // The row checkbox switches a declaration off (removed, still listed struck
+  // through) and back on with the value it had.
+  const toggle = async () => { await evaluate(`[...document.querySelectorAll('.inspector__styles-row--declared')].find(li => li.querySelector('.inspector__styles-prop').textContent === 'padding').querySelector('.inspector__decl-toggle input').click()`); for (let i = 0; i < 5; i++) await settle(); };
+  await toggle();
+  assert.deepEqual((await evaluate('window.writes')).at(-1), { prop: 'padding', value: null }, 'unticking removes the declaration');
+  if (process.env.STYLES_OFF_SHOT) {
+    await evaluate(`(() => { const row = document.querySelector('.inspector__styles-row--declared'); const panel = document.querySelector('.inspector__styles'); panel.scrollTop += row.getBoundingClientRect().top - panel.getBoundingClientRect().top - 150; })()`);
+    await settle();
+    const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+    fs.writeFileSync(process.env.STYLES_OFF_SHOT, Buffer.from(shot.data, 'base64'));
+  }
+  assert.equal(await evaluate(`[...document.querySelectorAll('.inspector__styles-row--off .inspector__styles-prop')].map(el => el.textContent).join()`), 'padding', 'switched-off row stays listed');
+  await toggle();
+  assert.deepEqual((await evaluate('window.writes')).at(-1), { prop: 'padding', value: '16px' }, 'ticking restores the value');
+  assert.equal(await evaluate('document.querySelectorAll(".inspector__styles-row--off").length'), 0, 'row is live again');
   await click('.inspector__rules-toggle');
   await checkLayout('expanded matched rules');
   // Fullscreen must still fill the available viewport, not retain the card's
