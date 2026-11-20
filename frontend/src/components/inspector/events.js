@@ -491,6 +491,9 @@ const PAGE_LABEL_SRC = 'function ml(n){ if(!n||!n.nodeName) return ""; var s=Str
 // 6 lines of chips. Overflow is reported as `+N`.
 const MAX_ANCESTORS = 8;
 const MAX_CHILDREN = 6;
+// The navigator's Siblings / Parent columns show a window of up to 2N+1 rows
+// around the current one, so a 40-item list stays a short column.
+const MAX_SIBLINGS_HALF = 4;
 // requestNodeId — resolve a DOM nodeId from a Runtime objectId, or 0.
 // Several CSS-domain reads need a nodeId, but DOM.requestNode can map to 0
 // on some targets (and DOM.domain may be off), so every caller treats 0 as
@@ -518,7 +521,7 @@ if (!objectId) return null;
 try {
 const r = await cdpSend('Runtime.callFunctionOn', {
 objectId,
-functionDeclaration: 'function(){ ' + PAGE_LABEL_SRC + ' var anc=[],n=this.parentElement,lv=1; while(n && lv<=' + MAX_ANCESTORS + '){ anc.push({ label: ml(n), levels: lv }); n=n.parentElement; lv++; } var k=this.children||[],kids=[]; for(var i=0;i<k.length && i<' + MAX_CHILDREN + ';i++){ kids.push({ label: ml(k[i]) }); } return { ancestors: anc, children: kids, childCount: k.length, label: ml(this) }; }',
+functionDeclaration: 'function(){ ' + PAGE_LABEL_SRC + ' var anc=[],n=this.parentElement,lv=1; while(n && lv<=' + MAX_ANCESTORS + '){ anc.push({ label: ml(n), levels: lv }); n=n.parentElement; lv++; } var k=this.children||[],kids=[]; for(var i=0;i<k.length && i<' + MAX_CHILDREN + ';i++){ kids.push({ label: ml(k[i]), kids: (k[i].children||[]).length }); } function row(p,self){ if(!p) return null; var c=p.children||[],o=[],at=-1; for(var j=0;j<c.length;j++){ if(c[j]===self) at=j; } var lo=Math.max(0,Math.min(at-' + MAX_SIBLINGS_HALF + ',c.length-' + (2 * MAX_SIBLINGS_HALF + 1) + ')); for(var j=lo;j<c.length && o.length<' + (2 * MAX_SIBLINGS_HALF + 1) + ';j++){ o.push({ label: ml(c[j]), index: j, kids: (c[j].children||[]).length }); } return { items: o, at: at, count: c.length }; } var p=this.parentElement; return { ancestors: anc, children: kids, childCount: k.length, label: ml(this), siblings: row(p,this), parents: p ? row(p.parentElement,p) : null }; }',
 returnByValue: true
 }, 8000);
 return (r && r.result && r.result.value) || null;
@@ -542,6 +545,21 @@ if (!next) return null;
 return buildNodeModel(next);
 }
 // selectChildNode — move down into child element `index`.
+// selectRelativeNode — the tree navigator's single hop: go up `levels`
+// parents (0 = stay), then, when `index` is a number, down into that child.
+// Siblings are (1, i), the parent column is (2, i), children are (0, i).
+async function selectRelativeNode(objectId, levels, index) {
+const up = Math.max(0, Math.min(MAX_ANCESTORS, Number(levels) || 0));
+const r = await cdpSend('Runtime.callFunctionOn', {
+objectId,
+functionDeclaration: 'function(n,i){ var e=this; for(var k=0;k<n && e;k++){ e=e.parentElement; } if(!e) return null; if(typeof i==="number"){ var c=e.children||[]; return c[i] || null; } return e; }',
+arguments: [{ value: up }, { value: index == null ? null : Number(index) }],
+returnByValue: false
+}, 8000);
+const next = r && r.result && r.result.objectId;
+if (!next) return null;
+return buildNodeModel(next);
+}
 async function selectChildNode(objectId, index) {
 const i = Math.max(0, Number(index) || 0);
 const r = await cdpSend('Runtime.callFunctionOn', {
@@ -1181,6 +1199,6 @@ insertText, pressEnter,
 pickNodeAt, hideNodeHighlight, setInlineStyleProperty, removeInlineStyleProperty,
 refreshNodeModel, selectBySelector, captureElementShot, readElementStyles,
 readSiblingValues,
-readElementTree, selectAncestorNode, selectChildNode, readMatchedRules
+readElementTree, selectAncestorNode, selectChildNode, selectRelativeNode, readMatchedRules
 };
 }

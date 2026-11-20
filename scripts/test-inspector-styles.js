@@ -521,83 +521,30 @@ async function main() {
     }
   }
 
-  // The breadcrumb is the one intended horizontal scroller in the panel: the
-  // Parents row is a single line, so a deep path is bounded instead of wrapping
-  // into several 44 px lines above the property list. Three things make it safe
-  // — it pins its own vertical axis (overflow-y must not be auto, or the row
-  // swallows the panel's own vertical swipe), it is scrolled to its end by the
-  // panel so the current element is the chip on screen, and the child chips stay
-  // wrapped (a disclosure, not a path).
-  const parentsRow = /\.inspector__styles-tree-row--parents\s*\{([^}]*)\}/.exec(panelCss);
-  assert.ok(parentsRow, 'the Parents row has its own rule');
-  assert.match(parentsRow[1], /display:\s*flex/,
-    'the Parents row puts its label and its path on one line');
-  const crumbStrip = /\.inspector__styles-tree-row--parents \.inspector__styles-crumbs\s*\{([^}]*)\}/.exec(panelCss);
-  assert.ok(crumbStrip, 'the breadcrumb strip has a rule scoped to the Parents row');
-  assert.match(crumbStrip[1], /overflow-x:\s*auto/, 'the breadcrumb scrolls sideways');
-  assert.match(crumbStrip[1], /overflow-y:\s*hidden/,
-    'the breadcrumb pins its vertical axis, so a vertical swipe still scrolls the property list');
-  assert.match(crumbStrip[1], /flex-wrap:\s*nowrap/, 'the breadcrumb never wraps to a second line');
-  const plainCrumbs = cssRules.find((r) => r.selector === '.inspector__styles-crumbs');
-  assert.ok(plainCrumbs, 'the breadcrumb base rule still exists');
-  assert.ok(!/overflow-x:\s*(auto|scroll)/.test(plainCrumbs.body),
-    'the base breadcrumb rule does not scroll — only the Parents row does');
+  // --- Element tree: the three-column navigator ------------------------
+  // Parent / Siblings / Children columns, a breadcrumb that scrolls to its end,
+  // and a drag surface that steps siblings vertically and depth sideways.
   const panelJsx = fs.readFileSync(path.join(__dirname, '../frontend/src/components/inspector/StylesPanel.jsx'), 'utf8');
-  assert.ok(/crumbsRef/.test(panelJsx) && /strip\.scrollLeft = strip\.scrollWidth/.test(panelJsx),
-    'the panel scrolls the breadcrumb to its end, so the current element is the chip in view');
-  assert.ok(/inspector__styles-tree-row--parents/.test(panelJsx),
-    'the Parents row renders with that modifier');
-  const kidsRule = /\.inspector__styles-kids\s*\{([^}]*)\}/.exec(panelCss);
-  assert.ok(kidsRule && /flex-wrap:\s*wrap/.test(kidsRule[1]),
-  'the child chips still wrap');
-  // --- the Element tree explains itself ---------------------------------
-  // The section used to be a heading, a `↑ Parents` row and a `▸ ↓ Children 1`
-  // row, with nothing saying that the chips are tap targets, that the accent
-  // chip is already the selection, or what the bare `1` counted. The help is the
-  // hint line, the direction words on both rows, and the count spelled with its
-  // noun — and the count has to be the toggle's *visible* text, because that
-  // phrase is also its accessible name.
-  const hintRule = /\.inspector__styles-tree-hint\s*\{([^}]*)\}/.exec(panelCss);
-  assert.ok(hintRule, 'the tree hint has its own rule');
-  assert.ok(/inspector__styles-tree-hint/.test(panelJsx) && /Tap a chip to select that element/.test(panelJsx),
-  'the section says what tapping a chip does');
-  assert.ok(/'aria-current':\s*'true'/.test(panelJsx),
-  'the current element is marked for AssistiveTech, not only by the accent fill');
-  assert.ok(/\?\s*'1 child'\s*:\s*tree\.childCount \+ ' children'/.test(panelJsx),
-  'the child count is spelled with its noun, in both singular and plural');
-  assert.ok(!/inspector__styles-kids-n\b/.test(panelJsx) && !/\.inspector__styles-kids-n\s*\{/.test(panelCss),
-  'the bare count badge is gone — the count is a phrase now, not a number next to a label');
-  assert.ok(/aria-label': \(kidsOpen \? 'Hide' : 'Show'\)/.test(panelJsx),
-  'the toggle still names the element it discloses');
-  // --- a scrolled path says that it was scrolled ------------------------
-  // The strip opens on its *end* (the current element), so a path wider than the
-  // panel opens on a chip the viewport edge has cut mid-word: measured on this
-  // repo's own fixture the leftmost visible chip read `late-options` for
-  // `div.translate-options`, which reads as an element with that name. A marker
-  // in the gap between the label and the strip says the path continues; it must
-  // not be drawn *over* the crumbs (an overlay covered the very chip it was
-  // explaining) and it must not be a `…` (beside a cut chip an ellipsis read as
-  // part of that chip's own label). A chevron is not a label character.
-  const moreRule = /\.inspector__styles-crumbs-more\s*\{([^}]*)\}/.exec(panelCss);
-  assert.ok(moreRule, 'the off-screen path marker has its own rule');
-  assert.ok(!/position:\s*absolute/.test(moreRule[1]),
-  'the marker sits beside the crumbs, not over them — an overlay hides the chip it explains');
-  const wrapRule = /\.inspector__styles-crumbs-wrap\s*\{([^}]*)\}/.exec(panelCss);
-  assert.ok(wrapRule, 'the strip wrapper has its own rule');
-  assert.ok(!/position:\s*absolute/.test(wrapRule[1]),
-  'the strip wrapper is not a positioning context for an overlay');
-  assert.ok(/crumbsClipped/.test(panelJsx),
-  'whether the path is scrolled is tracked in the panel');
-  assert.ok(/setCrumbsClipped\(strip\.scrollLeft > 1\)/.test(panelJsx),
-  'the marker is set from the same auto-scroll that hides the root');
-  assert.ok(/onScroll:\s*onCrumbsScroll/.test(panelJsx) && /function onCrumbsScroll/.test(panelJsx),
-  'the marker follows the user swiping the path back towards the root');
-  assert.ok(/prev === clipped \? prev : clipped/.test(panelJsx),
-  'the scroll handler writes state only when the flag actually changes, not once per frame');
-  assert.ok(/'inspector__styles-crumbs-more', 'aria-hidden': 'true' \}, '‹'/.test(panelJsx),
-  'the marker is a decorative chevron, never a `…` that could read as part of a cut chip');
-  assert.ok(/\.inspector__styles-crumbs-more[\s\S]{0,400}pointer-events:\s*none/.test(panelCss),
-  'the marker is not a tap target of its own');
+  const navJsx = fs.readFileSync(path.join(__dirname, '../frontend/src/components/inspector/TreeNavigator.jsx'), 'utf8');
+  assert.ok(/h\(TreeNavigator, \{ tree, onSelect: selectRelative \}\)/.test(panelJsx),
+    'the Styles panel renders the tree navigator');
+  for (const head of ['Parent', 'Siblings', 'Children']) {
+    assert.ok(navJsx.includes("'" + head + "'"), 'the navigator has a ' + head + ' column');
+  }
+  assert.ok(/c\.scrollLeft = c\.scrollWidth/.test(navJsx),
+    'the breadcrumb is scrolled to its end, so the current element is in view');
+  assert.ok(/'aria-current': isSel \? 'true'/.test(navJsx),
+    'the selected row is marked for AssistiveTech, not only by the accent ring');
+  const padRule = /\.tnav__pad\s*\{([^}]*)\}/.exec(panelCss);
+  assert.ok(padRule && /touch-action:\s*none/.test(padRule[1]),
+    'the drag surface owns its gestures, so a vertical drag steps siblings instead of scrolling');
+  const crumbsRule = /\.tnav__crumbs\s*\{([^}]*)\}/.exec(panelCss);
+  assert.ok(crumbsRule && /overflow-x:\s*auto/.test(crumbsRule[1]) && /white-space:\s*nowrap/.test(crumbsRule[1]),
+    'the breadcrumb is one line that scrolls sideways');
+  for (const d of ['next', 'prev', 'child', 'parent']) {
+    assert.ok(new RegExp('\\.tnav__row\\.is-wall-' + d + '\\s*\\{').test(panelCss),
+      'a drag with nothing in the ' + d + ' direction shows a bar on that side');
+  }
 
   // --- tap targets: a row that *looks* 44 px must *be* 44 px ------------
   // The declared-styles row is a 44 px card whose button sat at its own 18 px
@@ -640,13 +587,9 @@ async function main() {
   // Chips clip their text on a child span: `text-overflow` does not apply to
   // the anonymous flex item a bare text child becomes, so the label used to
   // overflow the chip's rounded border.
-  assert.ok(/\.inspector__styles-kid-label\s*\{[^}]*text-overflow:\s*ellipsis/.test(panelCss),
-    'the child chip clips its label on a span, not on the flex button');
-  assert.ok(/\.inspector__styles-crumb-label\s*\{[^}]*text-overflow:\s*ellipsis/.test(panelCss),
-    'the breadcrumb chip clips its label on a span too');
+  assert.ok(/\.tnav__label\s*\{[^}]*text-overflow:\s*ellipsis/.test(panelCss),
+    'a navigator row clips its label on a span, not on the flex button');
   const panelSrc = fs.readFileSync(path.join(__dirname, '../frontend/src/components/inspector/StylesPanel.jsx'), 'utf8');
-  assert.ok(/inspector__styles-kid-label/.test(panelSrc) && /inspector__styles-crumb-label/.test(panelSrc),
-  'the panel renders those label spans');
   // Every computed row is an editor button on the value the page reports now,
   // and names where the value comes from (element.style, a rule, inherited).
   assert.ok(/class: 'inspector__styles-row-main inspector__computed-rowbtn'/.test(panelSrc),

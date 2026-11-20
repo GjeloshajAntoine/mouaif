@@ -2082,6 +2082,7 @@ readSiblingValues: handlers ? handlers.readSiblingValues : null,
     readElementTree: handlers ? handlers.readElementTree : null,
     selectAncestorNode: handlers ? handlers.selectAncestorNode : null,
     selectChildNode: handlers ? handlers.selectChildNode : null,
+    selectRelativeNode: handlers ? handlers.selectRelativeNode : null,
     // Read-only cascade for the "Matched rules" section: which rule or class
     // is responsible for a value, which is what decides whether an override is
     // fixable from this panel at all.

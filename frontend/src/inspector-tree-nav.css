@@ -1,0 +1,106 @@
+/* ---- Inspector: element-tree navigator (TreeNavigator.jsx) ---------- */
+/* Three columns, Parent / Siblings / Children, after the "Mobile-first Web
+Inspector" design. Rows never indent, so a deep element keeps a full-width
+label. The pad is the drag surface: touch-action none so a vertical drag steps
+siblings instead of scrolling the panel. */
+.tnav {
+--tnav-fill: color-mix(in srgb, var(--accent) 50%, transparent);
+display: flex;
+flex-direction: column;
+min-width: 0;
+margin-top: 6px;
+border: 1px solid var(--border);
+border-radius: var(--r-sm);
+overflow: hidden;
+}
+.tnav__crumbs {
+display: flex;
+align-items: center;
+gap: 2px;
+padding: 0 6px;
+overflow-x: auto;
+white-space: nowrap;
+scrollbar-width: none;
+border-bottom: 1px solid var(--border);
+}
+.tnav__crumbs::-webkit-scrollbar { display: none; }
+.tnav__crumb {
+flex: none;
+min-height: var(--tap);
+padding: 0 6px;
+background: none;
+border: 0;
+cursor: pointer;
+font-family: var(--font-mono);
+font-size: 0.75rem;
+color: var(--muted);
+}
+.tnav__crumb.is-here { color: var(--fg); font-weight: 600; cursor: default; display: inline-flex; align-items: center; }
+.tnav__sep { flex: none; color: var(--muted); font-size: 0.8rem; }
+.tnav__pad {
+display: grid;
+grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr) minmax(0, 1fr);
+touch-action: none;
+user-select: none;
+-webkit-user-select: none;
+cursor: pointer;
+}
+.tnav__pad.is-dragging { cursor: grabbing; }
+.tnav__col {
+display: flex;
+flex-direction: column;
+min-width: 0;
+overflow: hidden;
+}
+.tnav__col--left { border-right: 1px solid var(--border); background: var(--surface-2); }
+.tnav__col--right { border-left: 1px solid var(--border); background: var(--surface-2); }
+.tnav__head {
+padding: 8px 8px 2px;
+font-size: 0.68rem;
+color: var(--muted);
+}
+.tnav__row {
+display: flex;
+align-items: center;
+gap: 4px;
+min-height: var(--tap);
+padding: 0 8px;
+background: transparent;
+border: 0;
+cursor: inherit;
+text-align: left;
+font-family: var(--font-mono);
+font-size: 0.72rem;
+color: var(--muted);
+}
+.tnav__row--mid { font-size: 0.8rem; padding: 0 10px; }
+.tnav__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tnav__badge { flex: none; font-size: 0.75rem; font-weight: 600; }
+.tnav__row.is-path { background: var(--surface-3); color: var(--fg); }
+.tnav__row.is-sel {
+background: var(--accent-soft);
+color: var(--fg);
+font-weight: 600;
+box-shadow: inset 0 0 0 2px var(--accent);
+}
+.tnav__row.is-target { color: var(--fg); }
+@media (hover: hover) {
+.tnav__row:not(.is-sel):hover { outline: 1px dashed var(--accent); outline-offset: -2px; color: var(--fg); }
+}
+/* Nothing in the drag direction: an orange bar on that side of the selection. */
+.tnav__row.is-wall-next { box-shadow: inset 0 0 0 2px var(--accent), inset 0 -4px 0 var(--warning); }
+.tnav__row.is-wall-prev { box-shadow: inset 0 0 0 2px var(--accent), inset 0 4px 0 var(--warning); }
+.tnav__row.is-wall-child { box-shadow: inset 0 0 0 2px var(--accent), inset -4px 0 0 var(--warning); }
+.tnav__row.is-wall-parent { box-shadow: inset 0 0 0 2px var(--accent), inset 4px 0 0 var(--warning); }
+.tnav__more { padding: 4px 8px; font-size: 0.68rem; color: var(--muted); }
+.tnav__readout {
+margin: 0;
+padding: 8px 10px;
+border-top: 1px solid var(--border);
+font-family: var(--font-mono);
+font-size: 0.68rem;
+line-height: 1.35;
+color: var(--muted);
+}
+.tnav__readout.is-live { color: var(--fg); }
+.tnav__readout.is-wall { color: var(--warning); }

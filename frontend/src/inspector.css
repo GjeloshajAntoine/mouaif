@@ -46,6 +46,7 @@ in the parts above it (see the header comment in that file).
 @import './inspector-value-type.css';
 @import './inspector-touch.css';
 @import './inspector-styles.css';
+@import './inspector-tree-nav.css';
 @import './inspector-value-editor.css';
 @import './inspector-styles-light.css';
 @import './inspector-fullscreen.css';

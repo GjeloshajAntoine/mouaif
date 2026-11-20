@@ -158,7 +158,7 @@
   overflow-wrap: anywhere;
 }
 .inspector__styles :is(.inspector__touch-note, .inspector__touch-footnote,
-  .inspector__styles-tree-hint, .inspector__computed-status) {
+  .tnav__readout, .inspector__computed-status) {
   font-size: 0.75rem;
   line-height: 1.5;
 }
