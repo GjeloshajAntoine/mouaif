@@ -2392,9 +2392,9 @@ async function streamChatInScope(opts) {
     row = scope.start(id, args.agent, (run) => runDelegation(run), (exec) => {
     // A background run on a chat's persistent scope outlives this turn.
     // Its final result still rides this onEvent: the chat stream handler
-    // persists the tool_result row even after the SSE socket closed (the
-    // write itself is best-effort), so the call card settles on the next
-    // reconcile instead of staying on "running" forever.
+    // persists the tool_result row independently of SSE delivery, so the
+    // call card settles on the next reconcile instead of staying on
+    // "running" forever.
     if (args.background) onEvent('tool_result', { id, name: 'subagent', ok: exec.ok, result: exec.result, hooks: exec.subagentEnd ? hooksMeta(exec.subagentEnd.notes, exec.subagentEnd.context || '') : undefined });
     }, { groupId: args.groupId, memberId: args.memberId, workspace: workingDir, agentLimits: agentLimits(opts.projectDir, args.agent), onEnd: (ended, exec, state) => {
       const hookCtx = hookContextFor(callOpts);
@@ -2798,11 +2798,9 @@ promptSize: callOpts && callOpts.promptSize,
         orchestrationAuthor: run.author,
         allowedImageRefs: Array.isArray(args.images) ? args.images.slice() : [],
         onEvent: (eventName, data) => {
-        // A background run on a chat's persistent scope outlives its turn:
-        // keep forwarding its live frames even when the starting turn (and
-        // its SSE socket) is gone, so a later turn or a follower can still
-        // watch it. The stream handler drops the write on a dead socket but
-        // persists the final tool_result row.
+        // Keep recording nested events after the starting turn ends, so
+        // polling and the final result still reflect the work. The chat
+        // stream handler decides which events can still go over SSE.
         if (!scope.accepts(run) && !(persistentRoot && eventName === 'tool_result')) return;
         nestedEvents.push({ name: eventName, data });
         if (typeof onEvent !== 'function') return;

@@ -982,7 +982,9 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
   function hostEvent(event, payload) {
     if (!hostEventsWanted.has(event)) return;
     const data = Object.assign({ event, chatId }, payload);
-    try { res.write('event: host_event\ndata: ' + JSON.stringify(data) + '\n\n'); } catch { /* socket closed */ }
+    if (!res.writableEnded && !res.destroyed) {
+      try { res.write('event: host_event\ndata: ' + JSON.stringify(data) + '\n\n'); } catch { /* socket closed */ }
+    }
     liveChat.pushTransient(runKey, 'host_event', data);
   }
   const capJson = (v) => { try { const t = JSON.stringify(v); return t.length > 4096 ? t.slice(0, 4096) + '…' : t; } catch { return ''; } };
@@ -1034,37 +1036,11 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
     // frame per tool round to draw a single card.
     cursor = liveChat.replaceLive(runKey, name, data, liveChat.progressKey(data));
     }
-    // A background subagent that outlives its turn finishes after the
-    // owner's SSE stream has ended; its final tool_result must still be
-    // persisted, or the call card stays on "running" after a reload. The
-    // normal path below already persists every tool_result row, so this
-    // only covers the late case: the turn's response is already ended when
-    // the run settles.
-    const lateSubagentResult = name === 'tool_result' && data && data.name === 'subagent'
-    && res.writableEnded === true && !turnPersistedToolResults.has(data.id || '');
-    try {
-    res.write('event: ' + name + '\ndata: ' + JSON.stringify(cursor ? Object.assign({}, data, cursor) : data) + '\n\n');
-    } catch {
-    if (lateSubagentResult) {
+    // A disconnected owner doesn't end the turn or stop live followers.
+    if (!res.writableEnded && !res.destroyed) {
       try {
-      messages.appendMessage(projectDir, chatId, {
-        role: 'tool', phase: 'result', toolCallId: data.id || '', name: data.name,
-        ok: !!data.ok, content: JSON.stringify(data.result || {}), hooks: data.hooks
-      });
-      } catch { /* non-fatal */ }
-      return;
-    }
-    }
-    if (lateSubagentResult) {
-    // The response is already ended but the write did not throw (some
-    // mocks/sockets swallow it): persist the late result and stop here.
-    try {
-      messages.appendMessage(projectDir, chatId, {
-      role: 'tool', phase: 'result', toolCallId: data.id || '', name: data.name,
-      ok: !!data.ok, content: JSON.stringify(data.result || {}), hooks: data.hooks
-      });
-    } catch { /* non-fatal */ }
-    return;
+        res.write('event: ' + name + '\ndata: ' + JSON.stringify(cursor ? Object.assign({}, data, cursor) : data) + '\n\n');
+      } catch { /* socket closed */ }
     }
     if (traceStream) trace.write(traceStream, name, data);
     // Fan the remaining live events out to followers (live-chat.js).
@@ -1572,10 +1548,6 @@ function accumulateRoundUsage(roundUsage) {
     };
   }
 
-  // Tool-result ids already persisted by the normal in-turn path, so the
-  // late-persistence branch below never writes a second row for the same
-  // background subagent result.
-  const turnPersistedToolResults = new Set();
   let result;
   try {
     result = await ai.streamChat({
@@ -1619,7 +1591,24 @@ promptSize: resolvedProfileId,
     // message_delta — so summing it counted a round once per delta.
     onRoundCommit: (roundUsage) => { accumulateRoundUsage(roundUsage); },
     onEvent: (name, data) => {
-      if (name === 'message' && typeof data.delta === 'string') {
+    // Results and approval notifications belong to the chat even when a
+    // background subagent outlives this turn. Persist each result here,
+    // independently of whether the turn can still deliver it over SSE.
+    if (name === 'tool_result') {
+      try {
+      messages.appendMessage(projectDir, chatId, {
+        role: 'tool', phase: 'result', toolCallId: data.id || '', name: data.name || '',
+        ok: !!data.ok, content: JSON.stringify(data.result || {}), hooks: data.hooks
+      });
+      } catch { /* non-fatal */ }
+    } else if (name === 'authorization_required' || name === 'ask_user_required') {
+      notifyAttention({ sessionId: _pushSessionId, projectDir, chatId, name, data, preferences: notificationPrefs, broadcast: hasRecurringTask(), origin: hookOrigin });
+    }
+    // The live run key is reused by the next turn. A late callback must
+    // not write to the old response or publish into the next live run.
+    if (runningChatCancels.get(runKey) !== runController) return;
+
+    if (name === 'message' && typeof data.delta === 'string') {
       if (!streamStartedAt) streamStartedAt = Date.now();
       if (!turnStartedAt) turnStartedAt = streamStartedAt;
       assistantContent += data.delta;
@@ -1712,15 +1701,6 @@ promptSize: resolvedProfileId,
       } else if (name === 'tool_result') {
       // A recurring task's run that found nothing relevant asked to finish quietly.
       if (data && data.name === 'skip_notification' && data.ok) skipCompletionPush = true;
-      if (data && data.id) turnPersistedToolResults.add(String(data.id));
-      try {
-      messages.appendMessage(projectDir, chatId, {
-        role: 'tool', phase: 'result', toolCallId: data.id || '', name: data.name || '',
-        ok: !!data.ok, content: JSON.stringify(data.result || {}), hooks: data.hooks
-      });
-      } catch { /* non-fatal */ }
-      } else if (name === 'authorization_required' || name === 'ask_user_required') {
-      notifyAttention({ sessionId: _pushSessionId, projectDir, chatId, name, data, preferences: notificationPrefs, broadcast: hasRecurringTask(), origin: hookOrigin });
       } else if (name === 'progress_update') {
       // Updatable per-chat push notification for real-time progress.
       // Uses a stable tag so each new progress_update replaces the
