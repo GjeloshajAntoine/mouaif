@@ -206,7 +206,7 @@ class Scope {
     if (this.runs.has(id)) throw error('EBADINPUT', 'duplicate delegation callId');
     const pair = this.groups.validateLaunch(meta);
     const row = { callId: id, author: randomUUID().replace(/-/g, '').slice(0, 12), agent: agent || null, state: 'running', startedAt: Date.now(),
-      controller: new AbortController(), lines: [], cursor: 0, inbox: [], receipts: [], published: [], workspace: meta.workspace || this.projectDir };
+    controller: new AbortController(), lines: [], cursor: 0, evictedCursor: 0, inbox: [], receipts: [], published: [], workspace: meta.workspace || this.projectDir };
       row.depth = depth; row.parentCallId = this.owner?.callId || null;
       const parentExplicit = this.owner ? this.owner.explicitCap : null;
       const own = meta.agentLimits || {};
@@ -327,23 +327,25 @@ class Scope {
     const text = kind === 'message' ? data?.delta : kind === 'progress_update' ? data?.message || data?.title : null;
     if (typeof text !== 'string' || !text) return;
     if (kind === 'message') {
-      const parts = text.split('\n');
-      for (let i = 0; i < parts.length; i++) {
-        const chunk = parts[i];
-        const prev = row.lines.at(-1);
-        if (i === 0 && prev && prev.kind === 'message' && !prev.newline && prev.text.length < 2048) {
-          prev.text = (prev.text + chunk).slice(0, 2048);
-          prev.cursor = ++row.cursor;
-          if (parts.length > 1) prev.newline = true;
-        } else if (chunk || i < parts.length - 1) {
-          row.lines.push({ cursor: ++row.cursor, kind, text: chunk.slice(0, 2048), ...(i < parts.length - 1 ? { newline: true } : {}) });
-          if (row.lines.length > 128) row.lines.shift();
-        }
+    const parts = text.split('\n');
+    for (let i = 0; i < parts.length; i++) {
+      const chunk = parts[i];
+      const prev = row.lines.at(-1);
+      if (i === 0 && prev && prev.kind === 'message' && !prev.newline) {
+      if (chunk && prev.text.length < 2048) {
+        prev.text = (prev.text + chunk).slice(0, 2048);
+        prev.cursor = ++row.cursor;
       }
-      return;
+      if (parts.length > 1) prev.newline = true;
+      } else if (chunk || i < parts.length - 1) {
+      row.lines.push({ cursor: ++row.cursor, kind, text: chunk.slice(0, 2048), ...(i < parts.length - 1 ? { newline: true } : {}) });
+      if (row.lines.length > 128) row.evictedCursor = row.lines.shift().cursor;
+      }
+    }
+    return;
     }
     row.lines.push({ cursor: ++row.cursor, kind, text: text.slice(0, 2048) });
-    if (row.lines.length > 128) row.lines.shift();
+    if (row.lines.length > 128) row.evictedCursor = row.lines.shift().cursor;
   }
   drain(author) {
     const row = [...this.runs.values()].find((r) => r.author === author);
@@ -356,8 +358,11 @@ class Scope {
   undelivered(row) {
     for (const receipt of row.inbox.splice(0)) receipt.state = 'undelivered';
   }
+  effectiveState(row) {
+    return row.groupId && this.groups.member(row.groupId, row.memberId).member.state === 'blocked' ? 'blocked' : row.state;
+  }
   status(row) {
-    return { callId: row.callId, agent: row.agent, modelId: row.modelId || null, state: row.groupId && this.groups.member(row.groupId, row.memberId).member.state === 'blocked' ? 'blocked' : row.state,
+    return { callId: row.callId, agent: row.agent, modelId: row.modelId || null, state: this.effectiveState(row),
       rootId: row.rootId, parentCallId: row.parentCallId, depth: row.depth,
       groupId: row.groupId || null, memberId: row.memberId || null, workspace: row.workspace,
       startedAt: row.startedAt, elapsedMs: (row.finishedAt || Date.now()) - row.startedAt,
@@ -429,8 +434,8 @@ class Scope {
     const limit = args.limit ?? 20;
     if (!Number.isInteger(since) || since < 0 || !Number.isInteger(limit) || limit < 1 || limit > 50) throw error('EBADINPUT', 'invalid cursor or limit');
     const lines = row.lines.filter((line) => line.cursor > since).slice(0, limit).map(({ cursor, kind, text }) => ({ cursor, kind, text }));
-    return { callId: row.callId, state: row.state, lines, nextCursor: lines.at(-1)?.cursor ?? since,
-      truncated: since < (row.lines[0]?.cursor || 1) - 1, deliveries: row.receipts.map(({ messageId, state }) => ({ messageId, state })) };
+    return { callId: row.callId, state: this.effectiveState(row), lines, nextCursor: lines.at(-1)?.cursor ?? since,
+    truncated: since < row.evictedCursor, deliveries: row.receipts.map(({ messageId, state }) => ({ messageId, state })) };
     }
     const bus = localParent ? this.parentScope : this;
     const accessible = (item) => !child || !item.groupId || item.groupId === child.groupId;

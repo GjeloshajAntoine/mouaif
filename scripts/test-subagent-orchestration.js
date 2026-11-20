@@ -32,6 +32,20 @@ async function unit() {
   assert.equal(a.lines.length, 128);
   assert.equal(scope.status(a).lastLine, 'stream coalesced');
   assert.ok(!JSON.stringify(lines).includes('secret'));
+  // Coalesced first line must not report truncated=true on since=0, and
+  // overflow beyond 2048 chars must not spawn synthetic extra lines.
+  const c = scope.start('c', 'Review', () => new Promise(() => {}), () => {});
+  await tick();
+  scope.event(c, 'message', { delta: 'hel' });
+  scope.event(c, 'message', { delta: 'lo' });
+  const cMsg = scope.dispatch('subagent_messages', { callId: 'c', since: 0 });
+  assert.equal(cMsg.truncated, false);
+  assert.equal(cMsg.lines.length, 1);
+  assert.equal(cMsg.lines[0].text, 'hello');
+  scope.event(c, 'message', { delta: 'x'.repeat(2100) });
+  scope.event(c, 'message', { delta: 'ignored-overflow' });
+  assert.equal(c.lines.length, 1);
+  assert.equal(c.lines[0].text.length, 2048);
   scope.dispatch('subagent_send', { callId: 'a', message: 'focus on tests' });
   assert.deepEqual(scope.drain(a.author), ['focus on tests']);
   assert.deepEqual(scope.drain(a.author), []);

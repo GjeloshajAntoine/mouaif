@@ -871,6 +871,7 @@ async function streamChat(opts) {
   const scope = persistent
     ? orchestration.persistentScope(opts.projectDir, opts.chatId, rootSubagentLimits(opts.projectDir))
     : new orchestration.Scope(opts.projectDir, opts.chatId, opts.signal, rootSubagentLimits(opts.projectDir));
+  if (persistent) scope.observations = 0;
   try {
     return await streamChatInScope(Object.assign({}, opts, { orchestrationScope: scope }));
   } finally {
@@ -1247,6 +1248,11 @@ async function streamChatInScope(opts) {
   // persistent chat scope: only the run's own abort signal counts.
   const runSignalAborted = () => (persistentRoot && opts.nestedSubagent ? false : !!(signal && signal.aborted));
 
+  const drainSteering = () => {
+    if (!opts.orchestrationAuthor) return;
+    for (const message of (scope.parentScope || scope).drain(opts.orchestrationAuthor)) convo.push({ role: 'user', content: 'Parent steering: ' + message });
+  };
+
   while (true) {
     // A nested background run on a persistent chat scope keeps running after
     // the parent turn ended: only its own abort signal stops it here.
@@ -1255,9 +1261,7 @@ async function streamChatInScope(opts) {
       await finishTurn();
       return { ok: false, error: { code: 'EABORTED', message: 'aborted' }, usage: usageWithDelegated(), providerCost: totalProviderCost(), delegatedCost: delegatedCostTotal(), totalCost: totalRunCost() };
     }
-    if (opts.orchestrationAuthor) {
-      for (const message of (scope.parentScope || scope).drain(opts.orchestrationAuthor)) convo.push({ role: 'user', content: 'Parent steering: ' + message });
-    }
+    drainSteering();
     let effectiveToolSpecs = visibleToolSpecs;
     try {
       effectiveToolSpecs = promptProfilesMod
@@ -1277,7 +1281,10 @@ async function streamChatInScope(opts) {
       if (opts.nestedSubagent && isTransientUpstreamFailure(result) && !(runSignalAborted())) {
       await new Promise((resolve) => setTimeout(resolve, NESTED_RETRY_DELAY_MS));
       const scopeStillActive = !scope.owner || scope.accepts(scope.owner);
-      if (!runSignalAborted() && scopeStillActive) result = await runUpstreamTurn(convo, effectiveToolSpecs);
+      if (!runSignalAborted() && scopeStillActive) {
+        drainSteering();
+        result = await runUpstreamTurn(convo, effectiveToolSpecs);
+      }
       }
     }
     finally { release(); }
@@ -2422,7 +2429,7 @@ async function streamChatInScope(opts) {
     if (eventName === 'subagent_event') {
     scope.event(run, data.kind, data.data);
     if (data.kind === 'start') run.modelId = data.data?.model?.id || null;
-    } else if (eventName === 'progress_update') scope.event(run, eventName, data);
+    } else if (eventName === 'progress_update' && (!data?.parentCallId || data.parentCallId === run.callId)) scope.event(run, eventName, data);
     opts.onEvent(eventName, data);
     };
     const task = args && typeof args.task === 'string' ? args.task.trim() : '';
