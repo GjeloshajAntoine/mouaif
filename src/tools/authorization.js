@@ -27,6 +27,10 @@ function getSession(projectDir, chatId) {
       projectDir,
       chatId,
       grants: new Set(),
+      // Grants made on a subagent's approval card: they cover that subagent
+      // run and the subagents it starts, never the main agent or siblings.
+      // Keyed by the run's author id (see subagentGrantScopes in ai-stream).
+      scopedGrants: new Map(),
       allowedCallIds: new Map(),
       deniedCallIds: new Set(),
       pending: new Map()
@@ -926,16 +930,23 @@ async function authorize(input) {
   // tool is `allow`, allowlisted, or session-granted (e.g. update_settings
   // writing permission keys). Only a decision on this very call resolves it.
   const forcePrompt = input.forcePrompt === true;
+  // A subagent call carries its own run's author id first, then its
+  // ancestors'. `inheritAsk` means the parent's permission for this tool was
+  // `ask`: chat-wide grants and an `allow` config do not answer it, but a
+  // grant made on this subagent's (or an ancestor subagent's) card does.
+  const grantScopes = Array.isArray(input.grantScopes) ? input.grantScopes.filter((x) => typeof x === 'string' && x) : [];
+  const inheritAsk = input.inheritAsk === true;
   if (!BINARY_MODE_TOOLS.has(tool)) {
     if (session.deniedCallIds.has(callId)) throw typedError('EDENIED', 'user denied');
-    if (!forcePrompt && session.grants.has(tool)) return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
+    if (!forcePrompt && grantScopes.some((s) => session.scopedGrants.get(s)?.has(tool))) return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
+    if (!forcePrompt && !inheritAsk && session.grants.has(tool)) return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
     if (session.allowedCallIds.get(callId) === tool) {
       session.allowedCallIds.delete(callId);
       return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
     }
   }
-  if (!forcePrompt && config.mode === 'allow') return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
-  if (!forcePrompt && config.mode === 'allowlist') {
+  if (!forcePrompt && !inheritAsk && config.mode === 'allow') return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
+  if (!forcePrompt && !inheritAsk && config.mode === 'allowlist') {
     // A batch is approved only when EVERY target matches. Matching just
     // the first path (or a combined summary) could approve unlisted files.
     // The same rule covers `group_cli`, where the targets are commands:
@@ -984,8 +995,11 @@ async function authorize(input) {
     resolve: (value) => { cleanupAbort(); resolveWait(value); },
     reject: (value) => { cleanupAbort(); rejectWait(value); },
     publicResult,
+    grantScope: grantScopes[0] || null,
     request: {
       chatId,
+      // Which subagent asks; its card's grant covers only that subagent.
+      subagent: grantScopes.length && input.subagent && typeof input.subagent === 'object' ? input.subagent : undefined,
       callId,
       tool,
       cmd: input.cmd,
@@ -1040,8 +1054,15 @@ function recordDecision(projectDir, chatId, callId, decision, payload) {
   // re-issued call later in the session. Otherwise a single Dismiss would
   // make every subsequent ask_user auto-cancel without ever prompting.
   const binary = BINARY_MODE_TOOLS.has(pending.tool);
-  if (decision === 'allow-session' && !binary) session.grants.add(pending.tool);
-  if (decision === 'allow-always' && !binary) {
+  // A subagent's card changes only that subagent: Session and Always both
+  // grant the tool to that run (and the subagents it starts) and write no
+  // chat or project setting.
+  if (pending.grantScope && !binary && (decision === 'allow-session' || decision === 'allow-always')) {
+    let set = session.scopedGrants.get(pending.grantScope);
+    if (!set) session.scopedGrants.set(pending.grantScope, (set = new Set()));
+    set.add(pending.tool);
+  } else if (decision === 'allow-session' && !binary) session.grants.add(pending.tool);
+  if (decision === 'allow-always' && !binary && !pending.grantScope) {
     const family = configToolName(pending.tool);
     if (NATIVE_TOOLS.has(family)) {
       const current = effectiveConfig(projectDir, family);

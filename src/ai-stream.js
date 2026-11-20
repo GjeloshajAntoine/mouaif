@@ -543,8 +543,12 @@ async function runSingleToolCall(c, cx) {
   } catch (e) { subagentModel = { error: e.message }; }
   }
   if (opts && opts.signal && opts.signal.aborted) throw Object.assign(new Error('aborted'), { code: 'EABORTED' });
+      const subagentGrant = subagentGrantScopes(opts);
       const authResult = await authGate.authorize({
-      forcePrompt: forcePrompt || !!hookAsk || !!(opts.inheritedPermissions?.[c.name] && !['allow', 'off'].includes(opts.inheritedPermissions[c.name].mode)),
+      forcePrompt: forcePrompt || !!hookAsk,
+      inheritAsk: !!(opts.inheritedPermissions?.[c.name] && !['allow', 'off'].includes(opts.inheritedPermissions[c.name].mode)),
+      grantScopes: subagentGrant.scopes,
+      subagent: subagentGrant.subagent,
       signal: opts && opts.signal,
       images: authImages,
       subagentModel,
@@ -653,6 +657,7 @@ async function runSingleToolCall(c, cx) {
         }), hookNotes.length ? { hooks: { ask: hookAsk, notes: hookNotes } } : {}),
         images: authImages,
         subagentModel,
+        subagent: subagentGrant.subagent,
         timeoutMs: clampedTimeoutMs,
         projectDir: opts && opts.projectDir
         });
@@ -803,7 +808,7 @@ function buildUpstreamRequest(model, messages, specs, requestOpts, build) {
   return req;
 }
 
-// rootSubagentLimits(projectDir) -> { maxDepth, maxRuns }
+// rootSubagentLimits(projectDir) -> { maxDepth }
 //
 // The delegation budgets of a root turn, read from the resolved settings.
 // Writes are validated (src/content/service.js), but a project file can be
@@ -821,6 +826,22 @@ function agentLimits(projectDir, name) {
     const agent = name ? agents.get(projectDir, name) : agents.getDefault(projectDir);
     return agent ? { maxNesting: agent.maxNesting, maxRuns: agent.maxRuns } : {};
   } catch { return {}; }
+}
+
+// subagentGrantScopes(opts) -> { scopes, subagent }
+//
+// For a call made inside a subagent: the author ids of its run and every
+// ancestor run (own first), which key the approval grants made on a
+// subagent's card, plus what the card names. Empty for the main agent.
+function subagentGrantScopes(opts) {
+  const scopes = [];
+  let run = opts && opts.nestedSubagent && opts.orchestrationScope ? opts.orchestrationScope.owner : null;
+  const own = run;
+  for (; run; run = run.scope && run.scope.owner) if (run.author) scopes.push(run.author);
+  return {
+    scopes,
+    subagent: own ? { callId: own.callId, agent: own.agent || null, depth: own.depth || 1 } : undefined
+  };
 }
 
 const warnedSubagentLimits = new Set();

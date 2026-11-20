@@ -858,7 +858,11 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
     name.textContent = approvalTitle(request);
     const meta = document.createElement('span');
     meta.className = 'tool-card__args';
-    meta.textContent = request.parentTool === 'subagent' ? 'subagent · ' + (request.tool || '') : (request.tool || '');
+    // A subagent's request names the subagent; its card's grant covers only
+    // that subagent (and the subagents it starts), see recordDecision.
+    const sub = request.subagent && typeof request.subagent === 'object' ? request.subagent : null;
+    const subLabel = sub ? (sub.agent || 'subagent') : (request.parentTool === 'subagent' ? 'subagent' : '');
+    meta.textContent = subLabel ? subLabel + ' · ' + (request.tool || '') : (request.tool || '');
     const title = document.createElement('div');
     title.className = 'tool-card__role';
     title.textContent = request.tool === 'change_working_folder' ? 'permission needed' : 'authorization required';
@@ -891,17 +895,22 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
     let settled = false;
     let retryDecision = null;
     const buttons = [];
-    for (const [decision, label, fullLabel, shortcut] of [
+    const choices = sub ? [
+    ['allow-once', 'Once', 'Allow once', '1'],
+    ['allow-session', 'Subagent', 'Allow for this ' + subLabel + ' and its subagents', '2'],
+    ['deny', 'Deny', 'Deny', '4']
+    ] : [
     ['allow-once', 'Once', 'Allow once', '1'],
     ['allow-session', 'Session', 'Allow session', '2'],
     ['allow-always', 'Always', 'Always allow', '3'],
     ['deny', 'Deny', 'Deny', '4']
-    ]) {
+    ];
+    for (const [decision, label, fullLabel, shortcut] of choices) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'btn' + (decision === 'deny' ? ' btn--danger' : '');
     button.textContent = label;
-    button.title = fullLabel + ' (' + shortcut + ')' + (decision === 'allow-session' || decision === 'allow-always' ? ' · ' + scopeHint : '');
+    button.title = fullLabel + ' (' + shortcut + ')' + (!sub && (decision === 'allow-session' || decision === 'allow-always') ? ' · ' + scopeHint : '');
     button.setAttribute('aria-label', fullLabel + ' (' + shortcut + ')');
     button.dataset.shortcut = shortcut;
     button.addEventListener('click', async () => {
