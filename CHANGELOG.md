@@ -9,6 +9,30 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-11-21
+
+### Removed
+
+- **A turn's subagent run budget** — a chat's delegated runs are limited only by nesting depth, not by a turn-wide count. See [recursive delegation](docs/features/recursive-subagent-delegation.md).
+
+### Added
+
+- **One MCP workspace** — Settings → MCP servers now manages app and project servers, permissions and tools on one page: quick actions (Browse store, + Add server, Import JSON, Copy JSON), the default Off / Ask / Allow permission, Start all / Stop all, live search and status filters. Each server card shows its scope, transport and OAuth badge, offers an inline Off / Ask / Allow override with Reset, expands to per-tool permissions, runs its lifecycle controls and reports errors in place. Imports accept Claude Desktop, Cursor and VS Code JSON and `.mcp.json` files, secrets redacted. See [MCP](docs/features/mcp.md).
+- **A design loop in the web preview** — the preview viewer gains a prompt bar that sends a chat message without leaving it, reloads (Live) or re-captures (Screenshot) when the agent's turn ends, and a Compare view that slides the newest capture against an earlier one. The dock shows a working dot and flashes when the new version lands. See [preview design loop](docs/features/preview-design-loop.md).
+- **Background subagents that outlive their turn** — a `background: true` run is now scoped to the chat, so its callId keeps working with `subagent_status`, `subagent_messages`, `subagent_send` and `subagent_stop` from any later turn, and its result is stored when the starting turn's stream is already gone.
+- **Retry a failed subagent** — a delegation that failed now says why, in its card and in a dock under the chat, with Retry (and Retry all); a transient upstream failure before any output is retried once automatically. See [subagent tools](docs/features/subagent-tools.md).
+- **Model and context under a subagent card's head line**, so an expanded card says which model ran it and how large its context was.
+- **A three-column drag navigator in the Inspector element tree** — Parent / Siblings / Children columns under the breadcrumb: tap a row, or drag the block to step through siblings vertically and children or parents sideways, with the target filled in and a distance readout.
+- **An inline live value editor in the Inspector Styles panel** — the editor opens under the declared row that was tapped, with a large centred value, the property's own control (rail, swatches, keyword segments), live writes from those controls and a "was … · Reset" line, following the redesign of the declared rows.
+- **Descriptions for two more project settings** — Tool view and Web preview links now appear in the settings search and page links.
+
+### Fixed
+
+- **Dictation options in one saved section**, and a live take whose 3-second segment failed now settles instead of spinning forever; transcriptions follow the connection (Copilot token exchange, Ollama's `/v1`, Azure `api-version`, keyless local servers) and live-catalog transcription models are priced.
+- **Late subagent events** can no longer land on a later turn's card, and a nested `group_cli` batch renders with its per-entry terminal preview.
+- **The agent network** keeps delegation order when older rows are paged in, shows data for a chat whose delegations are older than the opened page, and fills the room it is given on both a phone and full screen.
+- **Shorter startup download** — the MCP SDK and Zod are split into their own cached chunks, so the entry bundle every UI edit re-downloads drops from 833 kB to 621 kB with the same startup total.
+
 ## [0.9.0] — 2026-11-17
 
 ### Removed
