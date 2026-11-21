@@ -1452,7 +1452,7 @@ const landingScreens = [
     title: 'Decide what the agent may touch',
     text: 'Every tool is listed with Off, Ask or Allow before the first message. Project instructions are already loaded and the model is picked, so the chat starts with the access you chose and no more.',
     src: 'features/images/landing/chat-tools.png',
-    alt: 'An empty chat at 390 px: the model picker, then the tools list — Progress updates, File tools with its seven leaf tools, Agent files and Skills — each row carrying an Off / Ask / Allow control, above the "Start the conversation" state.',
+    alt: 'An empty chat at 390 px: the Context, Total and Balance pills and the model picker, then the tools list — Progress updates, File tools with its seven leaf tools, Agent files and Skills — each row carrying an Off / Ask / Allow control, above the "Start the conversation" state.',
     caption: 'New chat — Off / Ask / Allow per tool'
   },
   {
