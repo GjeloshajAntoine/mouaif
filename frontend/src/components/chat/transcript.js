@@ -2724,6 +2724,8 @@ export function updateProgressCard(refs, data) {
 function snapshotExpandedState(root) {
   const state = { toolIds: new Set(), collapsedToolIds: new Set(), builtToolIds: new Set(), progressIds: new Set(), details: [], subagentCosts: new Map(), subagentStarts: new Map() };
   if (!root) return state;
+  // Windowed rows (windowing.js) get their subtree back before it is read.
+  for (const child of Array.from(root.children || [])) if (child._wake) child._wake();
   for (const card of root.querySelectorAll('.tool-card')) {
     if (!(card.dataset && card.dataset.toolId)) continue;
     if (card._subagentStart && !card.classList.contains('tool-card--result')) {
@@ -2870,12 +2872,13 @@ export function findToolCard(refs, id) {
     const hit = index.cards.get(key);
     if (hit) {
       if (hit.isConnected === false || (hit.parentNode && hit.parentNode !== host)) index.cards.delete(key);
-      else if (hit.parentNode === host || hit.isConnected === true) return hit;
+      else if (hit.parentNode === host || hit.isConnected === true) return (hit._wake && hit._wake(), hit);
       else index.cards.delete(key);
     }
   }
   const found = host.querySelector('[data-tool-id="' + cssEscape(key) + '"]');
   if (found && index) index.cards.set(key, found);
+  if (found && found._wake) found._wake();
   return found;
 }
 
@@ -3230,6 +3233,8 @@ updateUsageSummary(state, null, refs);
 // freshly rebuilt transcript.
 function restoreExpandedState(exp, root) {
   if (!root) return;
+  // Windowed rows (windowing.js) get their subtree back before it is read.
+  for (const child of Array.from(root.children || [])) if (child._wake) child._wake();
   for (const card of root.querySelectorAll('.tool-card')) {
     if (!(card.dataset && card.dataset.toolId)) continue;
     if (exp.subagentStarts && exp.subagentStarts.has(card.dataset.toolId) && !card.classList.contains('tool-card--result')) {

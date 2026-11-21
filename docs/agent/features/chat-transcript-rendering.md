@@ -107,7 +107,7 @@ node scripts/test-chat-element-stability.mjs
 
 ### Off-screen row skipping
 
-`frontend/src/chat-transcript.css` applies `content-visibility: auto` with `contain-intrinsic-size: auto 120px` to the transcript's message rows and tool cards. After every older page has loaded the whole chat stays in the DOM, so a long transcript otherwise lays out and paints hundreds of off-screen rows; this lets the browser skip them, and the intrinsic size keeps the scrollbar geometry stable instead of collapsing skipped rows to zero. This is the cheap first step — the shared `frontend/src/virtual-list.js` is not wired into the chat.
+`frontend/src/chat-transcript.css` applies `content-visibility: auto` with `contain-intrinsic-size: auto 120px` to the transcript's message rows and tool cards. After every older page has loaded the whole chat stays in the DOM, so a long transcript otherwise lays out and paints hundreds of off-screen rows; this lets the browser skip them, and the intrinsic size keeps the scrollbar geometry stable instead of collapsing skipped rows to zero. This is the first layer; windowing (below) is the second.
 
 The rule is wrapped in `@supports (overflow-anchor: auto)`. A skipped row reports the placeholder until it first renders, then snaps to its real height; above the viewport that shift is cancelled only by CSS scroll anchoring, which WebKit lacks. On Safari/iOS the unguarded rule made nearly every step of a scroll up through fresh history jump by up to a row's height (measured in the pagination fixture with `overflow-anchor: none`: 318 of 332 steps jumped, max 199 px; 0 with the rule off).
 
@@ -115,3 +115,15 @@ Two selectors are excluded on purpose:
 
 - `[data-live="1"]` — the streaming assistant row grows every frame and must stay laid out.
 - `[data-auth-call-id]`, `[data-mcp-app-card]`, and `.tool-card--subagent.tool-card--call` — bottom-pinned overlay prompts, interactive MCP App cards, and running subagent cards stay laid out at the bottom of the transcript.
+
+### Windowing
+
+`frontend/src/components/chat/windowing.js` takes far-off-screen rows' subtrees out of the DOM. `content-visibility` skips paint, but every row still holds its full subtree; on a long chat that is most of the page's nodes. The shared `frontend/src/virtual-list.js` does not fit here (fixed item height, absolutely positioned recycled nodes), because transcript rows have variable height, are built and keyed by the reconciler, and are looked up as elements by the stream, the card index, scroll nav and jump-to-run.
+
+So the row element always stays in place, with its key, classes and `data-*` attributes, and only its children move into a detached fragment. An `IntersectionObserver` rooted on the transcript (margin: two viewports above and below) hibernates a row when it leaves that band and wakes it when it re-enters. The row is pinned to its measured border-box height (`data-hibernated`, `box-sizing: border-box`), so hibernating never moves the scrollbar. A `MutationObserver` on the transcript's child list picks up rows the reconciler adds or removes, so no builder knows about windowing.
+
+Code that reaches inside a row wakes it first through `row._wake()` (a property, not an import, because the vm test harnesses strip imports): `findToolCard`, the expanded-state snapshot/restore, `alignRowToTop` (jump and nav), the prompt-hook context, and the segment-meta update after a stream ends.
+
+Never hibernated: live rows, pending tool calls, subagent, MCP-app, progress, authorization, `ask_user` and extension-renderer cards, header cards, rows holding an iframe, media or canvas (they would reload or stop), rows holding focus, and the newest four rows.
+
+Trade-off: browser find-in-page does not see hibernated text.

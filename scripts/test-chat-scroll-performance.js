@@ -81,7 +81,7 @@ const vm = require('node:vm');
     ResizeObserver: class { constructor(fn) { resize = fn; } observe(node) { observed.add(node); } unobserve(node) { observed.delete(node); } disconnect() { observed.clear(); } },
     MutationObserver: class { constructor(fn) { mutation = fn; } observe() {} disconnect() {} },
     pinTranscriptAfterSettle() {}, cancelTranscriptPin() { cancelled = true; },
-    syncNavScrollbarLane() {},
+    syncNavScrollbarLane() {}, createTranscriptWindow() { return { dispose() {} }; },
     trackUserScrollIntent() { return { isUserScroll: () => false, dispose() { intentDisposed = true; } }; }
   });
   vm.runInContext(source.slice(start, end), context);

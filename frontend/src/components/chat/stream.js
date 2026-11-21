@@ -55,6 +55,7 @@ function applyPromptHooks(state, refs, data) {
   if (!root) return;
   for (const row of root.querySelectorAll('.chat-msg--user')) {
     if (row._rowKey !== 'cid:' + data.clientId) continue;
+    if (row._wake) row._wake();
     const body = row.querySelector('.chat-msg__body');
     if (!body || body.querySelector('.chat-msg__hook-context')) return;
     const el = promptHookContextElement(data.hooks);
@@ -1505,6 +1506,7 @@ state.messages = state.messages.filter((m) => m !== userMsg);
           const rows = refs.transcript.current.querySelectorAll('.chat-msg--assistant');
           const lastRow = rows.length ? rows[rows.length - 1] : null;
           if (lastRow) {
+            if (lastRow._wake) lastRow._wake();
             const meta = lastRow.querySelector('.chat-msg__meta');
             if (meta) renderUsageMeta(meta, { modelId, usage: segmentUsage, cost: segmentCost, streamingMs: segmentStreamingMs }, state);
           }

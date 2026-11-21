@@ -452,6 +452,7 @@ const JUMP_SETTLE_FRAMES = 72;
 const JUMP_STABLE_FRAMES = 6;
 
 function alignRowToTop(refs, el, target, settleFrames) {
+  if (target._wake) target._wake();
   const align = () => {
     if (!target.isConnected || refs.pinnedToBottom.current) return false;
     const delta = target.getBoundingClientRect().top - el.getBoundingClientRect().top - NAV_TOP_GAP;

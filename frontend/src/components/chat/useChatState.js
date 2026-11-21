@@ -28,6 +28,7 @@ renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendTo
 } from './transcript.js';
 import { buildToolsCard, toggleTool, toggleToolGroup, toggleAgentFiles, toggleAgentFile, toggleSkills, toggleSkill } from './cards.js';
 import { jumpToSeq as jumpToSeqRow, flashRow, findToolCard } from './jumpToRun.js';
+import { createTranscriptWindow } from './windowing.js';
 import { scrollTranscriptToBottom, scrollTranscriptToTop, scrollToAdjacentMessage, scrollToTranscriptRow, noteTranscriptScrollTop, noteTranscriptScroll, isNearBottom, updateJumpButton, syncNavScrollbarLane, afterTranscriptAppend, pinTranscriptAfterSettle, cancelTranscriptPin, isTranscriptPinScroll, trackUserScrollIntent } from './scroll.js';
 import { updateUsageSummary, refreshProviderCredit, updateProviderCredit, setChatStatus } from './usage.js';
 import {
@@ -1316,6 +1317,8 @@ setRunningVisible(false);
     // anchoring) and height grown by streaming between our pin and the
     // event must not strand a live reply below the fold.
     const intent = trackUserScrollIntent(el);
+    // Rows far off-screen drop their subtree (see windowing.js).
+    const win = createTranscriptWindow(el);
     // Older-page prepends wait for the transcript to go idle (see
     // whenTranscriptScrollIdle) so they never interrupt a fling.
     refs._scrollIntent = intent;
@@ -1406,6 +1409,7 @@ loadOlderMessages(state, refs, scrollPager).catch(() => {});
       el.removeEventListener('scroll', onScroll);
       el.removeEventListener('load', onLoadCapture, true);
       intent.dispose();
+      win.dispose();
       if (refs._scrollIntent === intent) refs._scrollIntent = null;
       if (mo) mo.disconnect();
       if (ro) ro.disconnect();
