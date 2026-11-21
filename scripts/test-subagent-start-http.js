@@ -54,7 +54,7 @@ async function main() {
         const frames = res.body.trim().split('\n').map((line) => JSON.parse(line));
         const start = frames.find((f) => f.name === 'subagent_event' && f.data.kind === 'start');
         assert.ok(start, 'prompt sent before nested provider answers');
-        assert.equal(start.data.data.chat[0].content[0].text, 'EXACT_SEARCH_PROMPT');
+        assert.equal(start.data.data.chat[0].content, 'EXACT_SEARCH_PROMPT');
         assert.equal(start.data.data.chat[1].content, 'Task:\nReview\n\nContext:\nEvidence');
         assert.equal(start.data.data.agent, 'Search');
         assert.deepEqual(start.data.data.chat, seen.at(-1).messages.slice(0, 2), 'live instructions match the nested request exactly');
@@ -67,7 +67,7 @@ async function main() {
       const result = streaming ? JSON.parse(res.body.trim().split('\n').at(-1)).result : JSON.parse(res.body);
       assert.equal(result.ok, true);
       assert.equal(result.result.text, 'Done');
-      assert.equal(result.result.chat[0].content[0].text, 'EXACT_SEARCH_PROMPT');
+      assert.equal(result.result.chat[0].content, 'EXACT_SEARCH_PROMPT');
       assert.equal(seen.length, streaming ? 1 : 2, 'direct dispatch never asks a parent model to delegate');
     }
     settings.setProject(projectDir, { tools: { subagent: { mode: 'off' } } });

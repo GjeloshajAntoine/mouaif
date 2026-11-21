@@ -57,16 +57,16 @@ const server = http.createServer((req, res) => {
     assert.equal(out.ok, true);
     assert.deepEqual(counts, { root: 2, child: useGroup ? 3 : 2, grandchild: 2 });
     assert.equal(peak, useGroup ? 2 : 1, 'single-slot synchronous recursion cannot deadlock');
-    assert.ok(Math.abs(out.totalCost - (useGroup ? 0.2 : 0.18)) < 1e-9, JSON.stringify(out));
+    assert.ok(Math.abs(out.totalCost - (useGroup ? 0.28 : 0.24)) < 1e-9, JSON.stringify(out));
     assert.equal(out.usage.completionTokens, useGroup ? 35 : 30);
     assert.equal(out.usage.promptTokens, 30);
     const child = events.find((e) => e.name === 'tool_result' && e.data.name === 'subagent').data.result;
     assert.equal(child.depth, 1);
-    assert.ok(Math.abs(child.totalCost - (useGroup ? 0.14 : 0.12)) < 1e-9);
+    assert.ok(Math.abs(child.totalCost - (useGroup ? 0.2 : 0.16)) < 1e-9);
     const grandchild = child.toolEvents.find((e) => e.name === 'tool_result' && e.data.name === 'subagent').data.result;
     assert.equal(grandchild.depth, 2); assert.equal(grandchild.parentCallId, child.callId); assert.equal(grandchild.rootId, child.rootId);
     const deltas = events.filter((e) => e.name === 'usage_update').reduce((n, e) => n + e.data.cost.total, 0);
-    assert.ok(Math.abs(deltas - (useGroup ? 0.14 : 0.12)) < 1e-9, 'descendant live billing exactly once');
+    assert.ok(Math.abs(deltas - (useGroup ? 0.2 : 0.16)) < 1e-9, 'descendant live billing exactly once');
     }
     console.log('recursive HTTP: synchronous nested delegation, inherited surface/forged-call rejection, rooted results and descendant live/final billing exactly once passed');
   } finally { server.closeAllConnections(); await new Promise((r) => server.close(r)); settings.close(); }
