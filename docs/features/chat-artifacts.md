@@ -17,7 +17,7 @@ Everything else works the same either way. Flipping the switch in **Settings →
 
 ### Manage artifacts
 
-Open **File tools → Artifacts** from the button beside the message box.
+Open **File tools → Artifacts** from the button beside the message box. The sheet is the same kind as Files, Git and the command prompt: full screen on a phone, a centred card on a wider window. A title bar carries the close button, and a back arrow once you are inside one artifact. Only the list or the artifact underneath that bar scrolls, so opening one never moves the sheet.
 
 - **Upload files** adds artifacts. **New text** asks for a name and opens the empty file in the Files editor.
 - Tap one to see its details. **Open in editor** opens text in the Files editor, and **Open** does the same for an image. Other files can be downloaded.

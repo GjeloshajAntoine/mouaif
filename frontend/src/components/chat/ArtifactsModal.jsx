@@ -100,10 +100,33 @@ export function ArtifactsModal({ projectDir, chatId, initialName, onClose, onOpe
     onClick: e => { if (e.target === e.currentTarget && onClose) onClose(); }
   },
   h('div', { class: 'artifacts', ref: sheetRef },
+    // The app's sheet header bar: a glyph back button (only away from the
+    // list, where there is somewhere to go back to), an ellipsised title and
+    // a glyph close. Both glyphs are .icon-btn (base.css) at the 44 px tap
+    // floor, so the bar is the same height in the list, a detail and the new
+    // form — nothing shifts as views change.
     h('header', { class: 'artifacts__head' },
-      view !== 'list' ? h('button', { type: 'button', class: 'btn artifacts__back', onClick: () => { setError(''); setView('list'); }, 'aria-label': 'Back to all artifacts' }, '‹') : null,
-      h('strong', { class: 'artifacts__title' }, title),
-      h('button', { type: 'button', class: 'btn artifacts__close', onClick: onClose, 'aria-label': 'Close artifacts' }, 'Close')),
+      view !== 'list'
+        ? h('button', {
+          type: 'button',
+          class: 'icon-btn artifacts__iconbtn',
+          onClick: () => { setError(''); setView('list'); },
+          'aria-label': 'Back to all artifacts',
+          title: 'Back to all artifacts'
+        },
+          h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+            h('path', { d: 'M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2Z', fill: 'currentColor' })))
+        : null,
+      h('strong', { class: 'artifacts__title', title }, title),
+      h('button', {
+        type: 'button',
+        class: 'icon-btn icon-btn--close artifacts__iconbtn',
+        onClick: onClose,
+        'aria-label': 'Close artifacts',
+        title: 'Close artifacts'
+      },
+        h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
+          h('path', { d: 'M18.3 5.71 12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71 2.88 18.3 9.17 12 2.88 5.71 4.3 4.3l6.29 6.29 6.3-6.29 1.41 1.41Z', fill: 'currentColor' })))),
     error ? h('p', { class: 'artifacts__error', role: 'alert' }, error) : null,
     view === 'list' ? h(ArtifactList, {
       artifacts, busy,
@@ -122,8 +145,8 @@ export function ArtifactsModal({ projectDir, chatId, initialName, onClose, onOpe
     }) : null,
     current ? h(ArtifactDetail, { key: current.name, artifact: current, url: urlFor(current.name), busy, run, changed, setView, projectDir, chatId, onClose, onOpenInEditor }) : null,
     artifacts && view !== 'list' && view !== 'new' && !current
-      ? h('p', { class: 'artifacts__empty' }, 'This artifact is no longer in this chat.')
-      : null,
+    ? h('p', { class: 'artifacts__empty' }, 'This artifact is no longer in this chat.')
+    : null,
     h('input', { ref: uploadRef, class: 'artifacts__file', type: 'file', multiple: true, onChange: onUpload, 'aria-hidden': 'true', tabindex: -1 })));
 }
 
