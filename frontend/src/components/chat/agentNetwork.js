@@ -109,7 +109,16 @@ function upsertNode(net, id, parentId, patch) {
   const key = String(id);
   let node = net.nodes.get(key);
   if (!node) {
-    node = { id: key, parentId: parentId || ROOT, label: '', status: 'running', order: net.order++ };
+    // A declared member taking over its placeholder keeps the placeholder's
+    // slot, so starting a run never moves it to the end of its siblings.
+    const ghost = patch && patch.groupId && patch.memberId && net.nodes.get(ghostKey(patch.groupId, patch.memberId));
+    node = {
+      id: key, parentId: parentId || ROOT, label: '', status: 'running',
+      order: ghost ? ghost.order : net.order++,
+      // When the delegation was made: older history paged in later still
+      // sorts before newer runs.
+      at: (ghost && ghost.at) || net.ingestAt || Date.now()
+    };
     net.nodes.set(key, node);
     net.version++;
   }
@@ -380,7 +389,7 @@ function noteGroups(net, ownerId, r, args) {
       } else if (!net.nodes.has(ghostKey(g.groupId, m.memberId))) {
         net.nodes.set(ghostKey(g.groupId, m.memberId), {
           id: ghostKey(g.groupId, m.memberId), parentId: ownerId, label: clip(m.memberId, 32),
-          memberId: m.memberId, groupId: g.groupId, status: 'planned', ghost: true, order: net.order++
+          memberId: m.memberId, groupId: g.groupId, status: 'planned', ghost: true, order: net.order++, at: net.ingestAt || Date.now()
         });
         net.version++;
       }
@@ -565,7 +574,9 @@ export function activeCount(net) {
 //   vertical    an indented outline: one agent per row in delegation order,
 //               each child indented under its parent. Grows downwards only,
 //               so it fits a phone and scrolls with the body. opts.width is
-//               the room available; boxes widen to use it (up to a cap).
+//               the room available; boxes widen to fill it.
+// In both shapes opts.width, when given, widens the boxes so the drawing
+// follows the width of the card or screen.
 // Dependency edges inside a cooperative group are drawn between siblings on
 // top of the tree edges.
 export const NODE_W = 132;
@@ -576,7 +587,12 @@ const PAD = 14;
 const INDENT = 26;
 const ROW_GAP = 10;
 const DEP_ROOM = 44;
-const NODE_W_MAX = 280;
+
+// Delegation order: by when each run was made, then by arrival.
+export function byDelegation(a, b) {
+  if (a.at && b.at && a.at !== b.at) return a.at - b.at;
+  return a.order - b.order;
+}
 
 function treeChildren(net) {
   const children = new Map();
@@ -586,7 +602,7 @@ function treeChildren(net) {
     if (!children.has(pid)) children.set(pid, []);
     children.get(pid).push(node);
   }
-  for (const list of children.values()) list.sort((a, b) => a.order - b.order);
+  for (const list of children.values()) list.sort(byDelegation);
   return children;
 }
 
@@ -612,10 +628,10 @@ function layoutEdges(net, nodes) {
 }
 
 export function layoutNetwork(net, opts = {}) {
-  return opts.vertical ? layoutVertical(net, opts.width) : layoutHorizontal(net);
+  return opts.vertical ? layoutVertical(net, opts.width) : layoutHorizontal(net, opts.width);
 }
 
-function layoutHorizontal(net) {
+function layoutHorizontal(net, avail) {
   const children = treeChildren(net);
   const pos = new Map();
   let slot = 0;
@@ -629,25 +645,29 @@ function layoutHorizontal(net) {
     let x;
     const placed = kids.map((k) => pos.get(k.id)).filter(Boolean);
     if (placed.length) x = (placed[0].x + placed[placed.length - 1].x) / 2;
-    else x = slot++ * (NODE_W + GAP_X);
+    else x = slot++;
     pos.set(node.id, { x, y: depth * (NODE_H + GAP_Y) });
   };
   place(net.nodes.get(ROOT), 0, new Set());
+  // x is in slots until here; boxes widen to fill the room given.
   let minX = Infinity;
   let maxX = -Infinity;
   for (const p of pos.values()) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); }
+  const span = maxX - minX;
+  const fit = Math.floor(((Number(avail) || 0) - PAD * 2 - span * GAP_X) / (span + 1));
+  const nodeW = Math.max(NODE_W, fit);
   const nodes = [];
   for (const node of net.nodes.values()) {
     const p = pos.get(node.id);
     if (!p) continue;
-    nodes.push(Object.assign({}, node, { x: p.x - minX + PAD, y: p.y + PAD }));
+    nodes.push(Object.assign({}, node, { x: (p.x - minX) * (nodeW + GAP_X) + PAD, y: p.y + PAD }));
   }
   return {
     nodes,
     edges: layoutEdges(net, nodes),
-    width: Math.max(NODE_W, maxX - minX + NODE_W) + PAD * 2,
+    width: span * (nodeW + GAP_X) + nodeW + PAD * 2,
     height: (maxDepth + 1) * NODE_H + maxDepth * GAP_Y + PAD * 2,
-    nodeW: NODE_W,
+    nodeW,
     vertical: false
   };
 }
@@ -674,7 +694,7 @@ function layoutVertical(net, avail) {
   const edges = layoutEdges(net, nodes);
   const depRoom = edges.some((e) => e.kind === 'dep') ? DEP_ROOM : 0;
   const fit = Math.floor((Number(avail) || 0) - PAD * 2 - maxDepth * INDENT - depRoom);
-  const nodeW = Math.max(NODE_W, Math.min(NODE_W_MAX, fit));
+  const nodeW = Math.max(NODE_W, fit);
   return {
     nodes,
     edges,
@@ -693,19 +713,20 @@ function layoutVertical(net, avail) {
 //               right between two rows.
 // Pulses travel the same path in either direction.
 export function edgePath(a, b, kind, layout) {
-  if (layout && layout.vertical) return verticalEdgePath(a, b, kind, layout.nodeW || NODE_W);
+  const w = (layout && layout.nodeW) || NODE_W;
+  if (layout && layout.vertical) return verticalEdgePath(a, b, kind, w);
   if (kind === 'dep' || Math.abs(a.y - b.y) < 1) {
-    const ax = a.x + NODE_W / 2;
-    const bx = b.x + NODE_W / 2;
+    const ax = a.x + w / 2;
+    const bx = b.x + w / 2;
     const y = a.y + NODE_H;
     const dip = 22 + Math.min(40, Math.abs(bx - ax) / 6);
     return `M ${ax} ${y} C ${ax} ${y + dip}, ${bx} ${b.y + NODE_H + dip}, ${bx} ${b.y + NODE_H}`;
   }
   const top = a.y < b.y ? a : b;
   const bottom = top === a ? b : a;
-  const x1 = top.x + NODE_W / 2;
+  const x1 = top.x + w / 2;
   const y1 = top.y + NODE_H;
-  const x2 = bottom.x + NODE_W / 2;
+  const x2 = bottom.x + w / 2;
   const y2 = bottom.y;
   const my = (y1 + y2) / 2;
   const d = `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`;

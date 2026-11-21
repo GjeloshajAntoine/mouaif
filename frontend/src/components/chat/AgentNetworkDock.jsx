@@ -23,7 +23,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { useModal } from '../../hooks/useModal.js';
 import { getAgentNetwork, subscribeAgentNetwork } from './agentNetworkState.js';
-import { ROOT, NODE_H, layoutNetwork, edgePath, agentCount, activeCount, latestTurnFailed, topLevelAncestor } from './agentNetwork.js';
+import { ROOT, NODE_H, layoutNetwork, edgePath, agentCount, activeCount, latestTurnFailed, topLevelAncestor, byDelegation } from './agentNetwork.js';
 
 const PULSE_MS = 950;
 const FEED_SHOWN = 40;
@@ -64,7 +64,7 @@ function baseLabel(node) {
 // order they started ("tester 1", "tester 2").
 function nodeLabels(net) {
   const byName = new Map();
-  const sorted = [...net.nodes.values()].filter((n) => n.id !== ROOT).sort((a, b) => a.order - b.order);
+  const sorted = [...net.nodes.values()].filter((n) => n.id !== ROOT).sort(byDelegation);
   for (const node of sorted) {
     const name = baseLabel(node);
     if (!byName.has(name)) byName.set(name, []);
@@ -251,7 +251,8 @@ export function AgentNetworkDock({ transcriptRef, onJumpToToolCard }) {
     if (!shown || !total) return null;
     const wide = layoutNetwork(net);
     const fits = wide.width * (mode === 'fullscreen' ? 0.8 : 1) <= graphWidth;
-    return fits ? wide : layoutNetwork(net, { vertical: true, width: graphWidth });
+    // Either shape then widens its boxes to follow the graph's width.
+    return fits ? layoutNetwork(net, { width: graphWidth }) : layoutNetwork(net, { vertical: true, width: graphWidth });
     // `net` too: two chats can share a version and an agent count.
   }, [net, shown, mode, total, net.version, graphWidth]);
 
@@ -340,10 +341,10 @@ export function AgentNetworkDock({ transcriptRef, onJumpToToolCard }) {
       class: 'agent-net__svg',
       width: full && !vertical ? null : layout.width,
       height: full && !vertical ? null : layout.height,
-      // Full screen scales a small tree up (to 1.6x) and a large one down,
-      // but never below 80% of its natural size: past that it turns into
+      // The boxes already widen to fill the room; full screen only scales a
+      // slightly too wide tree down, never below 80%: past that it turns into
       // the vertical outline, which keeps its natural size.
-      style: full && !vertical ? { width: 'min(100%, ' + Math.round(layout.width * 1.6) + 'px)', minWidth: Math.round(layout.width * 0.8) + 'px', height: 'auto' } : null,
+      style: full && !vertical ? { width: '100%', maxWidth: layout.width + 'px', height: 'auto' } : null,
       viewBox: '0 0 ' + layout.width + ' ' + layout.height,
       // A group, not an image: the agent boxes inside are buttons.
       role: 'group',
