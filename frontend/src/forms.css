@@ -134,6 +134,8 @@ select.input {
   justify-content: center;
   transition: background 80ms ease, transform 80ms ease, color 80ms ease;
   white-space: nowrap;
+  /* Some buttons are links (`+ Add agent`, `+ Add action`). */
+  text-decoration: none;
 }
 @media (hover: hover) {
   .btn:hover  { background: var(--surface-3); border-color: var(--border-strong); }

@@ -2,6 +2,55 @@
 provider list + edit form, project page.
 Imported by style.css. */
 
+/* ---- Settings: agent and custom-action lists ---------------------- */
+/* The Agents and Custom actions pages list their entries as rows that
+   link to an editor. Custom prompts moved to a dropdown and dropped these
+   rules, which left both lists as bare bulleted links. Same shape as a
+   .group__list: one inset rounded container, rows split by a hairline. */
+.prompts__list {
+  list-style: none;
+  margin: 0 10px 8px;
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.prompts__list > li + li { border-top: 1px solid var(--border); }
+.prompts__empty {
+  text-align: center;
+  color: var(--fg-soft);
+  padding: 14px 10px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+.prompt-row { position: relative; }
+.prompt-row__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: var(--tap);
+  justify-content: center;
+  padding: 8px 28px 8px 12px;
+  text-decoration: none;
+  color: var(--fg);
+}
+.prompt-row__main:active { background: var(--surface-2); }
+.prompt-row__title { font-weight: 600; font-size: 0.86rem; }
+.prompt-row__meta {
+  font-size: 0.74rem;
+  color: var(--fg-soft);
+  overflow-wrap: anywhere;
+}
+.prompt-row__chev {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.05rem;
+  color: var(--muted);
+}
+
 /* ---- Settings: custom prompts ------------------------------------- */
 
 .prompts__picker { display: flex; flex-direction: column; gap: 4px; }
