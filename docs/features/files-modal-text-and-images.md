@@ -10,15 +10,15 @@
 - **Layout toggle** — the modal opens in split view by default (file list on the left, editor/preview on the right) and has a toolbar button to switch to **full-editor mode** (the file list is hidden so the editor/preview takes the whole pane). Tapping the same button restores the split view.
 
 ## Usage
-Tap the **Files** item in the file toolbar dropdown (next to the composer). The modal opens with the project root listed on the left and an empty state on the right.
+Tap the **Files** item in the file toolbar dropdown (next to the composer). The modal opens with a compact single-row header — Up, scrollable folder breadcrumbs, an inline path-edit toggle (pencil), a folder filter toggle (magnifier), Refresh, the split/full-editor toggle, and Close — over the file list on the left/top and an empty state on the right/bottom.
 
-The browser is **not capped at the project root**: you can navigate up (via the **Up** button, the breadcrumb, or by typing an absolute path in the path input) to browse and edit files anywhere under the user's home directory. With `MOUAIF_ALLOW_ANY_ROOT=1` set on the server, the whole filesystem is reachable. The Up button and breadcrumb stop at the natural boundary (home, or `/` when allow-any-root is on) rather than at the project root, so the list never asks the server for a directory the home guard would reject.
+The browser is **not capped at the project root**: you can navigate up (via the **Up** button, any breadcrumb segment, or by tapping the pencil icon to type an absolute path and press **Go** or Enter) to browse and edit files anywhere under the user's home directory. With `MOUAIF_ALLOW_ANY_ROOT=1` set on the server, the whole filesystem is reachable. The Up button and breadcrumb stop at the natural boundary (home, or `/` when allow-any-root is on) rather than at the project root, so the list never asks the server for a directory the home guard would reject.
 
-Each folder name in the breadcrumb is independently tappable: tap an ancestor to jump directly to that folder, or use the path input and **Go** to enter a path.
+Each folder name in the breadcrumb is independently tappable to jump directly to that ancestor, and the magnifier button opens an inline filter strip to narrow entries in the current folder.
 
 | Tap on a list row | Result |
 |-------------------|--------|
-| Folder (`…`) | Recurse into that folder |
+| Folder (`›`) | Recurse into that folder |
 | Text file (`.js`, `.json`, …) | Editor opens with the file content |
 | Text file with no extension (`LICENSE`) | Editor opens (sniffed as text) |
 | Image (`.png`, `.jpg`, …) | Preview opens in the right pane |
@@ -27,16 +27,16 @@ Each folder name in the breadcrumb is independently tappable: tap an ancestor to
 
 ### Right-hand pane modes
 
-- **Editor** — header shows the relative path with a `•` when dirty, **Revert** + **Save** buttons, the CodeMirror host, and a status row. Syntax highlighting uses the One Dark palette (readable on the dark editor surface), not the light `defaultHighlightStyle`. The header is deliberately compact — 40 px tall, with 30 px buttons and a `0.74rem` path and label — matching the web preview viewer's header, so the path and every action share one row.
-- **Preview** — header shows the relative path, **Edit** (only for SVG) + **Close**, the centered image, and a status row with the file size and MIME type. Every previewable image, SVG included, is painted by one `<img>` whose `src` is the `data:` URL the server returned. An SVG loaded that way is a separate document with scripting disabled: `<script>`, `on*` handlers, `<foreignObject>` HTML content and external fetches do not run. See **Why the SVG preview is an image, not markup** below.
+- **Editor** — header shows the relative path (muted directory prefix + bold filename, with a `•` when dirty), **Find in file** (`Ctrl/Cmd+F`), **Draft Craft**, **Revert** + **Save** buttons, the CodeMirror host, and a compact status footer (`size`/`edited` + file extension or `unsaved`). Syntax highlighting uses the One Dark palette (readable on the dark editor surface), not the light `defaultHighlightStyle`. Every control stays compact (34 px bar, 26 px buttons, 28 px rows) so the editor keeps maximum room for code on narrow phones. Leaving or closing with unsaved changes opens an in-modal confirmation sheet instead of a browser alert.
+- **Preview** — header shows the relative path, **Edit** (only for SVG) + **✕**, the centered image, and a status row with the file size and MIME type. Every previewable image, SVG included, is painted by one `<img>` whose `src` is the `data:` URL the server returned. An SVG loaded that way is a separate document with scripting disabled: `<script>`, `on*` handlers, `<foreignObject>` HTML content and external fetches do not run. See **Why the SVG preview is an image, not markup** below.
 - **Empty state** — "Pick a file from the list to start editing, or tap an image to preview it."
 
 The two panes never appear together. Opening a text file clears the preview, opening an image clears the editor and destroys the CodeMirror view to free memory. If the open file has unsaved changes, opening an image asks to discard them first, as opening another file does. When you tap several files quickly, only the last one you tapped opens, even if an earlier read finishes after it.
 
 ### Layout toggle — split vs full-editor
-The modal opens in **split view** by default. On tablet/desktop the file list sits on the left (38% width) and the editor/preview on the right. On phones the list is stacked above the editor. While no file is open, the list and the empty state share the body. Once a file or image is open, the list shrinks to fit its rows, up to 40% of the body, and scrolls past that. The editor gets the rest of the space.
+The modal opens in **split view** by default. On tablet/desktop the file list sits on the left (34% width, up to 340 px) and the editor/preview on the right. On phones the list is stacked above the editor. While no file is open, the list and the empty state share the body. Once a file or image is open, the list shrinks to fit its rows, up to 36% of the body, and scrolls past that. The editor gets the rest of the space.
 
-A **layout toggle** in the header switches to **full-editor mode**, which hides the file list (and the breadcrumb + list-status rows that go with it) so the editor/preview takes the whole pane. The header is also reduced: the path input, Up / Go / Refresh buttons, and breadcrumb all disappear in full-editor mode, leaving only the toggle and **Close**. When a file or image is open, those two move to the right end of the file's own row, beside Save, and the top bar is dropped, so full-editor mode has a single bar above the editor.
+A **layout toggle** in the header switches to **full-editor mode**, which hides the file list (and the top navigation bar) so the editor/preview takes the whole pane. When a file or image is open, the toggle and **Close** move to the right end of the file's own row, beside Save, so full-editor mode has a single 34 px bar above the editor.
 
 The toggle is a single on/off switch for the file list. It is the same button in both headers:
 

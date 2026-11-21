@@ -31,16 +31,16 @@
 import '../file-editor.css';
 
 import { h, Fragment } from 'preact';
-import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'preact/hooks';
+import { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo } from 'preact/hooks';
 import { fetchJson } from '../api.js';
-import { useBackClose } from '../hooks/useBackClose.js';
+import { useModal } from '../hooks/useModal.js';
 import { ARTIFACTS_CHANGED } from './chat/extensionEvents.js';
 import { ExtensionMenu } from './chat/ExtensionMenu.jsx';
 import { EditorState } from '@codemirror/state';
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, placeholder } from '@codemirror/view';
+import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { bracketMatching, foldGutter, indentOnInput, syntaxHighlighting } from '@codemirror/language';
-import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
+import { searchKeymap, highlightSelectionMatches, openSearchPanel, searchPanelOpen, closeSearchPanel } from '@codemirror/search';
 import { javascript } from '@codemirror/lang-javascript';
 import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
@@ -249,6 +249,18 @@ export function FileEditorView(props) {
   const savedContentRef = useRef(null);
   // Bumped by every open, so a slow read can't land over a later tap.
   const openSeqRef = useRef(0);
+  // Collapsible raw path input (hidden by default behind a compact folder
+  // chip / toggle so the header stays tiny).
+  const [pathEditOpen, setPathEditOpen] = useState(false);
+  const pathInputRef = useRef(null);
+  // Instant filename filter inside the current folder.
+  const [filterText, setFilterText] = useState('');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterInputRef = useRef(null);
+  const crumbsRef = useRef(null);
+  // In-modal confirm for unsaved changes when switching files or closing.
+  const [discardPrompt, setDiscardPrompt] = useState(null); // { message, label }
+  const discardResolveRef = useRef(null);
 
   // ---- listDir --------------------------------------------------------
 
@@ -265,6 +277,9 @@ export function FileEditorView(props) {
     }
     currentDir.current = r.body.dir;
     setDirDisplay(r.body.dir);
+    setPathEditOpen(false);
+    setFilterText('');
+    setFilterOpen(false);
     // The artifacts folder has no boundary of its own: keep the project's.
     if (!isArtifact(target)) setBrowseTop(r.body.browseTop || '');
     const listed = Array.isArray(r.body.entries) ? r.body.entries : [];
@@ -282,18 +297,37 @@ export function FileEditorView(props) {
   // ---- open file ------------------------------------------------------
 
   // If the user has unsaved changes when they tap a different file or
-  // close the popup, we ask for confirmation. The popup's parent (chat
-  // view) cannot intercept — we own the lifecycle here.
-  const confirmDiscardIfDirty = useCallback(() => {
-    if (!dirty) return true;
-    // keep the popup synchronous; window.confirm is the same pattern
-    // the rest of the app uses (e.g. the chat delete button).
-    // eslint-disable-next-line no-alert
-    return window.confirm('Discard unsaved changes?');
-  }, [dirty]);
+  // close the popup, ask for confirmation with an in-modal sheet rather
+  // than window.confirm so mobile stays inside the dark modal chrome.
+  const confirmDiscardIfDirty = useCallback((actionLabel) => {
+    if (!dirty) return Promise.resolve(true);
+    if (discardResolveRef.current) discardResolveRef.current(false);
+    return new Promise((resolve) => {
+      discardResolveRef.current = resolve;
+      setDiscardPrompt({
+        title: 'Discard unsaved changes?',
+        message: (openFile ? shownPath(openFile.relPath) : 'This file') + ' has edits that have not been saved.',
+        label: actionLabel || 'Discard'
+      });
+    });
+  }, [dirty, openFile]);
+
+  const settleDiscard = useCallback((accepted) => {
+    const resolve = discardResolveRef.current;
+    discardResolveRef.current = null;
+    setDiscardPrompt(null);
+    if (resolve) resolve(accepted);
+  }, []);
+
+  useEffect(() => () => {
+    if (discardResolveRef.current) {
+      discardResolveRef.current(false);
+      discardResolveRef.current = null;
+    }
+  }, []);
 
   const openPath = useCallback(async (relOrAbs) => {
-    if (!confirmDiscardIfDirty()) return;
+    if (!(await confirmDiscardIfDirty('Switch file'))) return;
     const seq = ++openSeqRef.current;
     // Opening a text file means the preview pane is no longer
     // current. Clear it so the editor owns the right-hand pane.
@@ -332,7 +366,7 @@ export function FileEditorView(props) {
       return openPath(relOrAbs);
     }
     // Leaving a text file for a preview drops its buffer, so ask first.
-    if (!confirmDiscardIfDirty()) return;
+    if (!(await confirmDiscardIfDirty('Open preview'))) return;
     const seq = ++openSeqRef.current;
     setMediaLoading(true);
     setMediaStatus('loading…');
@@ -360,8 +394,8 @@ export function FileEditorView(props) {
     setMediaStatus(r.body.size + ' bytes · ' + r.body.mime);
   }, [projectDir, chatId, openPath, confirmDiscardIfDirty]);
 
-  const manageArtifact = useCallback((link) => {
-    if (!onManageArtifact || !confirmDiscardIfDirty()) return;
+  const manageArtifact = useCallback(async (link) => {
+    if (!onManageArtifact || !(await confirmDiscardIfDirty('Leave editor'))) return;
     onManageArtifact(link.slice(ARTIFACTS_DIR.length));
   }, [onManageArtifact, confirmDiscardIfDirty]);
 
@@ -517,9 +551,9 @@ export function FileEditorView(props) {
   // the closure that knows the current file + viewRef.
   useEffect(() => { saveRef.current = save; }, [save]);
 
-  const revert = useCallback(() => {
+  const revert = useCallback(async () => {
     if (!openFile || !viewRef.current) return;
-    if (!confirmDiscardIfDirty()) return;
+    if (!(await confirmDiscardIfDirty('Revert'))) return;
     viewRef.current.dispatch({
       changes: { from: 0, to: viewRef.current.state.doc.length, insert: openFile.content }
     });
@@ -529,12 +563,64 @@ export function FileEditorView(props) {
 
   // ---- close ----------------------------------------------------------
 
-  const handleClose = useCallback(() => {
-    if (!confirmDiscardIfDirty()) return;
+  const handleClose = useCallback(async () => {
+    if (!(await confirmDiscardIfDirty('Discard & close'))) return;
     onClose();
   }, [confirmDiscardIfDirty, onClose]);
-  // System Back closes the editor through the same unsaved-changes prompt.
-  useBackClose(true, handleClose);
+  // Escape, Tab focus trap, focus restore and System Back all live in useModal;
+  // when the nested discard sheet is open it takes the top of the modal stack.
+  const dismissOrClose = useCallback(() => {
+    if (pathEditOpen) {
+      setPathEditOpen(false);
+      setDirDisplay(currentDir.current || '');
+      return;
+    }
+    if (filterOpen) {
+      setFilterText('');
+      setFilterOpen(false);
+      return;
+    }
+    if (viewRef.current && searchPanelOpen(viewRef.current.state)) {
+      closeSearchPanel(viewRef.current);
+      return;
+    }
+    handleClose();
+  }, [pathEditOpen, filterOpen, handleClose]);
+  const sheetRef = useModal({ onClose: dismissOrClose });
+  const discardSheetRef = useModal({ onClose: () => settleDiscard(false), active: !!discardPrompt });
+
+  useEffect(() => {
+    const el = crumbsRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [dirDisplay, browseTop, editorFull, pathEditOpen]);
+
+  useEffect(() => {
+    if (!pathEditOpen) return;
+    requestAnimationFrame(() => {
+      const el = pathInputRef.current;
+      if (el) { el.focus(); el.select(); }
+    });
+  }, [pathEditOpen]);
+
+  useEffect(() => {
+    if (!filterOpen) return;
+    requestAnimationFrame(() => {
+      const el = filterInputRef.current;
+      if (el) el.focus();
+    });
+  }, [filterOpen]);
+
+  const filteredEntries = useMemo(() => {
+    const q = filterText.trim().toLowerCase();
+    if (!q) return entries;
+    return entries.filter((e) => (e.name || '').toLowerCase().includes(q));
+  }, [entries, filterText]);
+
+  function openSearchInEditor() {
+    if (!viewRef.current) return;
+    openSearchPanel(viewRef.current);
+    viewRef.current.focus();
+  }
 
   // ---- navigation handlers -------------------------------------------
   // The editor can now browse above the project root (up to the user's
@@ -592,8 +678,8 @@ export function FileEditorView(props) {
       return;
     }
     if (entry.image) {
-      openMediaPath(entry.relPath);
-      return;
+    openMediaPath(entry.relPath);
+    return;
     }
     // Reject other binaries client-side as a UX shortcut (the server
     // would reject them anyway, but greying them out communicates
@@ -690,7 +776,7 @@ export function FileEditorView(props) {
     'aria-pressed': listShown ? 'true' : 'false',
     title: listShown ? 'Hide file list (full editor)' : 'Show file list (split view)'
   },
-    h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linejoin': 'round' },
+    h('svg', { viewBox: '0 0 24 24', width: 15, height: 15, 'aria-hidden': 'true', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linejoin': 'round' },
       h('rect', { x: 3, y: 4, width: 18, height: 16, rx: 2 }),
       h('g', { class: 'fe__layout-icon fe__layout-icon--stack' },
         h('path', { d: 'M3 10h18' }),
@@ -706,89 +792,162 @@ export function FileEditorView(props) {
   const closeBtn = h(Fragment, null,
     h(ExtensionMenu, { projectDir, slot: 'files.action', class: 'fe__ext' }),
     h('button', { class: 'icon-btn icon-btn--close fe__iconbtn', type: 'button', onClick: handleClose, 'aria-label': 'Close', title: 'Close' },
-      h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
+      h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
         h('path', { d: 'M18.3 5.71 12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71 2.88 18.3 9.17 12 2.88 5.71 4.3 4.3l6.29 6.29 6.3-6.29 1.41 1.41Z', fill: 'currentColor' })
       )
     ));
   const hasPane = !!(openFile || openMedia);
-  // Full editor with a file or image open: the top bar would only carry
-  // the toggle and Close, so they move to the end of the file's own row
-  // and the sheet keeps a single bar. They stay on the right, as in the
-  // top bar: the left screen edge is the phone's back-gesture zone.
-  // With nothing open there is no file row, so the top bar stays.
+  // Full editor on mobile when a file is open: hide the file list so the
+  // editor gets the full sheet height instead of sharing with the stacked list.
+  // Tapping the layout toggle (or closing the file) brings the list back.
   const navInPane = editorFull && hasPane;
   // Renaming, deleting and the rest of an artifact's actions stay in its sheet.
   const manageBtn = (relPath) => (isArtifact(relPath) && onManageArtifact
     ? h('button', { class: 'btn', type: 'button', onClick: () => manageArtifact(relPath), title: 'Rename, delete, download or use it in a message' }, 'Manage')
     : null);
+  const canGoUp = !!parentRel();
+  const visibleCount = filterText.trim()
+    ? (filteredEntries.length + '/' + entries.length)
+    : (listStatus || (entries.length + ' items'));
+  const fileDisplayName = (relPath) => shownPath(relPath).split(/[\\/]+/).pop() || shownPath(relPath);
+  const fileDisplayDir = (relPath) => {
+    const s = shownPath(relPath);
+    const idx = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\'));
+    return idx > 0 ? s.slice(0, idx + 1) : '';
+  };
 
   return h('div', {
     class: 'fe__overlay',
     role: 'dialog',
     'aria-modal': 'true',
     'aria-label': 'File editor',
-    onClick: (ev) => { /* clicks on the overlay do not close; the X does */ }
+    onClick: (ev) => { if (ev.target === ev.currentTarget) handleClose(); }
   },
-    h('div', { class: 'fe__sheet' + (editorFull ? ' fe__sheet--full' : '') },
+    h('div', { class: 'fe__sheet' + (editorFull ? ' fe__sheet--full' : ''), ref: sheetRef },
 !navInPane && h('div', { class: 'fe__head' },
-// In full-editor mode the file list (and the
-          // breadcrumb + nav bar) is gone, so we render a
-          // minimal header with just the layout toggle (to
-          // switch back to split) and Close.
-          editorFull
+        editorFull
+          ? h('div', { class: 'fe__path-row' },
+              h('span', { class: 'fe__head-title' }, 'Files'),
+              layoutToggle,
+              closeBtn
+            )
+          : pathEditOpen
             ? h('div', { class: 'fe__path-row' },
+                h('button', { class: 'icon-btn fe__iconbtn', type: 'button', disabled: !canGoUp, onClick: goUp, 'aria-label': 'Up one folder', title: 'Up' },
+                  h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
+                    h('path', { d: 'M12 4 4 12l8 8 1.4-1.4L8.8 14H20v-2H8.8l4.6-4.6L12 4Z', fill: 'currentColor', transform: 'rotate(90 12 12)' })
+                  )
+                ),
+                h('div', { class: 'fe__path-input-wrap' },
+                  h('input', {
+                    ref: pathInputRef,
+                    class: 'input fe__path-input',
+                    type: 'text',
+                    value: dirDisplay,
+                    onInput: (ev) => setDirDisplay(ev.currentTarget.value),
+                    onKeydown: onPathKey,
+                    placeholder: 'Folder path (absolute, or under this project)',
+                    'aria-label': 'Current folder',
+                    spellcheck: 'false',
+                    autocomplete: 'off'
+                  })
+                ),
+                h('button', { class: 'btn fe__go-btn', type: 'button', onClick: onPathGo, 'aria-label': 'Go to folder', title: 'Go' }, 'Go'),
+                h('button', {
+                  class: 'icon-btn fe__iconbtn',
+                  type: 'button',
+                  onClick: () => { setPathEditOpen(false); setDirDisplay(currentDir.current || ''); },
+                  'aria-label': 'Cancel path edit',
+                  title: 'Back to breadcrumbs'
+                },
+                  h('svg', { viewBox: '0 0 24 24', width: 13, height: 13, 'aria-hidden': 'true' },
+                    h('path', { d: 'M18.3 5.71 12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71 2.88 18.3 9.17 12 2.88 5.71 4.3 4.3l6.29 6.29 6.3-6.29 1.41 1.41Z', fill: 'currentColor' })
+                  )
+                ),
                 layoutToggle,
-          closeBtn
-      )
-      : h('div', { class: 'fe__path-row' },
-        h('button', { class: 'icon-btn fe__iconbtn', type: 'button', onClick: goUp, 'aria-label': 'Up one folder', title: 'Up' },
-            h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
-              // The path is a left-pointing arrow; +90° turns it up.
-              h('path', { d: 'M12 4 4 12l8 8 1.4-1.4L8.8 14H20v-2H8.8l4.6-4.6L12 4Z', fill: 'currentColor', transform: 'rotate(90 12 12)' })
-            )
-          ),
-          h('div', { class: 'fe__path-input-wrap' },
-            h('input', {
-              class: 'input fe__path-input',
-              type: 'text',
-              value: dirDisplay,
-              onInput: (ev) => setDirDisplay(ev.currentTarget.value),
-              onKeydown: onPathKey,
-              placeholder: 'Folder path (absolute, or under this project)',
-              'aria-label': 'Current folder',
-              spellcheck: 'false',
-              autocomplete: 'off'
-            })
-          ),
-        h('button', { class: 'icon-btn fe__iconbtn', type: 'button', onClick: onPathGo, 'aria-label': 'Go to folder', title: 'Go' }, 'Go'),
-        h('button', { class: 'icon-btn fe__iconbtn', type: 'button', onClick: () => loadDir(currentDir.current), 'aria-label': 'Refresh', title: 'Refresh' },
-            h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
-              h('path', { d: 'M12 4V1L7 6l5 5V7c3.31 0 6 2.69 6 6 0 1-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 13c0-4.42-3.58-8-8-8Zm-5.3 7.7A7.93 7.93 0 0 0 4 13c0 4.42 3.58 8 8 8v3l5-5-5-5v3c-3.31 0-6-2.69-6-6 0-1 .25-1.97.7-2.8L5.24 10.24Z', fill: 'currentColor' })
-            )
-          ),
-          layoutToggle,
-          closeBtn
-        ),
-        // Breadcrumb + list-status are list-navigation
-        // chrome; hide them in full-editor mode so the
-        // header only carries actions that make sense for
-        // a single-pane layout.
-        !editorFull && h('div', { class: 'fe__crumbs', 'aria-label': 'Breadcrumb' }, renderBreadcrumb()),
-        !editorFull && h('div', { class: 'fe__list-status' },
-          h('span', { class: 'status' }, listStatus || ' '),
-          parentRel() ? h('button', { class: 'btn btn--ghost fe__list-up', type: 'button', onClick: goUp }, '↑ Up') : null
+                closeBtn
+              )
+            : h('div', { class: 'fe__path-row' },
+                h('button', { class: 'icon-btn fe__iconbtn', type: 'button', disabled: !canGoUp, onClick: goUp, 'aria-label': 'Up one folder', title: 'Up' },
+                  h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
+                    h('path', { d: 'M12 4 4 12l8 8 1.4-1.4L8.8 14H20v-2H8.8l4.6-4.6L12 4Z', fill: 'currentColor', transform: 'rotate(90 12 12)' })
+                  )
+                ),
+                h('div', { ref: crumbsRef, class: 'fe__crumbs', 'aria-label': 'Breadcrumb' }, renderBreadcrumb()),
+                h('button', {
+                  class: 'icon-btn fe__iconbtn',
+                  type: 'button',
+                  onClick: () => setPathEditOpen(true),
+                  'aria-label': 'Edit folder path',
+                  title: 'Type a folder path'
+                },
+                  h('svg', { viewBox: '0 0 24 24', width: 13, height: 13, 'aria-hidden': 'true', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+                    h('path', { d: 'M12 20h9' }),
+                    h('path', { d: 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z' })
+                  )
+                ),
+                h('button', {
+                  class: 'icon-btn fe__iconbtn' + (filterOpen || filterText ? ' is-active' : ''),
+                  type: 'button',
+                  onClick: () => {
+                    setFilterOpen((v) => {
+                      if (v) setFilterText('');
+                      return !v;
+                    });
+                  },
+                  'aria-label': 'Filter files',
+                  'aria-pressed': filterOpen ? 'true' : 'false',
+                  title: 'Filter files in this folder'
+                },
+                  h('svg', { viewBox: '0 0 24 24', width: 13, height: 13, 'aria-hidden': 'true', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round' },
+                    h('circle', { cx: 11, cy: 11, r: 7 }),
+                    h('path', { d: 'm20 20-3.5-3.5' })
+                  )
+                ),
+                h('button', { class: 'icon-btn fe__iconbtn' + (loading ? ' is-spinning' : ''), type: 'button', onClick: () => loadDir(currentDir.current), 'aria-label': 'Refresh', title: 'Refresh' },
+                  h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
+                    h('path', { d: 'M12 4V1L7 6l5 5V7c3.31 0 6 2.69 6 6 0 1-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 13c0-4.42-3.58-8-8-8Zm-5.3 7.7A7.93 7.93 0 0 0 4 13c0 4.42 3.58 8 8 8v3l5-5-5-5v3c-3.31 0-6-2.69-6-6 0-1 .25-1.97.7-2.8L5.24 10.24Z', fill: 'currentColor' })
+                  )
+                ),
+                layoutToggle,
+                closeBtn
+              ),
+        !editorFull && filterOpen && h('div', { class: 'fe__filter-row' },
+          h('input', {
+            ref: filterInputRef,
+            class: 'input fe__filter-input',
+            type: 'search',
+            value: filterText,
+            onInput: (ev) => setFilterText(ev.currentTarget.value),
+            placeholder: 'Filter folder entries…',
+            'aria-label': 'Filter folder entries',
+            spellcheck: 'false',
+            autocomplete: 'off'
+          }),
+          filterText ? h('button', {
+            class: 'icon-btn fe__iconbtn',
+            type: 'button',
+            onClick: () => { setFilterText(''); if (filterInputRef.current) filterInputRef.current.focus(); },
+            'aria-label': 'Clear filter',
+            title: 'Clear'
+          }, '✕') : null,
+          h('span', { class: 'fe__filter-count' }, visibleCount)
         )
       ),
       h('div', { class: 'fe__body' + (hasPane ? ' fe__body--has-pane' : '') },
         h('div', { class: 'fe__list-wrap' },
+          !filterOpen && h('div', { class: 'fe__list-meta' },
+            h('span', { class: 'fe__list-count' }, visibleCount),
+            loading ? h('span', { class: 'fe__list-loading' }, 'syncing') : null
+          ),
           h('ul', { class: 'fe__list', 'aria-label': 'Files and folders' },
-            entries.length === 0
-              ? h('li', { class: 'fe__empty' }, loading ? 'loading…' : 'no files here')
-              : entries.map((e) =>
+            filteredEntries.length === 0
+              ? h('li', { class: 'fe__empty' }, loading ? 'loading…' : (filterText.trim() ? 'no matching files' : 'no files here'))
+              : filteredEntries.map((e) =>
                   h('li', {
                     key: e.path,
                     // Images carry `binary` too, but they open in the preview.
-                    class: 'fe__row' + (e.binary && !e.image ? ' fe__row--binary' : '') + (e.image ? ' fe__row--image' : '') + ((openFile && openFile.relPath === e.relPath) || (openMedia && openMedia.relPath === e.relPath) ? ' is-open' : ''),
+                    class: 'fe__row' + (e.type === 'dir' ? ' fe__row--dir' : '') + (e.binary && !e.image ? ' fe__row--binary' : '') + (e.image ? ' fe__row--image' : '') + ((openFile && openFile.relPath === e.relPath) || (openMedia && openMedia.relPath === e.relPath) ? ' is-open' : ''),
                     role: 'button',
                     tabindex: e.binary && !e.image ? -1 : 0,
                     'aria-disabled': e.binary && !e.image ? 'true' : 'false',
@@ -801,21 +960,21 @@ export function FileEditorView(props) {
                   },
                     h('span', { class: 'fe__row-icon', 'aria-hidden': 'true' },
                       e.type === 'dir'
-                        ? h('svg', { viewBox: '0 0 24 24', width: 16, height: 16 },
+                        ? h('svg', { viewBox: '0 0 24 24', width: 13, height: 13 },
                             h('path', { d: 'M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z', fill: 'currentColor' }))
                         : e.image
-                          ? h('svg', { viewBox: '0 0 24 24', width: 16, height: 16 },
+                          ? h('svg', { viewBox: '0 0 24 24', width: 13, height: 13 },
                               h('path', { d: 'M21 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm-9 11-3-4-2.5 3L4 13.5V7h16v9l-4-3-4 3Zm-4-7a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Z', fill: 'currentColor' }))
-                          : h('svg', { viewBox: '0 0 24 24', width: 16, height: 16 },
+                          : h('svg', { viewBox: '0 0 24 24', width: 13, height: 13 },
                               h('path', { d: 'M6 2h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V7h3.5L13 3.5Z', fill: 'currentColor' })
                             )
                     ),
                     h('span', { class: 'fe__row-name' }, e.name),
                     e.type === 'dir'
-                      ? h('span', { class: 'fe__row-meta' }, e.hasChildren ? '…' : '·')
+                      ? h('span', { class: 'fe__row-meta' }, e.hasChildren ? '›' : '·')
                       : h('span', { class: 'fe__row-meta' },
-                          e.image ? 'image'
-                            : (e.binary ? 'binary' : (e.size < 1024 ? (e.size + ' B') : Math.round(e.size / 1024) + ' KB'))
+                          e.image ? 'img'
+                            : (e.binary ? 'bin' : (e.size < 1024 ? (e.size + 'B') : Math.round(e.size / 1024) + 'K'))
                         )
                   )
                 )
@@ -825,7 +984,10 @@ export function FileEditorView(props) {
           openMedia
             ? h(Fragment, null,
                 h('div', { class: 'fe__editor-head' },
-                  h('div', { class: 'fe__editor-path', title: openMedia.absPath }, shownPath(openMedia.relPath)),
+                  h('div', { class: 'fe__editor-path', title: openMedia.absPath },
+                    fileDisplayDir(openMedia.relPath) ? h('span', { class: 'fe__editor-dir' }, fileDisplayDir(openMedia.relPath)) : null,
+                    h('span', { class: 'fe__editor-name' }, fileDisplayName(openMedia.relPath))
+                  ),
                   h('div', { class: 'fe__editor-actions' },
                     // SVG is also a text file; offer to
                     // switch to the editor for it. Other
@@ -840,14 +1002,16 @@ export function FileEditorView(props) {
                       : null,
                     manageBtn(openMedia.relPath),
                     h('button', {
-                      class: 'btn',
-                      type: 'button',
-                      onClick: () => { setOpenMedia(null); setMediaStatus(''); },
-                      title: 'Close preview'
-                    }, 'Close')
-                  ),
-                  navInPane && layoutToggle,
-                  navInPane && closeBtn
+                    class: 'icon-btn fe__iconbtn',
+                    type: 'button',
+                    onClick: () => { setOpenMedia(null); setMediaStatus(''); },
+                    'aria-label': 'Close preview',
+                    title: 'Close preview'
+                    }, '✕')
+                    ),
+                    navInPane && h('span', { class: 'fe__head-sep', 'aria-hidden': 'true' }),
+                    navInPane && layoutToggle,
+                    navInPane && closeBtn
                 ),
                 // Every previewable image — SVG included — renders through
                 // this single <img>. An SVG loaded from a data: URL as an
@@ -873,9 +1037,25 @@ export function FileEditorView(props) {
             : openFile
               ? h(Fragment, null,
                 h('div', { class: 'fe__editor-head' },
-                  h('div', { class: 'fe__editor-path', title: openFile.absPath }, shownPath(openFile.relPath) + (dirty ? ' •' : '')),
+                  h('div', { class: 'fe__editor-path', title: openFile.absPath },
+                    fileDisplayDir(openFile.relPath) ? h('span', { class: 'fe__editor-dir' }, fileDisplayDir(openFile.relPath)) : null,
+                    h('span', { class: 'fe__editor-name' }, fileDisplayName(openFile.relPath)),
+                    dirty ? h('span', { class: 'fe__dirty-dot', 'aria-label': 'unsaved changes' }, '•') : null
+                  ),
 h('div', { class: 'fe__editor-actions' + (isArtifact(openFile.relPath) ? ' fe__editor-actions--artifact' : '') },
 manageBtn(openFile.relPath),
+h('button', {
+class: 'icon-btn fe__iconbtn fe__find-btn',
+type: 'button',
+onClick: openSearchInEditor,
+'aria-label': 'Find in file',
+title: 'Find / replace in file (Ctrl/Cmd+F)'
+},
+h('svg', { viewBox: '0 0 24 24', width: 13, height: 13, 'aria-hidden': 'true', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round' },
+h('circle', { cx: 11, cy: 11, r: 7 }),
+h('path', { d: 'm20 20-3.5-3.5' })
+)
+),
 h('button', {
 class: 'btn fe__draft-craft',
 type: 'button',
@@ -884,33 +1064,35 @@ disabled: saving,
 'aria-label': 'Draft Craft',
 title: 'Add the selected code to any chat draft'
 },
-h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
 h('path', { d: 'M4 4h16v13a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V4Zm2 2v9h4a2 2 0 0 0 4 0h4V6H6Z', fill: 'currentColor' })
 ),
 h('span', null, 'Draft Craft')
 ),
 h('button', {
-class: 'btn',
+class: 'btn fe__revert-btn',
 type: 'button',
 onClick: revert,
 disabled: !dirty || saving,
 title: 'Revert to the last saved version'
 }, 'Revert'),
                     h('button', {
-                      class: 'btn btn--primary',
+                      class: 'btn btn--primary fe__save-btn',
                       type: 'button',
                       onClick: save,
                       disabled: !dirty || saving,
                       title: 'Save (Ctrl/Cmd+S is wired to the editor save keymap via the browser default)',
                       'aria-label': 'Save file'
-                    }, saving ? 'Saving…' : 'Save')
-                  ),
-                  navInPane && layoutToggle,
-                  navInPane && closeBtn
+                      }, saving ? 'Saving…' : 'Save')
+                      ),
+                      navInPane && h('span', { class: 'fe__head-sep', 'aria-hidden': 'true' }),
+                      navInPane && layoutToggle,
+                      navInPane && closeBtn
                 ),
                 h('div', { ref: editorHostRef, class: 'fe__editor-host' }),
                 h('div', { class: 'fe__editor-status' },
-                  h('span', { class: 'status' }, editorStatus || ' ')
+                  h('span', { class: 'status' }, editorStatus || ' '),
+                  h('span', { class: 'fe__editor-meta' }, dirty ? 'unsaved' : (openFile.ext || 'text'))
                 )
               )
             : h('div', { class: 'fe__editor-empty' },
@@ -918,10 +1100,31 @@ title: 'Revert to the last saved version'
 editorStatus && editorStatus !== 'loading…' ? h('p', { role: 'alert' }, editorStatus) : null,
 mediaStatus && !mediaLoading ? h('p', { role: 'alert' }, mediaStatus) : null,
 h('p', null, 'Pick a file from the list to start editing, or tap an image to preview it.'),
-h('p', { class: 'fe__editor-hint' }, 'Tip: type a path above or use the breadcrumb to jump to a folder.')
+h('p', { class: 'fe__editor-hint' }, 'Tap the pencil in the bar above to jump to any path.')
 )
 )
 ),
+discardPrompt ? h('div', {
+  class: 'fe__confirm-overlay',
+  role: 'presentation',
+  onClick: () => settleDiscard(false)
+},
+  h('div', {
+    class: 'fe__confirm-sheet',
+    role: 'alertdialog',
+    'aria-modal': 'true',
+    'aria-label': discardPrompt.title,
+    ref: discardSheetRef,
+    onClick: (ev) => ev.stopPropagation()
+  },
+    h('div', { class: 'fe__confirm-title' }, discardPrompt.title),
+    h('p', { class: 'fe__confirm-msg' }, discardPrompt.message),
+    h('div', { class: 'fe__confirm-actions' },
+      h('button', { class: 'btn', type: 'button', onClick: () => settleDiscard(false) }, 'Keep editing'),
+      h('button', { class: 'btn btn--danger', type: 'button', onClick: () => settleDiscard(true) }, discardPrompt.label)
+    )
+  )
+) : null,
 h(DraftCraftSheet, {
 open: draftCraftOpen,
 payload: draftCraftPayload,

@@ -1,85 +1,112 @@
 /* File editor popup (CodeMirror-based).
-   Imported by style.css. */
+   Lazy-loaded by FileEditor.jsx when the Files modal opens. */
 
 /* File editor modal. The overlay, sheet and desktop card come from the
    shared sheet idiom in frontend/src/sheets.css; the split list layout
    wants a wider card than the default, and this sheet also keeps an
-   explicit full width on phones (it is the one sheet whose inner panes
-   can force a scrollbar, so `min-width: 0` matters). */
+   explicit full width on phones (`min-width: 0` avoids inner overflow). */
 .fe__sheet {
   --sheet-width: 960px;
   --sheet-max-width: 1100px;
   --sheet-height: min(80vh, 720px);
   width: 100%;
   min-width: 0;
+  position: relative;
 }
+
+/* ---- Compact single-row top navigation bar -------------------------- */
 
 .fe__head {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 3px 6px 2px;
+  gap: 3px;
+  padding: 4px 6px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border);
 }
 .fe__path-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   width: 100%;
   min-width: 0;
-  overflow: hidden;
+  min-height: 28px;
 }
-/* In full-editor mode the path-row only carries the
-   layout toggle + Close, so right-align them and give
-   the row a tiny bit of padding so the buttons don't
-   collide with the sheet edge on narrow phones. */
-.fe__sheet--full .fe__path-row { justify-content: flex-end; padding: 0 4px; }
+.fe__head-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--fg);
+  padding-left: 4px;
+}
 .fe__path-input-wrap { flex: 1 1 0; width: 0; min-width: 0; }
 .fe__path-input {
   display: block;
   width: 100%;
   min-width: 0;
-  height: 30px;
+  height: 28px;
+  min-height: 28px;
   font-family: var(--font-mono);
-  font-size: 0.74rem;
-  padding: 0 10px;
+  font-size: 0.72rem;
+  padding: 0 8px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   color: var(--fg);
 }
-.fe__path-input:focus { border-color: var(--accent); outline: none; }
-/* Icon buttons use the shared .icon-btn utility (forms.css); the file
-   editor sizes them like the web preview's header actions (30 px, 0.74rem)
-   and adds a sticky "active" toggle state. */
+.fe__path-input:focus { border-color: var(--accent); outline: none; box-shadow: none; }
+.fe__go-btn {
+  height: 28px;
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+/* Compact icon buttons (28x28 visual, centered inside a 1px hairlined row). */
 .fe__iconbtn {
-  width: 30px;
-  min-width: 30px;
-  height: 30px;
-  min-height: 30px;
-  font-size: 0.74rem;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  font-size: 0.72rem;
+  border-radius: var(--r-sm);
 }
 .fe__iconbtn.is-active { background: var(--accent-soft); color: var(--accent); }
 @media (hover: hover) {
   .fe__iconbtn.is-active:hover { background: var(--accent-soft); color: var(--accent); }
 }
-/* Layout toggle (split ↔ full editor). The phone split stacks the list
-   above the editor and wider screens put it on the left, so the glyph
-   carries both panel shapes and shows the one that matches. */
+.fe__iconbtn.is-spinning svg { animation: mouaif-spin 0.8s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .fe__iconbtn.is-spinning svg { animation: none; }
+}
+
+/* Extension slot button inside the 28px header bar */
+.fe__ext .ext-menu__btn {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
+
+/* Layout toggle (split ↔ full editor). */
 .fe__layout-icon--side { display: none; }
 @media (min-width: 720px) {
   .fe__layout-icon--stack { display: none; }
   .fe__layout-icon--side { display: inline; }
 }
 
+/* Inline breadcrumbs share the single header bar with the nav controls. */
 .fe__crumbs {
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 2px;
-  font-size: 0.72rem;
+  gap: 1px;
+  font-size: 0.7rem;
   color: var(--fg-soft);
   overflow-x: auto;
   scrollbar-width: none;
@@ -94,10 +121,10 @@
   font: inherit;
   font-size: 0.7rem;
   line-height: 1.3;
-  padding: 1px 6px;
+  padding: 2px 5px;
   border-radius: var(--r-sm);
   cursor: pointer;
-  max-width: 220px;
+  max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -106,19 +133,36 @@
   .fe__crumb:hover { background: var(--surface-3); color: var(--fg); }
 }
 .fe__crumb--root { color: var(--fg); font-weight: 600; }
-.fe__crumb-sep { color: var(--muted); flex: 0 0 auto; }
+.fe__crumb-sep { color: var(--muted-2); flex: 0 0 auto; font-size: 0.68rem; }
 
-.fe__list-status {
+/* Optional collapsible filter strip under the header bar */
+.fe__filter-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 2px 4px 0;
-  font-size: 0.72rem;
-  color: var(--fg-soft);
-  min-height: 18px;
+  gap: 4px;
+  padding-top: 1px;
 }
-.fe__list-up { font-size: 0.72rem; padding: 1px 8px; min-height: 24px; }
+.fe__filter-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 26px;
+  min-height: 26px;
+  padding: 0 8px;
+  font-size: 0.72rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.fe__filter-input:focus { border-color: var(--accent); outline: none; box-shadow: none; }
+.fe__filter-count {
+  flex: 0 0 auto;
+  font-size: 0.66rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  padding: 0 4px;
+}
+
+/* ---- Split body: file tree + editor/preview ------------------------- */
 
 .fe__body {
   flex: 1 1 auto;
@@ -133,65 +177,82 @@
   flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
 }
-/* Phone split: once a file or image is open, the stacked list stops
-   taking half the body. It sizes to its rows, capped at 40% of the body
-   and scrolling past that, so the editor gets the rest. With nothing
-   open, the list keeps the full share: it is the only useful pane. */
 @media (max-width: 719.98px) {
   .fe__body--has-pane .fe__list-wrap {
     flex: 0 1 auto;
-    max-height: 40%;
+    max-height: 36%;
   }
   .fe__body--has-pane .fe__editor-wrap { flex: 1 1 0; }
 }
 @media (min-width: 720px) {
   .fe__list-wrap {
-    flex: 0 0 38%;
-    max-width: 420px;
+    flex: 0 0 34%;
+    max-width: 340px;
     border-right: 1px solid var(--border);
     border-bottom: 0;
   }
 }
-/* Full-editor mode: hide the file list so the editor takes
-   the whole pane. Default state keeps the split view; the
-   toggle button in the header swaps between them. On phone
-   widths the list sits above the editor anyway, so hiding it
-   also lets the editor own the body on narrow screens. */
 .fe__sheet--full .fe__list-wrap { display: none; }
-.fe__list { list-style: none; margin: 0; padding: 4px 0; }
+
+.fe__list-meta {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 3px 8px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.64rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.fe__list-count { font-variant-numeric: tabular-nums; }
+.fe__list-loading { color: var(--accent); }
+
+.fe__list { list-style: none; margin: 0; padding: 2px 0; }
 .fe__empty {
   text-align: center;
   color: var(--fg-soft);
-  font-size: 0.8rem;
-  padding: 18px 10px;
+  font-size: 0.74rem;
+  padding: 14px 10px;
   list-style: none;
 }
 .fe__row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: 0;
+  gap: 6px;
+  padding: 4px 8px;
+  min-height: 28px;
   cursor: pointer;
-  font-size: 0.8rem;
+  font-size: 0.76rem;
+  line-height: 1.25;
   color: var(--fg);
   user-select: none;
+  border-left: 2px solid transparent;
 }
 @media (hover: hover) {
   .fe__row:hover { background: var(--surface-3); }
 }
-.fe__row.is-open { background: var(--accent-soft); }
-.fe__row--binary { opacity: 0.55; cursor: not-allowed; }
+.fe__row.is-open {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+.fe__row--dir .fe__row-icon { color: var(--accent-hi); }
+.fe__row--binary { opacity: 0.45; cursor: not-allowed; }
 @media (hover: hover) {
   .fe__row--binary:hover { background: transparent; }
 }
 .fe__row-icon {
   flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -206,10 +267,16 @@
 }
 .fe__row-meta {
   flex: 0 0 auto;
-  font-size: 0.7rem;
+  font-size: 0.66rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+.fe__row--image .fe__row-meta {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* ---- Editor / media pane -------------------------------------------- */
 
 .fe__editor-wrap {
   flex: 1 1 0;
@@ -222,35 +289,85 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 6px 4px 12px;
-  min-height: 40px;
+  gap: 4px;
+  padding: 3px 6px 3px 10px;
+  min-height: 34px;
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
 }
 .fe__editor-path {
   flex: 1 1 auto;
   min-width: 0;
+  display: flex;
+  align-items: baseline;
   font-family: var(--font-mono);
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   color: var(--fg);
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.fe__editor-actions { flex: 0 0 auto; display: flex; gap: 4px; overflow-x: auto; }
-.fe__editor-actions .btn { min-height: 30px; padding: 0 8px; font-size: 0.74rem; font-weight: 600; }
-/* An artifact's extra button must not squeeze its name out on a phone. */
-@media (max-width: 480px) {
-  .fe__editor-actions--artifact .fe__draft-craft { min-width: 30px; justify-content: center; }
-  .fe__editor-actions--artifact .fe__draft-craft span { display: none; }
+.fe__editor-dir {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
 }
-/* Full editor: this row is the sheet's only bar (it also carries the
-   layout toggle and Close), so it packs tighter. Draft Craft keeps its
-   label: as a bare icon it read as a second layout toggle. */
-.fe__sheet--full .fe__editor-head { gap: 4px; padding: 3px 4px; }
-@media (max-width: 479.98px) {
-  .fe__sheet--full .fe__editor-actions .btn { padding: 0 8px; }
+.fe__editor-name {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: var(--fg);
+}
+.fe__dirty-dot {
+  flex: 0 0 auto;
+  color: var(--warning);
+  margin-left: 4px;
+  font-weight: 700;
+}
+.fe__editor-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.fe__editor-actions::-webkit-scrollbar { display: none; }
+.fe__editor-actions .btn {
+  height: 26px;
+  min-height: 26px;
+  padding: 0 7px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border-radius: var(--r-sm);
+}
+.fe__editor-actions .fe__iconbtn {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  min-height: 26px;
+}
+/* On narrow screens, collapse Draft Craft to its icon so filename + actions
+   stay cleanly on one compact row. */
+@media (max-width: 599.98px) {
+  .fe__editor-actions .fe__draft-craft { min-width: 26px; padding: 0 6px; justify-content: center; }
+  .fe__editor-actions .fe__draft-craft span { display: none; }
+}
+/* Full editor: this row is the sheet's only bar, so group file actions
+   and sheet navigation with a subtle 1px divider. */
+.fe__sheet--full .fe__editor-head { gap: 3px; padding: 3px 6px; }
+.fe__head-sep {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 16px;
+  margin: 0 1px;
+  background: var(--border-strong);
+}
+
+/* On narrow phones in full-editor mode, trim secondary text ("Revert") down
+   when needed? Keep "Revert" compact so it still fits on 360px. */
+@media (max-width: 399.98px) {
+  .fe__sheet--full .fe__editor-actions .btn { padding: 0 6px; font-size: 0.68rem; }
 }
 
 .fe__editor-host {
@@ -261,25 +378,68 @@
   color: #abb2bf;
 }
 .fe__editor-host .cm-editor { height: 100%; }
-.fe__editor-host .cm-scroller { font-family: var(--font-mono); font-size: 13px; line-height: 1.5; }
-.fe__editor-host .cm-content { padding: 8px 0; }
+.fe__editor-host .cm-scroller { font-family: var(--font-mono); font-size: 12.5px; line-height: 1.45; }
+.fe__editor-host .cm-content { padding: 6px 0; }
 .fe__editor-host .cm-gutters { background: #282c34; border-right: 1px solid #21252b; }
+/* Match CodeMirror's built-in search panel to the compact modal theme */
+.fe__editor-host .cm-panels {
+  background: var(--surface-2);
+  color: var(--fg);
+  border-color: var(--border);
+}
+.fe__editor-host .cm-panel.cm-search {
+  padding: 4px 6px;
+  font-size: 0.72rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.fe__editor-host .cm-panel.cm-search input,
+.fe__editor-host .cm-panel.cm-search button {
+  font-size: 0.72rem;
+  min-height: 24px;
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  background-image: none;
+  margin: 0;
+}
+.fe__editor-host .cm-panel.cm-search label {
+  font-size: 0.68rem;
+  color: var(--fg-soft);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.fe__editor-host .cm-panel.cm-search button[name="close"] {
+  position: static;
+  margin-left: auto;
+  padding: 0 6px;
+}
 
 .fe__editor-status {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  padding: 4px 8px;
+  padding: 2px 8px;
   border-top: 1px solid var(--border);
   background: var(--surface-2);
-  font-size: 0.72rem;
+  font-size: 0.66rem;
   color: var(--fg-soft);
-  min-height: 22px;
+  min-height: 20px;
 }
-.fe__editor-status .status { font-size: 0.72rem; }
-.fe__editor-status:empty,
-.fe__editor-status .status:empty { display: none; }
+.fe__editor-status .status { font-size: 0.66rem; }
+.fe__editor-meta {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  color: var(--muted);
+}
 
 .fe__editor-empty {
   flex: 1 1 auto;
@@ -287,50 +447,89 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 24px 16px;
+  padding: 18px 14px;
   text-align: center;
+  font-size: 0.78rem;
   color: var(--fg-soft);
-  gap: 6px;
+  gap: 4px;
 }
 .fe__editor-empty p { margin: 0; }
-.fe__editor-hint { font-size: 0.8rem; color: var(--muted); }
-/* Image preview pane (right-hand side of the file modal).
-The host is a centered scroller so oversized images stay
-within reach on small screens; bitmaps use object-fit: contain
-so they never overflow the modal. SVG is rendered inline and
-is allowed to flow naturally to its native size. */
+.fe__editor-hint { font-size: 0.72rem; color: var(--muted); }
+
+/* Image preview pane */
 .fe__media-host {
-flex: 1 1 auto;
-min-height: 0;
-overflow: auto;
-display: flex;
-align-items: center;
-justify-content: center;
-background: #1f2227;
-color: var(--fg-soft);
-padding: 12px;
--webkit-overflow-scrolling: touch;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1f2227;
+  color: var(--fg-soft);
+  padding: 10px;
+  -webkit-overflow-scrolling: touch;
 }
 .fe__media-img {
-max-width: 100%;
-max-height: 100%;
-width: auto;
-height: auto;
-object-fit: contain;
-user-select: none;
--webkit-user-drag: none;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 .fe__media-svg {
-  /* Kept as a no-op guard: the preview no longer renders SVG markup
-     inline (see FileEditor.jsx — SVG goes through .fe__media-img), so
-     this class should never be applied. Do not reintroduce a rule that
-     gives raw file markup a containing block here. */
+  /* Kept as a no-op guard: SVG goes through .fe__media-img only. */
   display: none;
 }
-/* Image file row: tappable but visually distinct from text rows.
-The "image" meta pill uses a subtle accent so the user can
-spot previewable files at a glance. */
-.fe__row--image .fe__row-meta {
-color: var(--accent);
-font-weight: 500;
+
+/* ---- In-modal discard confirmation sheet ---------------------------- */
+
+.fe__confirm-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: rgba(0, 0, 0, 0.58);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 12px;
+}
+@media (min-width: 720px) {
+  .fe__confirm-overlay { align-items: center; }
+}
+.fe__confirm-sheet {
+  width: 100%;
+  max-width: 340px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fe__confirm-title {
+  font-size: 0.82rem;
+  font-weight: 650;
+  color: var(--fg);
+}
+.fe__confirm-msg {
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--fg-soft);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.fe__confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.fe__confirm-actions .btn {
+  height: 30px;
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 0.74rem;
 }

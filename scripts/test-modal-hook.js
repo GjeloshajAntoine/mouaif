@@ -48,6 +48,7 @@ const SHEETS = [
   ['frontend/src/components/chat/WebpreviewModal.jsx'],
   ['frontend/src/components/chat/PreviewUrlPrompt.jsx'],
   ['frontend/src/components/AgentFilePicker.jsx'],
+  ['frontend/src/components/FileEditor.jsx'],
   ['frontend/src/components/inspector/PreviewPanel.jsx']
 ];
 
