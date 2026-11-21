@@ -519,14 +519,22 @@ function setApp(patch) {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
     throw new TypeError('setApp() expects an object patch');
   }
-  const store = appStore();
-  return store.write({ ...store.read(), ...patch });
+  return updateApp((current) => ({ ...current, ...patch }));
 }
 
-// Replace the whole app-level settings object (no merge). Used by
-// /api/settings/app/reset where the caller wants to drop specific keys
-// rather than merge into them. The caller is responsible for shape:
-// the new object is stored verbatim.
+// Update from the latest app document, with no gap between read and write.
+// Returning the current object unchanged skips the write.
+function updateApp(update) {
+  return stores.withWriteLock(() => {
+    const store = appStore();
+    const current = store.read();
+    const next = update(current);
+    return next === current ? current : store.write(next);
+  });
+}
+
+// Replace the whole app-level settings object (no merge). The caller is
+// responsible for shape: the new object is stored verbatim.
 function setAppReplace(next) {
   if (!next || typeof next !== 'object' || Array.isArray(next)) {
     throw new TypeError('setAppReplace() expects an object');
@@ -582,18 +590,22 @@ function setProject(projectDir, patch) {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
     throw new TypeError('setProject() expects an object patch');
   }
-  const store = projectStore(projectDir);
-  return store.write({ ...store.read(), ...patch });
+  return stores.withWriteLock(() => {
+    const store = projectStore(projectDir);
+    return store.write({ ...store.read(), ...patch });
+  });
 }
 
 function unsetProjectKeys(projectDir, keys) {
   if (!Array.isArray(keys) || keys.some((key) => typeof key !== 'string' || !key)) {
     throw new TypeError('unsetProjectKeys() expects an array of key names');
   }
-  const store = projectStore(projectDir);
-  const next = store.read();
-  for (const key of keys) delete next[key];
-  return store.write(next);
+  return stores.withWriteLock(() => {
+    const store = projectStore(projectDir);
+    const next = store.read();
+    for (const key of keys) delete next[key];
+    return store.write(next);
+  });
 }
 
 // ---- Resolution ---------------------------------------------------------
@@ -694,6 +706,7 @@ module.exports = {
   // app
   getApp,
   setApp,
+  updateApp,
   setAppReplace,
   listQuarantinedAppSettings,
   // project
