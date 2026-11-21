@@ -1761,6 +1761,12 @@ promptSize: resolvedProfileId,
       if (updateCost && updateCost.known && typeof updateCost.total === 'number' && isFinite(updateCost.total) && updateCost.total > 0) {
       liveDelegatedCost += updateCost.total;
       liveDelegatedCostKnown = true;
+      // Followers (a second tab, a page that came back to the running
+      // chat) do not get the owner's usage_update frames, so their Total
+      // stood still while a subagent ran. Hand them the turn's running
+      // subagent cost as one latest-value frame; `done` folds it into the
+      // saved final row, which they get from the sync after run_end.
+      liveChat.replaceLatest(runKey, 'live_cost', { delegated: liveDelegatedCost });
       }
       } else if (name === 'done') {
       const info = statusInfo({ kind: 'complete', message: 'Response complete' });

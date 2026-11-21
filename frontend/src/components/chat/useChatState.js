@@ -109,6 +109,8 @@ import { saveChatToolAuthorization, saveChatMcpAuthorization } from '../settings
   * Plain fields other modules add on the fly (not declared in the bag):
   * @property {Object|null} [costSnapshot]  costSummary.js
   * @property {number} [attributedCost]
+  * @property {number} [costGen]        bumped by a `chat_cost` notice
+  * @property {number} [costSyncedGen]  the costGen the snapshot covers
   * @property {AbortController|null} [streamAbort]  stream.js
   * @property {number} [pendingAuthCount]  stream.js
   * @property {string} [liveRunId]  live.js
@@ -1636,6 +1638,11 @@ loadOlderMessages(state, refs, scrollPager).catch(() => {});
       if (name === 'chat_rows') {
         // Rows this page already has (the owner tab's own turn): nothing to do.
         if (!reconnect.current.active && data.nextSeq === nextServerMessageIndex(state)) return;
+      } else if (name === 'chat_cost') {
+        // The saved Total moved without a new row (a background subagent
+        // billed after its turn ended). The next sync refetches the cost
+        // snapshot even when no rows changed (stream.js syncToNextSeq).
+        state.costGen = (state.costGen || 0) + 1;
       } else if (name === 'auth_pending') {
         if (data.open) {
           // Mount the card even when no run is open here (a background

@@ -70,6 +70,21 @@ async function main() {
   assert.deepEqual(page.events().map((e) => [e.event, e.data.nextSeq]), [['chat_rows', 0]]);
   console.log('PASS replace and clear send chat_rows with the lower cursor');
 
+  // A background subagent that bills after its turn ended writes no row: the
+  // page must still hear that the saved Total moved.
+  page.clear();
+  caller.clear();
+  messages.addChatCost(projectDir, chat.id, 0.01);
+  messages.addChatCost(projectDir, chat.id, 0.02);
+  messages.addChatCost(otherDir, other.id, 0.03);
+  await flush();
+  const costs = page.events().filter((e) => e.event === 'chat_cost');
+  assert.deepEqual(costs.filter((e) => e.data.chatId === chat.id).map((e) => e.data), [{ projectDir, chatId: chat.id }], 'cost writes in one tick coalesce');
+  assert.equal(costs.length, 2);
+  assert.deepEqual(caller.events().filter((e) => e.event === 'chat_cost').map((e) => e.data.chatId), [chat.id], 'a share caller hears only its project');
+  assert.equal(page.events().filter((e) => e.event === 'chat_rows').length, 0, 'no rows were written');
+  console.log('PASS addChatCost sends one coalesced chat_cost per chat');
+
   // A run's start and end; the end comes after the rows written just before.
   page.clear();
   const key = shared.runningKey(projectDir, chat.id);

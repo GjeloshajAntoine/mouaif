@@ -9,6 +9,7 @@ Changes made outside any stream reach the page this way:
 - a tool call or result written while another tab or device runs the chat;
 - a run started in another tab or on another device;
 - a background subagent's events and result, written after its turn ended;
+- the chat's **Total** when a background subagent keeps billing after its turn ended (a `chat_cost` notice: the page refetches the saved cost even though no row changed);
 - an approval answered in another tab, whose card then goes away here.
 
 The bars and panels around the chat follow the same notices instead of their own timers:

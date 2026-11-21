@@ -18,7 +18,7 @@
 import { signal } from '@preact/signals';
 import { shareIdFor, whenSharesReady } from './api.js';
 
-export const LIVE_EVENTS = ['chat_rows', 'chat_run', 'auth_pending', 'project_changed', 'app_changed'];
+export const LIVE_EVENTS = ['chat_rows', 'chat_cost', 'chat_run', 'auth_pending', 'project_changed', 'app_changed'];
 
 // Errors in a row, without an open in between, before the page says live
 // updates are unavailable.

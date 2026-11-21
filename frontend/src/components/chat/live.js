@@ -35,7 +35,7 @@ import {
   clearLiveImages
 } from './transcript.js';
 import { mountOverlayCard, removeOverlayCardByCallId, removeOverlayCards } from './overlay.js';
-import { setChatStatus, renderUsageMeta } from './usage.js';
+import { setChatStatus, renderUsageMeta, updateUsageSummary } from './usage.js';
 import { createCounter } from '../../usage.js';
 import { agentNetworkEvent, agentNetworkTurnEnded } from './agentNetworkState.js';
 
@@ -142,6 +142,33 @@ function resetFollowerMeta(state) {
   if (state._followCounter) state._followCounter.reset();
 }
 
+// The running turn's subagent cost, for a follower's head Total. The owner's
+// stream folds its `usage_update` frames into the same pill (stream.js
+// liveUsageInfo); a follower gets the turn's whole figure as `live_cost`. It
+// is registered as the chat's live usage getter so a sync or rebuild of the
+// head keeps it, and dropped at run_end, where the saved final row (whose cost
+// includes it) arrives with the sync.
+function setFollowerCost(refs, state, key, delegated) {
+  const total = Number(delegated);
+  if (!Number.isFinite(total) || total <= 0) return;
+  state._followCost = total;
+  if (!state._followCostInfo) {
+    state._followCostInfo = () => (isCurrentChat(state, key) && state._followCost > 0
+      ? { liveCost: { known: true, total: state._followCost, currency: 'USD' } }
+      : null);
+  }
+  // The owner's own stream, while it runs, already counts these deltas.
+  if (!state._liveUsageInfo || state._liveUsageInfo === state._followCostInfo) {
+    state._liveUsageInfo = state._followCostInfo;
+    updateUsageSummary(state, null, refs);
+  }
+}
+
+function clearFollowerCost(state) {
+  state._followCost = 0;
+  if (state._followCostInfo && state._liveUsageInfo === state._followCostInfo) state._liveUsageInfo = null;
+}
+
 function paintFollowerMeta(refs, state, throttled) {
   if (throttled) {
     // Same cadence as the owner: a repaint per token strobes on a phone.
@@ -189,6 +216,7 @@ export function closeLive(state, projectDir, chatId) {
   // Never carry one chat's round usage into the next subscription; a
   // resubscribe to the same run gets it back with `live_segment`.
   resetFollowerMeta(state);
+  clearFollowerCost(state);
   return true;
 }
 
@@ -230,6 +258,7 @@ function dispatchLiveEvent(ev, refs, state, key) {
       state.runSettled = false;
       clearLiveSegment(refs, state);
       resetFollowerMeta(state);
+      clearFollowerCost(state);
     } else {
       // Same run, (re)subscribed: drop any bubble left from before the
       // socket dropped. If its segment ended in the gap it is already a saved
@@ -261,6 +290,10 @@ function dispatchLiveEvent(ev, refs, state, key) {
   }
   // The round's usage so far (src/live-chat.js setUsage); older servers
   // send none, and the line then shows the model and tok/s only.
+  if (ev.eventName === 'live_cost') {
+    setFollowerCost(refs, state, key, data.delegated);
+    return;
+  }
   if (ev.eventName === 'live_usage') {
     state._followUsage = data;
     paintFollowerMeta(refs, state, false);
@@ -347,6 +380,7 @@ function handleLiveRunEnd(ev, refs, state, key) {
   // leaving the un-finalized node would show the turn twice.
   clearLiveSegment(refs, state);
   resetFollowerMeta(state);
+  clearFollowerCost(state);
   // Images the owner stream drew before a handoff; the saved row has them.
   clearLiveImages(refs);
   // Resume the older-history drain. It deliberately bails while a run is

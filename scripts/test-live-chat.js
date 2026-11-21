@@ -273,6 +273,27 @@ function progressCoalescingTest() {
   liveChat.finishLiveChat(rk);
 }
 
+// The turn's running subagent cost reaches followers as `live_cost`, one
+// latest-value slot: a late joiner replays only the newest figure.
+function liveCostTest() {
+  console.log('live-chat.js keeps one latest live_cost frame');
+  const rk = 'PROJ::COST';
+  liveChat.ensureLiveChat(rk);
+  const early = makeFakeRes();
+  liveChat.addSubscriber(rk, null, early);
+  liveChat.replaceLatest(rk, 'live_cost', { delegated: 0.01 });
+  liveChat.replaceLatest(rk, 'live_cost', { delegated: 0.03 });
+  const seen = collectFrames(early).filter((f) => f.name === 'live_cost');
+  t('a connected follower gets every live_cost frame', seen.length === 2, 'saw ' + seen.length);
+  const late = makeFakeRes();
+  liveChat.addSubscriber(rk, null, late);
+  const replay = collectFrames(late).filter((f) => f.name === 'live_cost');
+  let data = null; try { data = JSON.parse(replay[0].data); } catch { }
+  t('a late follower replays one live_cost frame', replay.length === 1, 'saw ' + replay.length);
+  t('and it carries the newest figure with a liveSeq', !!(data && data.delegated === 0.03 && typeof data.liveSeq === 'number'), replay[0] && replay[0].data);
+  liveChat.finishLiveChat(rk);
+}
+
 function clientHandlerTest() {
   console.log('live.js dispatches the follower text path');
   const liveSrc = fs.readFileSync(path.join(__dirname, '../frontend/src/components/chat/live.js'), 'utf8');
@@ -384,6 +405,7 @@ async function run() {
   baseTest();
   transientTest();
   progressCoalescingTest();
+  liveCostTest();
   clientHandlerTest();
   await httpTest();
   console.log('\n' + pass + ' passed, ' + fail + ' failed');

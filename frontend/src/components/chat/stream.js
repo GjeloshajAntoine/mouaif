@@ -673,10 +673,12 @@ pager.loading = false;
 }
 async function fullRebuildFromServer(state, refs, nextSeq) {
   const { projectDir, chatId } = state.props;
+  const costGen = state.costGen || 0;
   const body = await fetchMessagesFromSeq(projectDir, chatId, 0);
   if (!body) return null;
   state.messages = body.messages;
   state.costSnapshot = costSnapshot(body);
+  state.costSyncedGen = costGen;
   // A refreshed snapshot already covers every attributed run, so the client's
   // session delta is rebased away here rather than counted twice.
   state.attributedCost = 0;
@@ -722,7 +724,12 @@ async function syncToNextSeq(state, refs, serverNextSeq) {
   const { projectDir, chatId } = state.props;
   const localNextSeq = nextServerMessageIndex(state);
   if (serverNextSeq < localNextSeq) return fullRebuildFromServer(state, refs, serverNextSeq);
-  if (serverNextSeq === localNextSeq) { state.transcriptNextSeq = serverNextSeq; return 'stable'; }
+  // A `chat_cost` notice (useChatState) means the saved Total moved with no
+  // new row — a background subagent billed after its turn ended — so the
+  // snapshot is refetched even when the rows are current.
+  const costGen = state.costGen || 0;
+  const costStale = costGen !== (state.costSyncedGen || 0);
+  if (serverNextSeq === localNextSeq && !costStale) { state.transcriptNextSeq = serverNextSeq; return 'stable'; }
   const body = await fetchMessagesFromSeq(projectDir, chatId, localNextSeq);
   if (!body) return null;
   if (typeof body.nextSeq === 'number' && body.nextSeq < localNextSeq) return fullRebuildFromServer(state, refs, body.nextSeq);
@@ -741,6 +748,7 @@ async function syncToNextSeq(state, refs, serverNextSeq) {
   if (snapshot) {
     state.costSnapshot = snapshot;
     state.attributedCost = 0;
+    state.costSyncedGen = costGen;
   }
   updateUsageSummary(state, null, refs);
   return result;

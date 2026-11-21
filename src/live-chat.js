@@ -99,6 +99,19 @@ function replaceLive(runKey, name, data, key) {
   return pushLive(runKey, name, data);
 }
 
+// replaceLatest(runKey, name, data)
+//
+// Push a latest-value event that has one slot per name: every earlier
+// buffered frame of the same name is dropped first. Used for the turn's
+// running subagent cost (`live_cost`), whose frames each carry the whole
+// figure, so a follower that joins mid-turn replays only the newest one.
+function replaceLatest(runKey, name, data) {
+  const r = runs.get(runKey);
+  if (!r) return null;
+  if (r.buffer.length) r.buffer = r.buffer.filter((e) => e.name !== name);
+  return pushLive(runKey, name, data);
+}
+
 // pushTransient(runKey, name, data)
 //
 // Fan an event out to the subscribers connected RIGHT NOW, without
@@ -256,6 +269,7 @@ module.exports = {
   pushLive,
   pushTransient,
   replaceLive,
+  replaceLatest,
   progressKey,
   pruneLive,
   addSubscriber,

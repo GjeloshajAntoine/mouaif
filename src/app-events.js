@@ -97,6 +97,25 @@ function chatRunChanged(projectDir, chatId, running) {
   broadcast('chat_run', { projectDir, chatId, running: !!running });
 }
 
+// chatCostChanged(projectDir, chatId) — a chat's saved Total moved without a
+// new row (addChatCost: a background subagent billed after its turn ended,
+// dictation, a shell review). Coalesced per chat like chat_rows.
+const costQueue = new Map();
+let costFlush = null;
+
+function flushChatCost() {
+  costFlush = null;
+  const list = Array.from(costQueue.values());
+  costQueue.clear();
+  for (const data of list) broadcast('chat_cost', data);
+}
+
+function chatCostChanged(projectDir, chatId) {
+  if (!clients.size || !projectDir || !chatId) return;
+  costQueue.set(chatKey(projectDir, chatId), { projectDir, chatId });
+  if (!costFlush) costFlush = setImmediate(flushChatCost);
+}
+
 // authPendingChanged(projectDir, chatId, callId, open) — an approval prompt
 // was parked (`open`) or settled.
 function authPendingChanged(projectDir, chatId, callId, open) {
@@ -147,7 +166,7 @@ function appChanged(what) {
 }
 
 // The events a share caller may receive for its own project.
-const PROJECT_EVENTS = new Set(['chat_rows', 'chat_run', 'auth_pending', 'project_changed']);
+const PROJECT_EVENTS = new Set(['chat_rows', 'chat_cost', 'chat_run', 'auth_pending', 'project_changed']);
 
 module.exports = {
   clients,
@@ -155,6 +174,7 @@ module.exports = {
   broadcast,
   chatRowsChanged,
   chatRunChanged,
+  chatCostChanged,
   authPendingChanged,
   projectChanged,
   appChanged,

@@ -1093,6 +1093,7 @@ function addChatCost(projectDir, chatId, amount) {
   });
   tx();
   if (!updated) return null;
+  require('./app-events.js').chatCostChanged(projectDir, chatId);
   const row = readChatCostRow(d, projectDir, chatId);
   return {
     total: row.total,
