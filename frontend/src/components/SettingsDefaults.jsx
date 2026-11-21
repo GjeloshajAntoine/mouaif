@@ -174,10 +174,6 @@ v ? 'the status line under the composer is shown again' : 'the status line under
         'Chat defaults',
         h('span', { class: 'group__title-note' }, 'Apply to every project')
       ),
-      h('p', { class: 'hint hint--compact' },
-        'How much tool schema and instruction text the model receives. Smaller = less context used, faster replies.'),
-      h('p', { class: 'hint hint--compact' },
-        'A project or a single chat can pick a different style for itself.'),
       h('ul', { class: 'group__list' },
         // ---- Default prompt style: select-in-a-card ---------------------
         h('li', { class: 'settings-project__item' },
@@ -185,7 +181,8 @@ v ? 'the status line under the composer is shown again' : 'the status line under
             h('label', { class: 'settings-project__item-title', for: 'sd-prompt-size' }, 'Default prompt style'),
             h('div', { class: 'settings-project__item-note' },
               'How much tool schema and instruction text the model receives. ' +
-              'Smaller = less context used, faster replies.'),
+              'Smaller = less context used, faster replies. ' +
+              'A project or a single chat can pick a different style for itself.'),
             h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, promptSizeMsg)
           ),
           h('select', {
