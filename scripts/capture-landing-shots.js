@@ -83,7 +83,14 @@ const SHOTS = [
       const t = document.querySelector('.chat-view__transcript');
       if (t) t.scrollTop = 0;
     })()`,
-    waitFor: '[data-tools-card="1"]'
+    waitFor: '[data-tools-card="1"]',
+    // The fixture's providers are local stubs with no account, so the chat
+    // head would show only Context and Total. Answer the credit lookup with a
+    // demo balance so the head carries all three pills, as it does on a real
+    // OpenRouter or DeepSeek connection.
+    mock: {
+      '/api/ai/provider-credit': { provider: 'demo', supported: true, label: 'Balance', remaining: 12.48 }
+    }
   },
   {
     file: 'subagent-auth.png',
@@ -754,6 +761,22 @@ async function captureShot({ shot, base, cdpBase }) {
     await cdp.send('Runtime.enable');
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 700, deviceScaleFactor: 2, mobile: true });
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, configuration: 'mobile' });
+    if (shot.mock) {
+      // Answer the listed API paths with canned JSON (see the shot's `mock`).
+      cdp.on('Fetch.requestPaused', (p) => {
+        const key = Object.keys(shot.mock).find((k) => new URL(p.request.url).pathname === k);
+        if (!key) return cdp.send('Fetch.continueRequest', { requestId: p.requestId }).catch(() => {});
+        return cdp.send('Fetch.fulfillRequest', {
+          requestId: p.requestId,
+          responseCode: 200,
+          responseHeaders: [{ name: 'content-type', value: 'application/json' }],
+          body: Buffer.from(JSON.stringify(shot.mock[key])).toString('base64')
+        }).catch(() => {});
+      });
+      await cdp.send('Fetch.enable', {
+        patterns: Object.keys(shot.mock).map((k) => ({ urlPattern: '*' + k + '*' }))
+      });
+    }
     // The app's own hash router, so the shot URL is the real deep link.
     const hash = typeof shot.hash === 'function' ? shot.hash() : shot.hash;
     const loaded = cdp.once('Page.loadEventFired');

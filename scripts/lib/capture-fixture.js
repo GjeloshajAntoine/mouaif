@@ -88,6 +88,10 @@ function createCdp(wsUrl) {
           listeners.add(fn);
         });
       },
+      // on(method, fn) — call fn(params) for every `method` event.
+      on(method, fn) {
+        listeners.add((msg) => { if (msg.method === method) fn(msg.params); });
+      },
       close() { try { ws.close(); } catch { /* ignore */ } }
     });
     ws.onmessage = (ev) => {
