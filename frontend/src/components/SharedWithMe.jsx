@@ -82,7 +82,7 @@ export function SharedWithMeView() {
   const added = (state.incoming || []).filter((s) => s.status === 'active');
   return h('section', { class: 'shared-in' },
     h('div', { class: 'view-head' },
-      h('a', { href: '#/projects/new', class: 'view-back', 'aria-label': 'Back to Add project' }, '‹'),
+      h('a', { href: '#/projects/new', class: 'view-back', 'aria-label': 'Back to Add project' }, '←'),
       h('h2', { class: 'view-title' }, 'Shared with me')),
     state.loaded && !state.enabled ? h('p', { class: 'share-sheet__warn' },
       'Adding a shared project needs app access. Start mouaif with --auth and set up an account.') : null,

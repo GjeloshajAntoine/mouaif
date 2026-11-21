@@ -151,7 +151,7 @@ export function ProjectPickerView(props) {
   const busy = status === 'registering…';
   return h('section', { class: 'picker' },
     h('div', { class: 'view-head' },
-      h('a', { href: '#/projects', class: 'view-back', 'aria-label': 'Back to projects' }, '‹'),
+      h('a', { href: '#/projects', class: 'view-back', 'aria-label': 'Back to projects' }, '←'),
       h('h2', { class: 'view-title' }, 'Add project')
     ),
     pendingShares ? h('button', {

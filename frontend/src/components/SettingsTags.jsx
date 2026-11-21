@@ -331,7 +331,7 @@ export function SettingsTagsView(props) {
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/' + back.path, class: 'view-back', 'aria-label': back.label }, '‹'),
+      h('a', { href: '#/' + back.path, class: 'view-back', 'aria-label': back.label }, '←'),
       h('h2', { class: 'view-title' }, 'File tags')
     ),
     // The scroll container. Flush routes (no tab bar) only scroll when

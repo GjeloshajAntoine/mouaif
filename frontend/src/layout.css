@@ -397,6 +397,11 @@ box-shadow: 0 1px 4px rgba(110,168,254,.25), inset 0 1px 0 rgba(255,255,255,.25)
   font-weight: 700;
   letter-spacing: -0.01em;
   margin: 0;
+  /* Pages that wrap their head in a <section> (Access, Dictation, Add
+     project, Shared with me) would otherwise pick up the small uppercase
+     `section h2` caption style below. */
+  text-transform: none;
+  color: var(--fg);
 }
 .page-bar__status {
   flex: 1;
