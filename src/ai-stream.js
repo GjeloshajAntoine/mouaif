@@ -216,7 +216,7 @@ async function runSingleToolCall(c, cx) {
   // (which is governed by the Skills switches rather than the tool allowlist)
   // bypass the tool filter.
   if (!opts?.singleToolCall && c.name !== 'activate_skill') {
-    if (opts?.nestedSubagent && ((Array.isArray(opts.enabledTools) && !toolListed(opts.enabledTools, c.name)) || opts.inheritedPermissions?.[c.name]?.mode === 'off')) {
+    if (opts?.nestedSubagent && ((Array.isArray(opts.enabledTools) && !toolListed(opts.enabledTools, c.name)) || inheritedOff(opts, c.name))) {
       const result = { error: { code: 'ETOOL_DISABLED', message: 'tool is outside the inherited child surface' } };
       onEvent('tool_call', { id: c.id || null, name: c.name, args });
       onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result });
@@ -546,7 +546,9 @@ async function runSingleToolCall(c, cx) {
       const subagentGrant = subagentGrantScopes(opts);
       const authResult = await authGate.authorize({
       forcePrompt: forcePrompt || !!hookAsk,
-      inheritAsk: !!(opts.inheritedPermissions?.[c.name] && !['allow', 'off'].includes(opts.inheritedPermissions[c.name].mode)),
+      // A subagent's calls inherit the chat's permission as a ceiling. The
+      // gate reads it live, so a change made during the run reaches it.
+      inheritAsk: !!(opts && opts.nestedSubagent),
       grantScopes: subagentGrant.scopes,
       subagent: subagentGrant.subagent,
       signal: opts && opts.signal,
@@ -833,6 +835,15 @@ function agentLimits(projectDir, name) {
 // For a call made inside a subagent: the author ids of its run and every
 // ancestor run (own first), which key the approval grants made on a
 // subagent's card, plus what the card names. Empty for the main agent.
+// inheritedOff(opts, name) -> true when the chat's CURRENT permission for this
+// tool is off. A subagent shares its chat's id, so this is the permission the
+// main agent sees too; a subagent started before the change follows it.
+function inheritedOff(opts, name) {
+  if (!opts.projectDir) return false;
+  try { return require('./tools/authorization.js').effectiveConfig(opts.projectDir, name, opts.chatId).mode === 'off'; }
+  catch { return false; }
+}
+
 function subagentGrantScopes(opts) {
   const scopes = [];
   let run = opts && opts.nestedSubagent && opts.orchestrationScope ? opts.orchestrationScope.owner : null;
@@ -2796,11 +2807,6 @@ promptSize: callOpts && callOpts.promptSize,
 
         toolOutput: callOpts && callOpts.toolOutput,
         enabledTools: nestedEnabled,
-        inheritedPermissions: Object.fromEntries(nestedEnabled.map((name) => {
-        const current = require('./tools/authorization.js').effectiveConfig(callOpts.projectDir, name, callOpts.chatId);
-        const inherited = opts.inheritedPermissions?.[name];
-        return [name, inherited && inherited.mode !== 'allow' ? inherited : current];
-        })),
         // Per-round billing for the live delegated cost (see above).
         onRoundCommit: forwardNestedRound,
         onDelegatedUsage: (report) => {

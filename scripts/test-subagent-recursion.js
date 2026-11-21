@@ -1,5 +1,9 @@
 'use strict';
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+process.env.MOUAIF_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-recursion-home-'));
 const { Scope } = require('../src/tools/subagent-orchestration.js');
 const tick = () => new Promise((r) => setImmediate(r));
 const result = () => ({ ok: true, result: { text: 'done' } });
@@ -74,10 +78,13 @@ const result = () => ({ ok: true, result: { text: 'done' } });
   holds.forEach((r) => r());
   await unlimited.finish();
   await assert.rejects(unlimited.acquire(), { code: 'EABORTED' });
-  // Inherited off rejects even with a currently enabled advertised name, before dispatch/approval.
+  // A tool turned off after the subagent started (still on its advertised
+  // list) rejects before dispatch/approval: the ceiling is read live.
   let effects = 0;
   const { runSingleToolCall } = require('../src/ai-stream.js');
-  const denied = await runSingleToolCall({ name: 'shell', id: 'forged', arguments: '{}' }, { opts: { nestedSubagent: true, enabledTools: ['shell'], inheritedPermissions: { shell: { mode: 'off' } } }, onEvent() {}, dispatchTool: () => { effects++; } });
+  const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-recursion-project-'));
+  require('../src/settings.js').setProject(projectDir, { tools: { shell: { mode: 'off' } } });
+  const denied = await runSingleToolCall({ name: 'shell', id: 'forged', arguments: '{}' }, { opts: { nestedSubagent: true, projectDir, chatId: 'c', enabledTools: ['shell'] }, onEvent() {}, dispatchTool: () => { effects++; } });
   assert.equal(denied.exec.result.error.code, 'ETOOL_DISABLED'); assert.equal(effects, 0);
   console.log('recursive scope: rooted identities, local controls, visibility, upward arbitration, depth/total budgets, unlimited concurrency, subtree cancellation and ancestor deadlock rejection passed');
 })().catch((e) => { console.error(e); process.exitCode = 1; });

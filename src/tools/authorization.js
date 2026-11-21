@@ -665,6 +665,7 @@ function setAppMcpAuthorization(patch) {
   if (Object.prototype.hasOwnProperty.call(shaped, 'allowlist')) auth.allowlist = shaped.allowlist;
   else delete auth.allowlist;
   require('../content/service.js').writeType({ type: 'mcpAuthorization', scope: 'app', value: auth, via: 'route' });
+  settleLater({});
   return getAppMcpAuthorization();
 }
 
@@ -762,6 +763,8 @@ function setChatAuthorization(projectDir, chatId, patch) {
   }
   const empty = !Object.keys(next.native).length && !next.mcp;
   chats.updateChat(projectDir, chatId, { toolAuth: empty ? null : next });
+  // A prompt already up in this chat follows the new permission.
+  settleLater({ projectDir, chatId });
   return getAuthorization(projectDir, chatId);
 }
 
@@ -859,6 +862,7 @@ function setAuthorization(projectDir, patch) {
   }
   if (!Object.keys(next).length && !patch.mcp) throw typedError('EBADINPUT', 'tools.shell, tools.file, or mcp authorization is required');
   if (Object.keys(next).length) settings.setProject(projectDir, next);
+  settleLater({ projectDir });
   return getAuthorization(projectDir);
 }
 
@@ -926,6 +930,116 @@ function clampTimeout(requested, config) {
   return Math.max(1, Math.min(config.maxTimeoutMs, value));
 }
 
+// The parts of a call the gate judges it by, kept on a parked prompt so it can
+// be judged again when a grant or a permission changes (settleAnsweredPrompts).
+function gateCheck(input) {
+  return {
+    tool: input.tool,
+    // `forcePrompt` marks one call that must reach the user even when the
+    // tool is `allow`, allowlisted, or session-granted (e.g. update_settings
+    // writing permission keys). Only a decision on this very call resolves it.
+    forcePrompt: input.forcePrompt === true,
+    // A subagent call carries its own run's author id first, then its
+    // ancestors'. A grant made on that subagent's (or an ancestor
+    // subagent's) card answers it.
+    grantScopes: Array.isArray(input.grantScopes) ? input.grantScopes.filter((x) => typeof x === 'string' && x) : [],
+    // A subagent call (inherited permissions): while the chat's permission
+    // for the tool is ask or allowlist, chat-wide grants and the allowlist do
+    // not answer it, only the subagent's own grants do. Read against the
+    // CURRENT permission, so switching the tool to Allow during a run reaches
+    // the subagents already running.
+    inheritAsk: input.inheritAsk === true,
+    args: input.args,
+    cmd: input.cmd,
+    summary: input.summary,
+    shell: input.shell
+  };
+}
+
+// answeredWithoutPrompt(session, config, check) -> Promise<boolean>
+//
+// Whether the gate allows the call without asking: a grant made on this
+// subagent's card, a chat-wide session grant, the tool's `allow` mode or its
+// allowlist. Binary-mode tools (`ask_user`) and `forcePrompt` calls always
+// reach the user: no session state may silently resolve them.
+async function answeredWithoutPrompt(session, config, check) {
+  const tool = check.tool;
+  if (BINARY_MODE_TOOLS.has(tool) || check.forcePrompt) return false;
+  if (check.grantScopes.some((s) => session.scopedGrants.get(s)?.has(tool))) return true;
+  if (check.inheritAsk && config.mode !== 'allow') return false;
+  if (session.grants.has(tool)) return true;
+  if (config.mode === 'allow') return true;
+  if (config.mode !== 'allowlist') return false;
+  // A batch is approved only when EVERY target matches. Matching just
+  // the first path (or a combined summary) could approve unlisted files.
+  // The same rule covers `group_cli`, where the targets are commands:
+  // one listed command must not vouch for the rest of the batch.
+  const batchKey = tool === 'group_read' ? 'files' : tool === 'group_edit' ? 'edits' : tool === 'group_cli' ? 'commands' : null;
+  if (batchKey) {
+    const items = check.args && check.args[batchKey];
+    if (!Array.isArray(items) || !items.length || items.length > MAX_BATCH_ENTRIES) return false;
+    for (const item of items) {
+      const target = batchKey === 'commands'
+        ? (item && (typeof item.cmd === 'string' ? item.cmd : item.command))
+        : (item && (item.path || item.file));
+      if (typeof target !== 'string' || !target) return false;
+      const itemShell = batchKey === 'commands' && item && typeof item.shell === 'string' ? item.shell : check.shell;
+      const matches = batchKey === 'commands'
+        ? await matchesShellAllowlist(target, itemShell, config.allowlist)
+        : await matchesAllowlist(target, config.allowlist);
+      if (!matches) return false;
+    }
+    return true;
+  }
+  if (tool === 'shell') return matchesShellAllowlist(check.cmd || check.summary || '', check.shell, config.allowlist);
+  return matchesAllowlist(check.summary || check.cmd || '', config.allowlist);
+}
+
+// settleAnsweredPrompts({ projectDir?, chatId? }) -> Promise<number>
+//
+// Judge the parked prompts again after something that may answer them
+// changed: a Session / Always grant on another card (parallel subagents often
+// ask for the same tool at once), or the chat's, project's or app's
+// permissions. A prompt the gate would now allow is allowed and one whose
+// tool is now off is refused; either way its card goes away in every tab (the
+// `auth_pending` notice). With no projectDir every chat is checked. Returns how
+// many prompts were settled.
+async function settleAnsweredPrompts(scope) {
+  const { projectDir, chatId } = scope || {};
+  let settled = 0;
+  for (const session of Array.from(sessions.values())) {
+    if (projectDir && session.projectDir !== projectDir) continue;
+    if (chatId && session.chatId !== chatId) continue;
+    for (const [callId, pending] of Array.from(session.pending)) {
+      if (!pending.check || BINARY_MODE_TOOLS.has(pending.tool)) continue;
+      let outcome = null;
+      try {
+        const config = effectiveConfig(session.projectDir, pending.tool, session.chatId);
+        if (!config.enabled || config.mode === 'off') outcome = 'off';
+        else if (await answeredWithoutPrompt(session, config, pending.check)) outcome = 'allow';
+      } catch { continue; }
+      // Answered on its own card while the allowlist was being matched.
+      if (!outcome || session.pending.get(callId) !== pending) continue;
+      session.pending.delete(callId);
+      settled++;
+      if (outcome === 'off') {
+        appendAudit(session.projectDir, session.chatId, pending.tool, callId, 'disabled');
+        pending.reject(typedError('ETOOL_DISABLED', pending.tool + ' is disabled'));
+      } else {
+        if (pending.flow === 'retry') session.allowedCallIds.set(callId, pending.tool);
+        appendAudit(session.projectDir, session.chatId, pending.tool, callId, 'allow-auto');
+        pending.resolve({ decision: 'allow' });
+      }
+    }
+  }
+  return settled;
+}
+
+function settleLater(scope) {
+  if (!sessions.size) return;
+  setImmediate(() => { settleAnsweredPrompts(scope).catch(() => {}); });
+}
+
 async function authorize(input) {
   const projectDir = input && input.projectDir;
   const chatId = input && input.chatId;
@@ -943,61 +1057,15 @@ async function authorize(input) {
   if (!config.enabled || config.mode === 'off') throw typedError('ETOOL_DISABLED', tool + ' is disabled');
 
   const session = getSession(projectDir, chatId);
-  // Binary-mode tools (`ask_user`) must ALWAYS reach the prompt: the user
-  // is the only source of truth, so no session state may silently resolve
-  // the gate. A stale deny or grant would otherwise short-circuit here and
-  // the dispatcher would fall back to a `cancelled: true` result even
-  // though the user was never asked (or already answered a re-issued call).
-  // `forcePrompt` marks one call that must reach the user even when the
-  // tool is `allow`, allowlisted, or session-granted (e.g. update_settings
-  // writing permission keys). Only a decision on this very call resolves it.
-  const forcePrompt = input.forcePrompt === true;
-  // A subagent call carries its own run's author id first, then its
-  // ancestors'. `inheritAsk` means the parent's permission for this tool was
-  // `ask`: chat-wide grants and an `allow` config do not answer it, but a
-  // grant made on this subagent's (or an ancestor subagent's) card does.
-  const grantScopes = Array.isArray(input.grantScopes) ? input.grantScopes.filter((x) => typeof x === 'string' && x) : [];
-  const inheritAsk = input.inheritAsk === true;
   if (!BINARY_MODE_TOOLS.has(tool)) {
     if (session.deniedCallIds.has(callId)) throw typedError('EDENIED', 'user denied');
-    if (!forcePrompt && grantScopes.some((s) => session.scopedGrants.get(s)?.has(tool))) return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
-    if (!forcePrompt && !inheritAsk && session.grants.has(tool)) return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
     if (session.allowedCallIds.get(callId) === tool) {
       session.allowedCallIds.delete(callId);
       return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
     }
   }
-  if (!forcePrompt && !inheritAsk && config.mode === 'allow') return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
-  if (!forcePrompt && !inheritAsk && config.mode === 'allowlist') {
-    // A batch is approved only when EVERY target matches. Matching just
-    // the first path (or a combined summary) could approve unlisted files.
-    // The same rule covers `group_cli`, where the targets are commands:
-    // one listed command must not vouch for the rest of the batch.
-    const batchKey = tool === 'group_read' ? 'files' : tool === 'group_edit' ? 'edits' : tool === 'group_cli' ? 'commands' : null;
-    const items = batchKey && input.args && input.args[batchKey];
-    let allowed = false;
-    if (batchKey) {
-      allowed = Array.isArray(items) && items.length > 0 && items.length <= MAX_BATCH_ENTRIES;
-      for (const item of allowed ? items : []) {
-        const target = batchKey === 'commands'
-          ? (item && (typeof item.cmd === 'string' ? item.cmd : item.command))
-          : (item && (item.path || item.file));
-        const itemShell = batchKey === 'commands' && item && typeof item.shell === 'string' ? item.shell : input.shell;
-        const matches = batchKey === 'commands'
-        ? await matchesShellAllowlist(target, itemShell, config.allowlist)
-        : await matchesAllowlist(target, config.allowlist);
-        if (typeof target !== 'string' || !target || !matches) {
-        allowed = false;
-        break;
-        }
-      }
-    } else if (tool === 'shell') {
-    allowed = await matchesShellAllowlist(input.cmd || input.summary || '', input.shell, config.allowlist);
-    } else {
-    allowed = await matchesAllowlist(input.summary || input.cmd || '', config.allowlist);
-    }
-    if (allowed) return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
-  }
+  const check = gateCheck(input);
+  if (await answeredWithoutPrompt(session, config, check)) return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
 
   const existing = session.pending.get(callId);
   if (existing) return existing.publicResult;
@@ -1017,11 +1085,12 @@ async function authorize(input) {
     resolve: (value) => { cleanupAbort(); resolveWait(value); },
     reject: (value) => { cleanupAbort(); rejectWait(value); },
     publicResult,
-    grantScope: grantScopes[0] || null,
+    check,
+    grantScope: check.grantScopes[0] || null,
     request: {
       chatId,
       // Which subagent asks; its card's grant covers only that subagent.
-      subagent: grantScopes.length && input.subagent && typeof input.subagent === 'object' ? input.subagent : undefined,
+      subagent: check.grantScopes.length && input.subagent && typeof input.subagent === 'object' ? input.subagent : undefined,
       callId,
       tool,
       cmd: input.cmd,
@@ -1108,6 +1177,13 @@ function recordDecision(projectDir, chatId, callId, decision, payload) {
   if (decision === 'deny' && !binary) session.deniedCallIds.add(callId);
 
   appendAudit(projectDir, chatId, pending.tool, callId, decision);
+  // A Session / Always grant answers the other prompts already up for the
+  // same tool (parallel subagents, or the main agent and a subagent). Always
+  // on a main-agent card also changed the project setting, so every chat in
+  // the project is checked.
+  if (!binary && (decision === 'allow-session' || decision === 'allow-always')) {
+    settleLater(decision === 'allow-always' && !pending.grantScope ? { projectDir } : { projectDir, chatId });
+  }
   if (decision === 'deny') pending.reject(typedError('EDENIED', 'user denied'));
   else {
     // `ask_user` carries a structured answer alongside the decision
@@ -1154,6 +1230,7 @@ getAuthorization,
   clearGrants,
   cancelSession,
   listPending,
+  settleAnsweredPrompts,
   // Attach a completed shell review to a parked approval request so a
   // reconnecting client still sees the verdict (see src/shellReview.js).
   attachReview,
