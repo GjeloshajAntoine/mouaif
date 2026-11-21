@@ -133,13 +133,13 @@ check('the actions group does not stretch to a full row',
 check('Refresh collapses to its icon',
   /display:\s*none/.test(narrowRule(REVIEWER + ' .wp__action--refresh span')), narrowRule(REVIEWER + ' .wp__action--refresh span') || 'no rule');
 check('the Refresh icon keeps a 44px tap target',
-  /min-width:\s*44px/.test(narrowRule(REVIEWER + ' .wp__action--refresh')) ||
-  /min-width:\s*44px/.test(baseRule('.wp__action')));
+  /min-width:\s*(44px|var\(--tap\))/.test(narrowRule(REVIEWER + ' .wp__action--refresh')) ||
+  /min-width:\s*(44px|var\(--tap\))/.test(baseRule('.wp__action')));
 check('the size select is capped but wide enough for its longest option',
   /max-width:\s*7\.5rem/.test(narrowRule(REVIEWER + ' .wp__size-select')));
 check('the title block and Refresh are 44px tall in the row',
-  /min-height:\s*44px/.test(narrowRule(HEAD + '-text')) &&
-  /min-height:\s*44px/.test(baseRule('.wp__action')));
+  /min-height:\s*(44px|var\(--tap\))/.test(narrowRule(HEAD + '-text')) &&
+  /min-height:\s*(44px|var\(--tap\))/.test(baseRule('.wp__action')));
 // The Refresh action is the only control in this header whose contents are a
 // bare glyph on a phone (its label is hidden at <= 430px). `.wp__action` did
 // not centre its contents, so the 14px glyph sat at `padding-left: 4px`: 5px
@@ -152,8 +152,8 @@ check('the title block and Refresh are 44px tall in the row',
 check('the Refresh glyph is centred in its button',
   /justify-content:\s*center/.test(baseRule('.wp__action')), baseRule('.wp__action') || 'no rule');
 check('the size select and close button are 44px tall',
-  /min-height:\s*44px/.test(baseRule('.wp__size-select')) &&
-  /min-height:\s*44px/.test(baseRule('.wp__close')));
+  /min-height:\s*(44px|var\(--tap\))/.test(baseRule('.wp__size-select')) &&
+  /min-height:\s*(44px|var\(--tap\))/.test(baseRule('.wp__close')));
 // The close button is only absolutely positioned in a *wrapped* header. In the
 // single-row layout it is back in the flow, which is what keeps it at the end
 // of the row without any safe-area arithmetic. Offsetting it with

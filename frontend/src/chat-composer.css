@@ -2504,8 +2504,9 @@ align-items: center;
   mirrored Refresh buttons now centre their glyphs the same way. */
 justify-content: center;
 gap: 4px;
-min-width: 30px;
-min-height: 30px;
+/* Keep the full tap area even when the action only shows an icon. */
+min-width: var(--tap);
+min-height: var(--tap);
 padding: 0 8px;
   font-size: 0.74rem;
   font-weight: 600;
@@ -2580,7 +2581,7 @@ color: var(--fg-soft);
 }
 /* Refresh and Full are icon-only at every width; the title attribute names them. */
 .wp__sheet:not(.wp__prompt-sheet) .wp__action--refresh,
-.wp__sheet:not(.wp__prompt-sheet) .wp__action--fs { width: 30px; padding: 0; }
+.wp__sheet:not(.wp__prompt-sheet) .wp__action--fs { width: var(--tap); padding: 0; }
 .wp__sheet:not(.wp__prompt-sheet) .wp__action--refresh span,
 .wp__sheet:not(.wp__prompt-sheet) .wp__action--fs span { display: none; }
 .wp__mode-btn--on { box-shadow: none; }
@@ -2589,8 +2590,8 @@ own touch picker instead of maintaining a custom popover. */
 .wp__size-select {
 flex: 0 1 7.5rem;
 min-width: 0;
-height: 30px;
-min-height: 30px;
+height: var(--tap);
+min-height: var(--tap);
 padding: 0 0.5rem;
 font: inherit;
 font-size: 0.72rem;
@@ -2668,10 +2669,10 @@ border-radius: var(--r-sm);
 .wp__close,
 .mcp-err__close {
   flex: 0 0 auto;
-  width: 30px;
-  height: 30px;
-  min-width: 30px;
-  min-height: 30px;
+  width: var(--tap);
+  height: var(--tap);
+  min-width: var(--tap);
+  min-height: var(--tap);
   border: 0;
   background: transparent;
   color: var(--fg-soft);
@@ -2717,10 +2718,9 @@ border-radius: var(--r-sm);
     positioned only to float above the wrapped row) and keeps its 44px
     tap target, as does every other control here — a 36px ✕ would have
     fit more comfortably but is below the project's --tap minimum.
-  The head's vertical padding is 2px (was 5px) and the gaps 6px (was
-  8px), so the row is 49px: the 44px controls plus 2px + 2px padding and
-  the 1px border. The controls set the height; do not shrink them below
-  --tap to save more.
+  The head's vertical padding is 4px and the gaps 4-6px, so the row is
+  53px: the 44px controls plus 4px + 4px padding and the 1px border.
+  The controls set the height; do not shrink them below --tap to save more.
   Scope is the viewer only. The URL prompt sheet has a single close button
   and never wrapped, so it keeps its own single row untouched. */
 .wp__sheet:not(.wp__prompt-sheet) .wp__head {
@@ -2732,6 +2732,7 @@ padding: 4px 4px 4px 10px;
 .wp__sheet:not(.wp__prompt-sheet) .wp__head-text {
 flex: 1 1 auto;
 min-width: 0;
+min-height: var(--tap);
 justify-content: center;
 }
 .wp__sheet:not(.wp__prompt-sheet) .wp__head-actions {
