@@ -276,7 +276,7 @@ function progressCoalescingTest() {
 function clientHandlerTest() {
   console.log('live.js dispatches the follower text path');
   const liveSrc = fs.readFileSync(path.join(__dirname, '../frontend/src/components/chat/live.js'), 'utf8');
-  t('handleLiveRunEnd invokes state._kickPoll', liveSrc.includes("if (typeof state._kickPoll === 'function') state._kickPoll();"));
+  t('handleLiveRunEnd invokes state._kickSync', liveSrc.includes("if (typeof state._kickSync === 'function') state._kickSync();"));
   // The follower must resume the older-history drain when the run ends; it
   // bails while a run is in flight and nothing else restarted it.
   t('handleLiveRunEnd resumes the older-history drain', liveSrc.includes('state._drainOlderMessages'));

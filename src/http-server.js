@@ -138,14 +138,22 @@ function dispatchShareRequest(req, res, activePort, sessionToken, lifecycle, ser
   if (!route || (route.access === 'full' && caller.access !== 'full')) {
     return sendJSON(res, 403, { error: 'This is not available through a shared project', code: 'ESHARE_ROUTE' });
   }
-  // The terminal's live output: only `cli_output` frames of the shared
-  // project's own terminal session reach a share caller.
+  // The app event stream: a share caller only gets notices about the shared
+  // project (its chats, approvals, hooks…) and, with full access, the
+  // `cli_output` frames of that project's own terminal session.
   if (parsed.pathname === '/events') {
-    return handleSSE(req, res, (event, data) => event === 'cli_output' && !!data
-      && shareGate.sameDir(cliSessionDir(data.id), caller.projectDir));
+    return handleSSE(req, res, (event, data) => {
+      if (!data) return false;
+      if (event === 'cli_output') {
+        return caller.access === 'full' && shareGate.sameDir(cliSessionDir(data.id), caller.projectDir);
+      }
+      return appEvents.PROJECT_EVENTS.has(event) && shareGate.sameDir(data.projectDir, caller.projectDir);
+    });
   }
   return dispatchRequest(req, res, activePort, sessionToken, lifecycle, Object.assign({}, serverConfig, { shareCaller: caller }));
 }
+
+const appEvents = require('./app-events.js');
 
 function cliSessionDir(id) {
   if (!id) return '';

@@ -93,8 +93,9 @@ function destroyOpenSockets() {
   openSockets.clear();
 }
 
-// Store connected SSE clients
-const sseClients = new Set();
+// Connected /events clients (src/app-events.js).
+const appEvents = require('./app-events.js');
+const sseClients = appEvents.clients;
 
 // Chats with an in-flight streaming run. handleChatStream registers a
 // chat here for the lifetime of its SSE response; GET /api/chats/:id
@@ -102,7 +103,28 @@ const sseClients = new Set();
 // reloads mid-run can re-enter its busy/streaming state instead of
 // showing the transcript frozen. In-memory (not persisted): a process
 // restart ends every run anyway, so nothing survives to clear.
-const runningChats = new Set();
+// Starting or ending a run tells every open page (a `chat_run` notice), so a
+// tab or device that is not running the chat follows it without polling.
+class RunningChats extends Set {
+  add(key) {
+    const added = !this.has(key);
+    super.add(key);
+    if (added) notifyRun(key, true);
+    return this;
+  }
+  delete(key) {
+    const removed = super.delete(key);
+    if (removed) notifyRun(key, false);
+    return removed;
+  }
+}
+function notifyRun(key, running) {
+  const text = String(key);
+  const at = text.lastIndexOf('::');
+  if (at < 0) return;
+  appEvents.chatRunChanged(text.slice(0, at), text.slice(at + 2), running);
+}
+const runningChats = new RunningChats();
 const runningChatCancels = new Map();
 const accessAttempts = new Map();
 const liveChat = require('./live-chat.js');
@@ -186,45 +208,9 @@ return safe;
 
 // ---- SSE ----------------------------------------------------------------
 
-// `filter(event, data)` (optional) limits what one client receives. A shared
-// project's terminal uses it: a share caller only gets its own session's
-// `cli_output` frames (src/http-server.js → dispatchShareRequest).
-function handleSSE(req, res, filter) {
-  if (typeof filter === 'function') res.__eventFilter = filter;
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive'
-  });
-
-  // Send initial connection event
-  res.write(`data: ${JSON.stringify({ type: 'connected', message: 'SSE connection established' })}\n\n`);
-
-  sseClients.add(res);
-
-  // Heartbeat every 30s to keep connection alive
-  const heartbeat = setInterval(() => {
-    res.write(': heartbeat\n\n');
-  }, 30000);
-
-  req.on('close', () => {
-    sseClients.delete(res);
-    clearInterval(heartbeat);
-  });
-}
-
-// Broadcast an event to all SSE clients
-function broadcast(event, data) {
-  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  for (const client of sseClients) {
-    if (client.__eventFilter) {
-      let pass = false;
-      try { pass = client.__eventFilter(event, data); } catch { pass = false; }
-      if (!pass) continue;
-    }
-    client.write(payload);
-  }
-}
+// The app event stream lives in src/app-events.js so the stores can notify
+// it without requiring this module.
+const { handleSSE, broadcast } = appEvents;
 
 // ---- Request authorization helpers -------------------------------------
 

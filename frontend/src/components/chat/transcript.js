@@ -3327,6 +3327,11 @@ export function syncTranscriptAppend(state, refs, prevCount) {
   if (!transcriptEl) return;
   const total = state.messages.length;
   if (total <= prevCount) return;
+  // The agent network dock folds the same rows. The full and keyed paths
+  // sync it; without this, rows that arrive by the poll's pure append (a
+  // background subagent's result or start after its turn ended) left the
+  // dock's names and statuses stale until the chat was reopened.
+  syncAgentNetwork(state);
   // If the transcript is still in its empty state (setup card + empty
   // state only), fall back to a full render so the setup card and
   // system prompt mount in the right order. A full render re-owns the

@@ -343,7 +343,7 @@ function handleLiveRunEnd(ev, refs, state, key) {
   else if (outcome === 'stopped') setChatStatus(refs, 'stopped', 'success');
   else setChatStatus(refs, 'done', 'success');
   // Drop a live bubble that never got its `assistant_turn_end` (the run died
-  // mid-segment). The final persisted row arrives with the kickPoll below, so
+  // mid-segment). The final persisted row arrives with the sync kicked below, so
   // leaving the un-finalized node would show the turn twice.
   clearLiveSegment(refs, state);
   resetFollowerMeta(state);
@@ -353,9 +353,9 @@ function handleLiveRunEnd(ev, refs, state, key) {
   // in flight (the tail is being written), and nothing restarted it
   // afterwards — so history only appeared when the user scrolled to the top.
   if (typeof state._drainOlderMessages === 'function') state._drainOlderMessages();
-  // Immediately sync the final persisted message so the transcript
-  // paints the completed turn without waiting for the next idle poll.
-  if (typeof state._kickPoll === 'function') state._kickPoll();
+  // Sync the final persisted message so the transcript paints the
+  // completed turn now (the `chat_run` notice may still be on its way).
+  if (typeof state._kickSync === 'function') state._kickSync();
 }
 
 // setLiveStatus(refs, data)

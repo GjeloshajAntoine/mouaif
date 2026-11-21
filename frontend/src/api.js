@@ -393,6 +393,13 @@ if (rawFetch) {
   };
 }
 
+// whenSharesReady() -> Promise — resolves once the first share list is in, so
+// a caller that cannot go through fetch (EventSource) routes a shared
+// project's stream correctly.
+export function whenSharesReady() {
+  return sharesReady ? sharesReady.then(() => undefined, () => undefined) : Promise.resolve();
+}
+
 export async function shareApi(method, url, body) {
   const r = await fetchJson(url, body === undefined ? { method } : {
     method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)

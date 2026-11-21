@@ -84,8 +84,9 @@ const ROUTES = [
   R(['POST'], exact('/api/tools/webpreview'), 'full'),
   R('*', under('/api/actions'), 'full'),
   R('*', under('/api/hooks/project'), 'full'),
-  // The terminal's live output (the only events a share caller receives).
-  R(['GET'], exact('/events'), 'full', { noProject: 'events' })
+  // The app event stream: notices about the shared project, and with full
+  // access its terminal's output (filtered in src/http-server.js).
+  R(['GET'], exact('/events'), 'files', { noProject: 'events' })
 ];
 
 const ACCESS_RANK = { files: 1, full: 2 };

@@ -749,11 +749,12 @@ async function syncToNextSeq(state, refs, serverNextSeq) {
 // startStreamRecovery / stopStreamRecovery
 //
 // When the live stream drops mid-turn the server keeps writing the
-// run to the transcript file, so we recover by syncing from disk via
-// the single reconcile poll (useChatState). Recovery does NOT run its
-// own timer: it sets the `reconnect` flags and kicks the shared poll
-// once so the first sync happens immediately; the poll tick() then
-// keeps running the recovery sync while reconnect.active is set.
+// run to the transcript, so we recover by syncing from the store via
+// the chat's catch-up sync (useChatState). Recovery does NOT run its
+// own timer: it sets the `reconnect` flags and kicks the sync once so
+// the first sync happens immediately; after that the app event stream's
+// `chat_rows` / `chat_run` notices run the recovery sync again while
+// reconnect.active is set (docs/features/live-events.md).
 export function startStreamRecovery(state, refs, partialText) {
   const st = state.reconnect;
   st.active = true;
@@ -765,7 +766,7 @@ export function startStreamRecovery(state, refs, partialText) {
   // When starting recovery, update any shell call cards that are on
   // screen to show 'reconnecting' instead of 'Running'. The live
   // SSE stream is gone, so their output preview stays empty until the
-  // final tool_result arrives via the reconcile poll. Without this
+  // final tool_result arrives via the catch-up sync. Without this
   // hint the user sees a spinner with zero output and no feedback.
   if (refs.transcript && refs.transcript.current) {
     const shellCards = refs.transcript.current.querySelectorAll(
@@ -777,9 +778,8 @@ export function startStreamRecovery(state, refs, partialText) {
     }
   }
   setChatStatus(refs, 'connection lost — reconnecting…', 'busy');
-  // Kick the shared poll now — it may be parked at the idle 3 s/6 s
-  // interval, and the first disk sync should happen straight away.
-  if (typeof state._kickPoll === 'function') state._kickPoll();
+  // Sync now: the first recovery sync should not wait for a notice.
+  if (typeof state._kickSync === 'function') state._kickSync();
 }
 
 export function stopStreamRecovery(state) {

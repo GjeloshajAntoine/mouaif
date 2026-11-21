@@ -119,6 +119,7 @@ One page per feature: what it does and how to use it.
 - [Simplified tool view](features/simplified-tool-view.md) — your own tool categories for the chat's Tools list, set per project.
 - [Tool card expanded view](features/tool-card-expanded-view.md) — what an expanded tool card shows, for every tool type.
 - [Live tool preview](features/live-tool-preview.md) — live tool output when you return to a running chat.
+- [Live events](features/live-events.md) — one event stream per tab tells the page when a chat, run or approval changed, instead of polling.
 - [Shell tool](features/shell-tool.md) — the model runs commands in the project and reads the output.
 - [Shell review](features/shell-review.md) — a second model reads a command before you approve it, with its own model, prompt, and review button.
 - [Tool wording](features/tool-overrides.md) — named wording sets for tool descriptions and field names; copy Built-in, edit, compare, import, and pick the set a project's chats use.

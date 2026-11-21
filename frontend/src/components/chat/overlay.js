@@ -53,6 +53,19 @@ const selector = '.tool-card--authorization[data-auth-call-id="' + cssEscape(Str
 for (const card of refs.transcript.current.querySelectorAll(selector)) card.remove();
 }
 
+// removeSettledPromptCard(refs, callId)
+//
+// A prompt was answered somewhere else (another tab or device): drop its
+// card here. A card this page is submitting itself (`aria-busy`) is left to
+// finish on its own, so it can show its decision.
+export function removeSettledPromptCard(refs, callId) {
+if (!callId || !refs || !refs.transcript || !refs.transcript.current) return;
+const id = cssEscape(String(callId));
+const selector = '.tool-card--authorization[data-auth-call-id="' + id + '"]:not([aria-busy="true"]),' +
+'.tool-card--ask-user[data-auth-call-id="' + id + '"]:not([aria-busy="true"])';
+for (const card of refs.transcript.current.querySelectorAll(selector)) card.remove();
+}
+
 export function removeOverlayCards(refs) {
 if (!refs || !refs.transcript || !refs.transcript.current) return;
 for (const card of refs.transcript.current.querySelectorAll('.tool-card--authorization[data-auth-call-id], .tool-card--ask-user[data-auth-call-id], [data-auth-decision-id]')) {

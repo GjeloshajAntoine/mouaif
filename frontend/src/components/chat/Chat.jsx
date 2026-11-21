@@ -956,7 +956,9 @@ return h('div', {
 // defaults): a dozen modules write to `refs.status`. The CSS modifier hides
 // the text but keeps the safe-area inset and any error state.
 h('div', { class: 'chat-view__status-row' + (composerTools.status ? '' : ' chat-view__status-row--hidden') },
-  h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' })
+  h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' }),
+  // The app event stream is down: what is on screen may lag behind.
+  s.liveDown ? h('span', { class: 'chat-view__live-down', role: 'status' }, 'Live updates unavailable — showing saved state') : null
   )
 ),
 openSheet && chatId

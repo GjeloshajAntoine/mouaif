@@ -117,6 +117,7 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Tool card expanded view](tool-card-expanded-view.md) — what an expanded tool card shows, for every tool type.
 - [Readable tool approvals and results](tool-card-usability.md) — clear targets, grant scope, retry feedback, and bounded results.
 - [Live tool preview](live-tool-preview.md) — live tool output when you return to a running chat.
+- [Live events](live-events.md) — one event stream per tab tells the page when a chat, run or approval changed, instead of polling.
 - [Shell tool](shell-tool.md) — the model runs commands in the project and reads the output.
 - [Shell review](shell-review.md) — a second model reads a command before you approve it, with its own model, prompt, and review button.
 - [Tool wording](tool-overrides.md) — named wording sets for tool descriptions and field names; copy Built-in, edit, compare, import, and pick the set a project's chats use.

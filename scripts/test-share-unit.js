@@ -182,11 +182,14 @@ async function main() {
 
   await test('files only: shell, terminal, commands and git writes are refused', () => {
     for (const [method, url] of [['POST', '/api/tools/shell'], ['GET', '/api/tools/cli/session'], ['POST', '/api/git'],
-      ['POST', '/api/actions/run'], ['POST', '/api/mcp/servers/x/start'], ['POST', '/api/chats/c1/hooks'], ['GET', '/events']]) {
+      ['POST', '/api/actions/run'], ['POST', '/api/mcp/servers/x/start'], ['POST', '/api/chats/c1/hooks']]) {
       assert.throws(() => check(files, method, url, { projectDir }, { projectDir }), { code: 'ESHARE_FILES_ONLY' }, method + ' ' + url);
       check(full, method, url, { projectDir }, { projectDir });
     }
     check(files, 'GET', '/api/mcp/servers', { projectDir });
+    // The event stream is open to a files-only caller; its terminal output
+    // is filtered out per frame (src/http-server.js).
+    check(files, 'GET', '/events', { projectDir });
   });
 
   await test('tool gate: per caller, not per project', async () => {

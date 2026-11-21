@@ -38,6 +38,11 @@ import { autoresize, onComposerInput, onComposerKey, clearComposerDraft, queueCo
 import { syncThinkingSelect, commitThinkingCustom } from './thinking.js';
 import { send as sendTurn, retryFailedTurn, runShellCommand, runMcpCommand, runCustomAction, runRestartCommand, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat, loadOlderMessages, loadAllOlderMessages, abortStream, resumeRunningChat } from './stream.js';
 import { subscribeLive, closeLive } from './live.js';
+import { removeSettledPromptCard } from './overlay.js';
+import { subscribeLiveEvents } from '../../liveEvents.js';
+
+// The chat's only poll: while the app event stream cannot be opened.
+const FALLBACK_POLL_MS = 15000;
 import { addImagesFromFiles, removeImageAttachment } from './imageInput.js';
 import { rebaseAnnotationStarts, toPublicImageAttachments } from './annotation.js';
 import { fileOrbFromApp, FILE_ORB_DEFAULT } from './fileOrb.js';
@@ -116,7 +121,7 @@ import { saveChatToolAuthorization, saveChatMcpAuthorization } from '../settings
   *
   * Run / stream
   * @property {(visible: boolean) => void} _setRunningVisible
-  * @property {() => void} _kickPoll
+  * @property {() => void} _kickSync
   * @property {() => void} _drainOlderMessages
   * @property {(payload: {content: string, attachments: Array<Object>}) => any} _retryFailedTurn
   * @property {(action: Object) => any} _runCustomAction
@@ -205,6 +210,9 @@ export function useChatState(props) {
   const [composerText, setComposerTextState] = useState('');
   const [fileEditorOpen, setFileEditorOpen] = useState(false);
   const [runningVisible, setRunningVisible] = useState(false);
+  // True while the app event stream cannot be opened: the chat then shows
+  // saved state from a slow poll and says so (docs/features/live-events.md).
+  const [liveDown, setLiveDown] = useState(false);
   // Bumped after every successful tool/MCP authorization save. ChatView
   // passes it to the ToolPopup so the popup re-renders with fresh auth
   // segments (the chat tools card re-renders imperatively instead).
@@ -352,10 +360,9 @@ const [fileOrb, setFileOrb] = useState(FILE_ORB_DEFAULT);
 // button flicker out and back.
 const [composerTools, setComposerTools] = useState(() => Object.assign({}, COMPOSER_TOOLS_DEFAULT));
   const reconnect = useRef({ active: false, attempts: 0, timer: null, stopped: false, partialText: '' });
-// Ref the single poll effect populates so stream recovery (which is
-// folded into that same poll) can kick it immediately when the SSE
-// drops mid-turn, instead of waiting out the idle 3 s/6 s interval.
-const kickPoll = useRef(null);
+// The catch-up sync of the live-events effect below. Stream recovery and the
+// chat load call it to sync right away.
+const kickSync = useRef(null);
   // Per-chat run markers (session.js) — documented where they are used:
   //   watchingStableTicks  reload follow poll (reconcileRunningChat) settles
   //                        a silent `running` flag instead of looping;
@@ -391,7 +398,7 @@ const kickPoll = useRef(null);
     stateRef.current = {
       props: { projectDir, chatId },
       _setRunningVisible: setRunningVisible,
-      _kickPoll: () => { if (kickPoll.current) kickPoll.current(); },
+      _kickSync: () => { if (kickSync.current) kickSync.current(); },
       // Resume the eager older-history drain. It deliberately bails while a
       // run is in flight (the tail is being written right now), and nothing
       // restarted it once the run ended — so older history only appeared when
@@ -474,7 +481,7 @@ const state = stateRef.current;
 // Callbacks are (re)assigned on every render, each next to the code it
 // wraps, so they close over the current props. Types and groups are in the
 // ChatState typedef at the top of this file. Where each group is assigned:
-//   run / stream        _setRunningVisible, _kickPoll, _drainOlderMessages
+//   run / stream        _setRunningVisible, _kickSync, _drainOlderMessages
 //                       (bag literal above); _setCustomActions (below);
 //                       _runCustomAction, _runRestartCommand, _retryFailedTurn
 //   transcript / view   _renderTranscript, _reconcileTranscript,
@@ -1245,7 +1252,7 @@ subscribeLive(state, refs);
 // interval. The live subscription only replays the transient tool events; the
 // tool CALL rows come from the message store, so without this first sync a
 // returning page shows the run's shell output with no card to put it in.
-if (kickPoll.current) kickPoll.current();
+if (kickSync.current) kickSync.current();
 } else {
 state.pendingAuthCount = 0;
 setRunningVisible(false);
@@ -1566,6 +1573,20 @@ loadOlderMessages(state, refs, scrollPager).catch(() => {});
     return () => { cancelled = true; };
   }, [runningVisible, projectDir, chatId]);
 
+  // Keep the open chat current without polling (docs/features/live-events.md).
+  // One catch-up — reconcileRunningChat: /revision, rows after the local seq,
+  // pending approvals, follow or settle the run — runs when something says
+  // the chat changed:
+  //  - a notice on the app event stream for this chat (`chat_rows`,
+  //    `chat_run`, `auth_pending`), wherever the write came from: another
+  //    tab, another device, a background subagent after its turn ended;
+  //  - the event stream (re)connecting, so nothing missed while it was down
+  //    is lost;
+  //  - the page coming back (visibilitychange, pageshow, focus, online);
+  //  - stream recovery (startStreamRecovery kicks it once).
+  // The only timers left are bounded: a failed recovery fetch is retried
+  // after 1 s (recoverFromDisk gives up after 6), and a slow 15 s poll runs
+  // while the event stream cannot be opened at all and the page is visible.
   useEffect(() => {
     if (!chatId || !projectDir) return undefined;
     let stopped = false;
@@ -1573,66 +1594,78 @@ loadOlderMessages(state, refs, scrollPager).catch(() => {});
     let inFlight = false;
     let queued = false;
     let resumePending = false;
-    function schedule() {
+    let eventsDown = false;
+    function scheduleFallback() {
+      if (timer) { clearTimeout(timer); timer = null; }
       if (stopped) return;
-      // Cadence:
-      //  - watchingRun: 1 s — another tab is running THIS chat and the
-      //    user is (or was) following it live; keep it snappy.
-      //  - visible, idle: 3 s — still responsive enough to notice a
-      //    run starting elsewhere, but an idle chat is no longer
-      //    hammering /revision once a second forever.
-      //  - hidden: 6 s — a backgrounded tab only needs eventual
-      //    consistency and a slow tick is pure battery/CPU cost.
-      let delay;
-      // While recovering a dropped SSE turn, keep the same snappy 1 s
-      // cadence as when following a run (recovery is a variant of that).
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') delay = 6000;
-      else if (reconnect.current.active || watchingRun.current) delay = 1000;
-      else delay = 3000;
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(tick, queued ? 0 : delay);
+      if (queued) { timer = setTimeout(tick, 0); return; }
+      const st = reconnect.current;
+      let delay = 0;
+      // A recovery attempt that could not reach the server: try again soon.
+      if (st.active && st.attempts > 0) delay = 1000;
+      // No event stream: poll slowly, and only while someone can see it.
+      else if (eventsDown && document.visibilityState !== 'hidden') delay = FALLBACK_POLL_MS;
+      if (delay) timer = setTimeout(tick, delay);
     }
     async function tick() {
-    if (stopped) return;
-    timer = null;
-    if (inFlight) { queued = true; return; }
-    inFlight = true;
-    queued = false;
-    try {
-      if (resumePending) {
-      resumePending = false;
-      resumeRunningChat(state, refs);
+      if (stopped) return;
+      timer = null;
+      if (inFlight) { queued = true; return; }
+      inFlight = true;
+      queued = false;
+      try {
+        if (resumePending) {
+          resumePending = false;
+          resumeRunningChat(state, refs);
+        }
+        if (reconnect.current.active || !streaming.current) await reconcileRunningChat(state, refs);
+      } finally {
+        inFlight = false;
+        scheduleFallback();
       }
-      if (reconnect.current.active || !streaming.current) await reconcileRunningChat(state, refs);
-    } finally {
-      inFlight = false;
-      schedule();
     }
-    }
-    // Expose a way for stream recovery to kick the poll immediately (it
-    // may be parked at the idle 3 s/6 s interval). Reset any pending
-    // timer and tick now.
-    kickPoll.current = () => {
+    function kick() {
       if (stopped) return;
       if (timer) { clearTimeout(timer); timer = null; }
       tick();
-    };
+    }
+    // Stream recovery and the chat load kick the catch-up directly.
+    kickSync.current = kick;
+    function onLiveEvent(name, data) {
+      if (stopped || !data || data.chatId !== chatId) return;
+      if (name === 'chat_rows') {
+        // Rows this page already has (the owner tab's own turn): nothing to do.
+        if (!reconnect.current.active && data.nextSeq === nextServerMessageIndex(state)) return;
+      } else if (name === 'auth_pending') {
+        if (data.open) {
+          // Mount the card even when no run is open here (a background
+          // subagent parks after its turn ended). Cards de-dupe by call id.
+          loadPendingAuthorization(state, refs).catch(() => {});
+        } else {
+          // Settled in another tab or device: its card goes away here.
+          removeSettledPromptCard(refs, data.callId);
+        }
+      }
+      kick();
+    }
+    const unsubscribe = subscribeLiveEvents({
+      projectDir,
+      onEvent: onLiveEvent,
+      onResync: kick,
+      onDown: (down) => { eventsDown = down; setLiveDown(down); scheduleFallback(); }
+    });
     function resumeNow() {
-    if (stopped) return;
-    resumePending = true;
-    if (timer) clearTimeout(timer);
+      if (stopped) return;
+      resumePending = true;
+      if (timer) clearTimeout(timer);
       // Queue rather than calling tick directly so pageshow, focus, and
       // visibilitychange emitted in the same resume collapse to one sync.
       timer = setTimeout(tick, 0);
     }
     function onVisibility() {
-      // Becoming visible: tick immediately instead of waiting out the
-      // slow interval, then resume the fast cadence. Becoming hidden:
-      // just reschedule at the slow cadence (no immediate tick).
       if (stopped) return;
-      if (timer) { clearTimeout(timer); timer = null; }
       if (document.visibilityState === 'visible') resumeNow();
-      else schedule();
+      else scheduleFallback();
     }
     function onPageShow() {
       // Installed PWAs can be restored from the page cache without a
@@ -1640,26 +1673,29 @@ loadOlderMessages(state, refs, scrollPager).catch(() => {});
       resumeNow();
     }
     function onWindowFocus() {
-      // iOS standalone mode may foreground via focus only. The route does
-      // not change, so use the same incremental revision sync as polling.
+      // iOS standalone mode may foreground via focus only.
       if (document.visibilityState === 'visible') resumeNow();
     }
-    schedule();
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pageshow', onPageShow);
     window.addEventListener('focus', onWindowFocus);
+    window.addEventListener('online', resumeNow);
     return () => {
       stopped = true;
+      if (kickSync.current === kick) kickSync.current = null;
       if (timer) clearTimeout(timer);
+      unsubscribe();
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('pageshow', onPageShow);
       window.removeEventListener('focus', onWindowFocus);
+      window.removeEventListener('online', resumeNow);
+      setLiveDown(false);
     };
   }, [chatId, projectDir]);
 
   return {
     state, refs,
-    imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp, toolDataStamp, customActions,
+    imageAttachments, composerText, fileEditorOpen, runningVisible, liveDown, authStamp, toolDataStamp, customActions,
     fileOrb,
     composerTools,
     // Server id being started from a tool tree's reload control (null when

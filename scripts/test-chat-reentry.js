@@ -150,13 +150,18 @@ async function foreground() {
   const start = source.indexOf('    if (!chatId || !projectDir) return undefined;', source.indexOf('  }, [runningVisible, projectDir, chatId]);'));
   const end = source.indexOf('  }, [chatId, projectDir]);', start);
   const timers = new Map(), listeners = {}, state = { props: { projectDir: '/test', chatId: 'a' }, streaming: true, reconnect: { active: false } };
-  let timerId = 0, reconciles = 0, clears = 0, closes = 0;
+  let timerId = 0, reconciles = 0, clears = 0, closes = 0, pendingLoads = 0, live = null;
+  const removed = [];
   const controller = new AbortController();
   controller.readerReady = true;
   state.streamAbort = controller;
   const context = vm.createContext({
     state, refs: {}, chatId: 'a', projectDir: '/test',
-    reconnect: { get current() { return state.reconnect; } }, watchingRun: { get current() { return state.watchingRun; } }, streaming: { get current() { return state.streaming; } }, kickPoll: { current: null },
+    reconnect: { get current() { return state.reconnect; } }, watchingRun: { get current() { return state.watchingRun; } }, streaming: { get current() { return state.streaming; } }, kickSync: { current: null },
+    FALLBACK_POLL_MS: 15000, nextServerMessageIndex: () => 4, setLiveDown() {},
+    subscribeLiveEvents(options) { live = options; return () => { live = null; }; },
+    loadPendingAuthorization: async () => { pendingLoads++; return 1; },
+    removeSettledPromptCard: (_refs, callId) => { removed.push(callId); },
     setTimeout(fn, delay) { timers.set(++timerId, { fn, delay }); return timerId; }, clearTimeout(id) { timers.delete(id); },
     document: { visibilityState: 'visible', addEventListener(n, fn) { listeners[n] = fn; }, removeEventListener(n) { delete listeners[n]; } },
     window: { addEventListener(n, fn) { listeners[n] = fn; }, removeEventListener(n) { delete listeners[n]; } },
@@ -198,10 +203,47 @@ async function foreground() {
   release(); await inFlight;
   assert.equal(timers.size, 1);
   assert.equal([...timers.values()][0].delay, 0);
+  context.reconcileRunningChat = async () => { reconciles++; };
+  { const [id5, timer5] = [...timers][0]; timers.delete(id5); await timer5.fn(); }
+  assert.equal(timers.size, 0, 'no poll is scheduled while the event stream is up');
+  console.log('PASS foreground events coalesce, hand off stalled readers, preserve send preparation, and serialize syncs');
+
+  // App event stream notices (docs/features/live-events.md).
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  const before = reconciles;
+  live.onEvent('chat_rows', { projectDir: '/test', chatId: 'other', nextSeq: 9 });
+  live.onEvent('chat_rows', { projectDir: '/test', chatId: 'a', nextSeq: 4 });
+  await settle();
+  assert.equal(reconciles, before, 'another chat, or rows this page already has, cost nothing');
+  live.onEvent('chat_rows', { projectDir: '/test', chatId: 'a', nextSeq: 6 });
+  await settle();
+  assert.equal(reconciles, before + 1, 'new rows sync at once');
+  live.onEvent('chat_run', { projectDir: '/test', chatId: 'a', running: false });
+  await settle();
+  assert.equal(reconciles, before + 2, 'a run ending settles at once');
+  live.onEvent('auth_pending', { projectDir: '/test', chatId: 'a', callId: 'c1', open: true });
+  live.onEvent('auth_pending', { projectDir: '/test', chatId: 'a', callId: 'c1', open: false });
+  await settle();
+  assert.equal(pendingLoads, 1);
+  assert.deepEqual(removed, ['c1']);
+  live.onResync();
+  await settle();
+  assert.equal(reconciles, before + 4, 'notices that land during a sync coalesce into the next one');
+  assert.equal(timers.size, 0);
+  live.onDown(true);
+  assert.equal(timers.size, 1);
+  assert.equal([...timers.values()][0].delay, 15000, 'a slow poll only while the stream is down');
+  live.onDown(false);
+  assert.equal(timers.size, 0);
+  state.reconnect = { active: true, attempts: 1 };
+  live.onResync();
+  await settle();
+  assert.equal([...timers.values()][0].delay, 1000, 'a failed recovery attempt retries soon');
   context.cleanup();
   assert.equal(timers.size, 0);
+  assert.equal(live, null, 'the stream subscription is released');
   assert.equal(Object.keys(listeners).length, 0);
-  console.log('PASS foreground events coalesce, hand off stalled readers, preserve send preparation, and serialize polling');
+  console.log('PASS live notices drive the sync; polling only while the stream is down or recovery failed');
 }
 
 function clientReplay() {

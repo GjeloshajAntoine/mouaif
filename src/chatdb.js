@@ -875,6 +875,9 @@ function appendMessage(projectDir, chatId, msg) {
     }
   });
   tx();
+  // Tell open pages (src/app-events.js): this is the one place every writer
+  // (a turn, a background subagent, a hook, the CLI) goes through.
+  require('./app-events.js').chatRowsChanged(projectDir, chatId);
   return rowToMessage(row);
 }
 
@@ -915,6 +918,7 @@ function replaceMessages(projectDir, chatId, list) {
     }
   });
   tx();
+  require('./app-events.js').chatRowsChanged(projectDir, chatId);
   return list.map((m, i) => rowToMessage(
     d.prepare('SELECT * FROM message_store WHERE project_dir = ? AND chat_id = ? AND seq = ?').get(projectDir, chatId, i)
   ));
@@ -937,7 +941,9 @@ function clearMessages(projectDir, chatId) {
     }
     return info.changes;
   });
-  return tx();
+  const changes = tx();
+  require('./app-events.js').chatRowsChanged(projectDir, chatId);
+  return changes;
 }
 
 function getMessageCount(projectDir, chatId) {

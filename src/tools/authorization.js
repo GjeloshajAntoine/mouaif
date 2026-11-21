@@ -19,6 +19,28 @@ function sessionKey(projectDir, chatId) {
   return String(projectDir || '') + '\0' + String(chatId || '');
 }
 
+// The prompts a chat is parked on. Parking or settling one tells open pages
+// (an `auth_pending` notice, src/app-events.js), so an approval card appears
+// and goes away in every tab without polling.
+class PendingPrompts extends Map {
+  constructor(projectDir, chatId) {
+    super();
+    this.projectDir = projectDir;
+    this.chatId = chatId;
+  }
+  set(callId, value) {
+    const added = !this.has(callId);
+    super.set(callId, value);
+    if (added) require('../app-events.js').authPendingChanged(this.projectDir, this.chatId, callId, true);
+    return this;
+  }
+  delete(callId) {
+    const removed = super.delete(callId);
+    if (removed) require('../app-events.js').authPendingChanged(this.projectDir, this.chatId, callId, false);
+    return removed;
+  }
+}
+
 function getSession(projectDir, chatId) {
   const key = sessionKey(projectDir, chatId);
   let session = sessions.get(key);
@@ -33,7 +55,7 @@ function getSession(projectDir, chatId) {
       scopedGrants: new Map(),
       allowedCallIds: new Map(),
       deniedCallIds: new Set(),
-      pending: new Map()
+      pending: new PendingPrompts(projectDir, chatId)
     };
     sessions.set(key, session);
   }

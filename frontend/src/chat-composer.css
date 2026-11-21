@@ -1235,6 +1235,14 @@ line-height: 0;
         while it was listening.
   A settled take's `success` line is advisory, so it does honour the switch. */
 .chat-view__status-row--hidden { padding-top: 0; }
+/* The app event stream is down (docs/features/live-events.md). Shown even
+   when the status line is switched off: it explains a chat that lags. */
+.chat-view__live-down {
+  font-size: 0.7rem;
+  line-height: 1.3;
+  color: var(--warning, var(--danger));
+  text-align: center;
+}
 .chat-view__status-row--hidden .chat-view__status:not([data-state="error"]):not([data-state="busy"]) { display: none; }
 
 .chat-view__image-btn {
