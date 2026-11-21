@@ -102,3 +102,27 @@
     box-shadow: 0 18px 48px var(--sheet-shadow, rgba(0, 0, 0, 0.45));
   }
 }
+
+/* Wide screens with a web preview open: a menu modal (Files, Git, CLI, MCP,
+   artifacts, screen capture, extension sheets) moves to the left and the
+   preview dock lifts above the backdrop on the right, enlarged, so the page
+   stays visible while the tool is in use. The full web preview viewer
+   (`.wp__overlay`) is not part of this: it is the preview itself. */
+@media (min-width: 1100px) {
+  body:has(.webpreview-dock):has(:is(.afp__overlay, .cli__overlay, .gm__overlay, .mcp-err__overlay, .mcps__overlay, .fe__overlay, .artifacts__overlay, .capture__overlay, .ext-sheet__overlay)) {
+    --side-preview-w: min(32vw, 28rem, calc((100dvh - 4rem) * 0.5625));
+  }
+  body:has(.webpreview-dock) :is(.afp__overlay, .cli__overlay, .gm__overlay, .mcp-err__overlay, .mcps__overlay, .fe__overlay, .artifacts__overlay, .capture__overlay, .ext-sheet__overlay) {
+    padding-right: calc(var(--side-preview-w, 0px) + 4rem);
+  }
+  body:has(.webpreview-dock):has(:is(.afp__overlay, .cli__overlay, .gm__overlay, .mcp-err__overlay, .mcps__overlay, .fe__overlay, .artifacts__overlay, .capture__overlay, .ext-sheet__overlay)) .webpreview-dock {
+    position: fixed;
+    top: 50%;
+    right: 2rem;
+    transform: translateY(-50%);
+    z-index: 170;
+    width: var(--side-preview-w);
+    min-width: 0;
+    margin: 0;
+  }
+}
