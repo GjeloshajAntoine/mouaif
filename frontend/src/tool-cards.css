@@ -1212,8 +1212,7 @@ padding-right: 10px;
 .hook-notes__meta { margin-top: 2px; color: var(--muted); }
 .hook-notes__pre {
   margin: 4px 0 0;
-  max-height: 30dvh;
-  overflow: auto;
+  /* Grow with the card body instead of trapping touch scroll in this block. */
   padding: 6px 8px;
   border-radius: var(--r-sm);
   background: color-mix(in srgb, #000 18%, transparent);

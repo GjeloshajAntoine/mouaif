@@ -241,7 +241,7 @@ You can ask in the chat ("from now on, block force pushes here", "keep going unt
 
 ### What you see in the chat
 
-- **Tool cards**: a line under the head (a project or chat hook is marked so), such as *Hook · no-force-push · blocked* (red), *Hook · rewrite · changed the arguments* (amber) or *Hook · git-branch · added context*. Tap it for each hook's decision, reason, time and the context the model saw. *Redacted for the model* means the model saw a redacted copy of the result shown below. A hook that changed the arguments shows each changed one with its value before and after.
+- **Tool cards**: a line under the head (a project or chat hook is marked so), such as *Hook · no-force-push · blocked* (red), *Hook · rewrite · changed the arguments* (amber) or *Hook · git-branch · added context*. Tap it for each hook's decision, reason, time and the context the model saw. *Redacted for the model* means the model saw a redacted copy of the result shown below. A hook that changed the arguments shows each changed one with its value before and after; those value blocks grow with the expanded card's own scroller rather than opening a nested scroll box inside it (see [Tool card expanded view](./tool-card-expanded-view.md)).
 - **Blocked calls**: the card's body says *Not run: blocked by hook `<id>`* with the reason, instead of output.
 - **Approval cards**: when a hook asked, the card shows which hook and why, opened. When a hook changed the arguments, the card shows the new ones, with the before/after list under it.
 - **Prompts**: context a hook added sits under the prompt in a collapsed **Added by hooks** block. A prompt a hook sent carries *Hook · `<id>` · follow-up N/3*.
