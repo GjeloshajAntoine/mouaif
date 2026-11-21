@@ -48,20 +48,56 @@ The text added with an Inspector image starts with the page title and URL, so th
 
 ## Mark up the image, step by step
 
-Paths A and B share the same annotator. Do the steps you need, in this order; every step is optional.
+Paths A and B open the same annotator: the image on top, the **Tools** panel under it, and the finish button at the bottom. Work down the panel from top to bottom. Every step is optional — skip what you don't need.
 
-![Numbered dots and the scrollable list of dot texts](./images/draft-craft/annotator-marker-edit-360.png)
+**Quick version:** pick a color → draw on the image → drag a dot onto the image → type what the dot points at → tap the finish button.
 
-1. **Open the tools.** Tap **Tools** (*Annotate & zoom*) under the image to show the controls. Tap it again later to hide them and give the image the full screen.
-2. **Frame the area.** Tap **+** to zoom in, **−** to zoom out, or pinch with two fingers — the point between your fingers stays in place. Tap **Pan** and drag to move around a zoomed image, then tap **Draw** to go back to drawing. **Fit** shows the whole image again. Zooming keeps that point where your fingers are, never steals room from the tools panel, and folding the tools open or closed keeps the whole image in view.
-3. **Pick a color.** Tap one of the four color swatches. Both pen strokes and new dots use it.
-4. **Draw.** Drag a finger on the image to circle or underline what matters.
-5. **Place marker dots.** Under **Marker dots**, drag the colored dot button onto the image. Each dot gets the next label; choose **1, 2, 3** or **A, B, C** in the menu beside it. Drag a placed dot to move it. Up to 26 dots per image.
-6. **Describe each dot.** Every dot has a row in the list below: type what that dot points at in its **Text for …** field. Tap a row's label to select that dot, or **×** to delete it.
-7. **Add a note (optional).** Type a general comment in **Optional note about this image**.
-8. **Finish.** Tap **Use annotated image** (Path A) or **Add to chat draft** (Path B).
+### Step 1: find your way around
 
-Made a mess? **Clear** removes all strokes and dots and starts again from the clean image.
+![The annotator as it opens: image on top, the zoom row, four color swatches, Marker dots and the note field below](./images/draft-craft/step-1-tools-360.png)
+
+The panel shows, from top to bottom:
+
+| Row | What it does |
+|-----|--------------|
+| **Tools** *(Annotate & zoom)* | Tap to hide or show the panel. Hide it to give the image the whole screen. |
+| **− 45% + Fit Pan** | Zoom out, the zoom level, zoom in, show the whole image again, and switch between moving the image and drawing. |
+| Four color circles and **Clear** | The color for strokes and new dots. **Clear** wipes every stroke and dot. |
+| **Marker dots** | The numbered dot you drag onto the image, and the list of dots you placed. |
+| **Optional note about this image** | A general comment sent with the image. |
+
+**Zooming in on a detail:** tap **+**, or pinch with two fingers on the image. To move a zoomed image, tap **Pan** and drag, then tap **Draw** to draw again. Tap **Fit** to see the whole image.
+
+### Step 2: pick a color and draw
+
+![A yellow swatch selected and a yellow stroke drawn on the image](./images/draft-craft/step-2-draw-360.png)
+
+1. Tap a color circle. The chosen one gets a white ring.
+2. Drag a finger on the image to circle or underline what matters.
+
+If **Pan** is highlighted, dragging moves the image instead — tap it to switch back to **Draw**.
+
+### Step 3: place numbered dots and describe them
+
+![Two dots on the image and a row for each, with its text, in the Marker dots list](./images/draft-craft/step-3-dots-360.png)
+
+Use dots when you want to say something about several spots.
+
+1. **Choose the labels** (optional): **1, 2, 3** or **A, B, C** in the menu next to the dot.
+2. **Drag the colored dot** at the right of **Marker dots** onto the image. It lands with the next label, and a new row appears in the list.
+3. **Type what it points at** in that row's **Text for 1** field.
+4. Repeat for each spot — up to 26 dots per image.
+
+To move a dot, drag it on the image. To pick one, tap its label in the list (the row is highlighted). To delete one, tap **×** on its row.
+
+### Step 4: add a note and finish
+
+![The note field filled in and the Use annotated image button at the bottom](./images/draft-craft/step-4-finish-360.png)
+
+1. Type a general comment in **Optional note about this image**, if you have one.
+2. Tap the button at the bottom: **Use annotated image** (Path A) or **Add to chat draft** (Path B), then go back to step 4 of your path.
+
+Made a mess? **Clear** removes all strokes and dots so you can start again from the clean image.
 
 ### What ends up in the draft
 

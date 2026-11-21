@@ -5,7 +5,7 @@
 //
 // The published guide (docs/features/draft-craft.md) embeds one PNG per step,
 // and those PNGs have to be the real UI or they quietly become fiction. This
-// script takes all six from a running app in one command:
+// script takes all of them from a running app in one command:
 //
 //   1. a throwaway MOUAIF_HOME in the OS temp dir (never the developer's own);
 //   2. the demo task-board project, two projects on the Chats tab, seven
@@ -82,9 +82,41 @@ const SHOTS = [
     })()`
   },
   {
-    // The shared annotator with its tools open: the zoom row, the four
-    // swatches, and one marker row with its text field.
-    file: 'annotator-marker-edit-360.png',
+    // Mark-up step 1: the annotator as it opens, tools unfolded and nothing
+    // drawn yet, so every control the steps name is visible and untouched.
+    file: 'step-1-tools-360.png',
+    hash: () => `#/chat/${state.emptyChatId}?projectDir=${encodeURIComponent(state.projectDir)}`,
+    waitFor: '.chat-view__image-chipimg',
+    settle: 600,
+    recipe: `(async () => {
+      const chip = document.querySelector('.chat-view__image-chipimg');
+      if (chip) chip.click();
+      await waitFor('.draft-craft__canvas-wrap', 8000);
+      await new Promise((r) => setTimeout(r, 500));
+      scrollTools(0);
+    })()`
+  },
+  {
+    // Mark-up step 2: a color picked and one pen stroke drawn.
+    file: 'step-2-draw-360.png',
+    hash: () => `#/chat/${state.emptyChatId}?projectDir=${encodeURIComponent(state.projectDir)}`,
+    waitFor: '.chat-view__image-chipimg',
+    settle: 600,
+    recipe: `(async () => {
+      const chip = document.querySelector('.chat-view__image-chipimg');
+      if (chip) chip.click();
+      await waitFor('.draft-craft__canvas-wrap', 8000);
+      await new Promise((r) => setTimeout(r, 500));
+      pickColor(1);
+      await new Promise((r) => setTimeout(r, 150));
+      drawStroke();
+      scrollTools(0);
+    })()`
+  },
+  {
+    // Mark-up step 3: two dots dragged onto the image, each with its text,
+    // and the dot list scrolled into view.
+    file: 'step-3-dots-360.png',
     hash: () => `#/chat/${state.emptyChatId}?projectDir=${encodeURIComponent(state.projectDir)}`,
     waitFor: '.chat-view__image-chipimg',
     settle: 600,
@@ -94,8 +126,29 @@ const SHOTS = [
       await waitFor('.draft-craft__canvas-wrap', 8000);
       await new Promise((r) => setTimeout(r, 500));
       drawStroke();
-      placeMarker('Header is misaligned', 0.5, 0.3);
-      setNote('The card header wraps on a 360 px phone.');
+      placeMarker('Button is cut off here', 0.5, 0.34);
+      await new Promise((r) => setTimeout(r, 450));
+      placeMarker('This banner overlaps it', 0.3, 0.7);
+      await new Promise((r) => setTimeout(r, 450));
+      scrollTools('.draft-craft__markers');
+    })()`
+  },
+  {
+    // Mark-up step 4: the note filled in and the finish button in view.
+    file: 'step-4-finish-360.png',
+    hash: () => `#/chat/${state.emptyChatId}?projectDir=${encodeURIComponent(state.projectDir)}`,
+    waitFor: '.chat-view__image-chipimg',
+    settle: 600,
+    recipe: `(async () => {
+      const chip = document.querySelector('.chat-view__image-chipimg');
+      if (chip) chip.click();
+      await waitFor('.draft-craft__canvas-wrap', 8000);
+      await new Promise((r) => setTimeout(r, 500));
+      drawStroke();
+      placeMarker('Button is cut off here', 0.5, 0.34);
+      await new Promise((r) => setTimeout(r, 450));
+      setNote('The pay button is hidden on small phones');
+      scrollTools('.draft-craft__note');
     })()`
   },
   {
@@ -212,13 +265,27 @@ function placeMarker(text, fx, fy) {
     // wait a tick — otherwise the field does not exist yet and the typed text
     // is dropped.
     setTimeout(() => {
-      const input = document.querySelector('.draft-craft__marker-input');
+      const inputs = document.querySelectorAll('.draft-craft__marker-input');
+      const input = inputs[inputs.length - 1];
       if (!input) return;
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
       setter.call(input, text);
       input.dispatchEvent(new Event('input', { bubbles: true }));
     }, 250);
   }
+}
+function pickColor(index) {
+  const swatch = document.querySelectorAll('.draft-craft__color')[index];
+  if (swatch) swatch.click();
+}
+// Scroll the tools body to the top (0) or bring one element into view, so
+// the frame shows the controls the step is about.
+function scrollTools(target) {
+  const body = document.querySelector('.draft-craft__tools-body');
+  if (!body) return;
+  if (target === 0) { body.scrollTop = 0; return; }
+  const el = document.querySelector(target);
+  if (el) el.scrollIntoView({ block: 'end' });
 }
 function setNote(value) {
   const note = document.querySelector('.draft-craft__note');
