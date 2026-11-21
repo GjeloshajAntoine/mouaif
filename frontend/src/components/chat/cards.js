@@ -789,6 +789,9 @@ const mpHost = document.createElement('div');
 mpHost.className = 'tool-card__auth-model-field';
 render(h(AuthModelPicker, {
 models: list,
+// The chat loads only its own provider's live catalog; the picker loads
+// the others so a run can go to any provider (see AuthModelPicker).
+providers: (state.providers || []).map((p) => p && p.id).filter(Boolean),
 initialValue,
 chatValue,
 modelSource: selection && selection.source,

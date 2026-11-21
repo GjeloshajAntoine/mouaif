@@ -13,13 +13,13 @@ import { useState, useEffect, useRef } from 'preact/hooks';
 import { createAgentAutosave } from './settings/agentAutosave.js';
 import { agentQuery, agentEditorPath } from './settings/agentNavigation.js';
 import { backHref, backTarget } from './settings/projectNavigation.js';
-import { fetchJson, fetchLiveModels, activeProject, providerLabel } from '../api.js';
+import { fetchJson, activeProject, providerLabel } from '../api.js';
 import { back as goBack, replace, replaceUrl } from '../router.js';
 import { ToolTree, buildAgentToolGroups } from './ToolTree.jsx';
 import { TOOL_GROUPS } from '../toolGroups.js';
 import { ModelPickerField } from './ModelPickerField.jsx';
 import { ThinkingSelectField } from './ThinkingSelectField.jsx';
-import { loadPinned, loadRecent, loadRecentFromServer, touchRecent, togglePin } from './chat/modelPicker.js';
+import { loadPinned, loadRecent, loadRecentFromServer, touchRecent, togglePin, liveModelUnion } from './chat/modelPicker.js';
 import './settings/agents.css';
 
 // Per-agent subagent limits (src/agents.js AGENT_LIMITS).
@@ -219,35 +219,6 @@ export function SettingsAgentsView(props) {
       )
     )
   );
-}
-
-// liveModelUnion(saved, providers, force) -> model rows
-//
-// Reads both the chat slice and the image slice of every provider's
-// catalog and unions them with the project's saved models: an image-only
-// model (OpenRouter's /images/models rows, a Gemini Imagen model) is never
-// in the chat slice, so a pinned agent could not select one. A provider
-// without a separate image slice returns its chat list, so asking everywhere
-// is safe; the union de-dupes on provider + id. `force` bypasses the cache
-// (the picker's refresh button).
-async function liveModelUnion(saved, providers, force = false) {
-  const live = await Promise.all(providers.map((provider) =>
-    Promise.all(['', 'image'].map((purpose) => fetchLiveModels(provider, { force, purpose })
-      .then((result) => result.models || [])
-      .catch(() => [])))
-      .then((groups) => ({ provider, models: groups.flat() }))));
-  const union = new Map();
-  for (const m of saved) {
-    if (m && m.id && m.provider) union.set(m.provider + '\u0000' + m.id, m);
-  }
-  for (const group of live) {
-    for (const m of group.models) {
-      if (!m || !m.id) continue;
-      const key = group.provider + '\u0000' + m.id;
-      if (!union.has(key)) union.set(key, Object.assign({}, m, { provider: group.provider }));
-    }
-  }
-  return Array.from(union.values());
 }
 
 export function SettingsAgentEditView(props) {

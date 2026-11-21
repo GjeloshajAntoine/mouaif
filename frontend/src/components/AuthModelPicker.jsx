@@ -1,14 +1,19 @@
 // mouaif web — stateful adapter for an imperative authorization card
 import { h } from 'preact';
-import { useState, useMemo, useCallback } from 'preact/hooks';
+import { useState, useMemo, useCallback, useEffect } from 'preact/hooks';
 import { ModelPickerField } from './ModelPickerField.jsx';
 import { ThinkingSelectField } from './ThinkingSelectField.jsx';
 import { providerLabel } from '../api.js';
 import {
 loadPinned, loadRecent, loadRecentFromServer, touchRecent, togglePin,
-migrateProjectScopedBookmarks
+migrateProjectScopedBookmarks, liveModelUnion
 } from './chat/modelPicker.js';
-// AuthModelPicker({ models, initialValue, projectDir, onChange })
+// AuthModelPicker({ models, providers, initialValue, projectDir, onChange })
+//
+// `models` is what the chat already has: its project models and the live
+// catalog of its own provider (the chat loads no other). `providers` lists
+// every provider connection; the picker loads their catalogs on mount, the
+// way the agent editor does, so a run can be sent to any of them.
 //
 // Owns the per-run model + thinking selection for the subagent
 // authorization card and passes it through to the props-driven
@@ -23,7 +28,21 @@ migrateProjectScopedBookmarks
 // truth the chat top bar picker uses — so the card shows the Pinned and
 // Recent sections. Both lists are app-wide: `pinned` lives in localStorage,
 // `recent` is the server-backed list refreshed when the sheet opens.
-export function AuthModelPicker({ models, initialValue, chatValue, modelSource, modelError, projectDir, onChange }) {
+export function AuthModelPicker({ models: chatModels, providers, initialValue, chatValue, modelSource, modelError, projectDir, onChange }) {
+const providerIds = Array.isArray(providers) ? providers : [];
+const [models, setModels] = useState(chatModels);
+useEffect(() => {
+let alive = true;
+if (providerIds.length) {
+  liveModelUnion(chatModels, providerIds)
+    .then((all) => { if (alive) setModels(all); })
+    .catch(() => { /* keep the chat's models */ });
+}
+return () => { alive = false; };
+}, []);
+const refresh = useCallback(async () => {
+  setModels(await liveModelUnion(chatModels, providerIds, true));
+}, [chatModels, providerIds]);
 // The effective default is display-only, never an implicit per-run override.
 const [value, setValue] = useState(null);
 const [thinking, setThinking] = useState('');
@@ -100,6 +119,8 @@ models,
 // the chosen one, rather than the default model's row in the list.
 value,
 variant: 'chat',
+extraProviders: providerIds,
+refresh: providerIds.length ? refresh : undefined,
 allowClear: true,
 clearLabel,
 ariaLabel: 'Model for this subagent run',

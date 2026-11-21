@@ -215,6 +215,38 @@ export function modelsForPicker(state) {
   return Array.from(out.values());
 }
 
+// liveModelUnion(saved, providers, force) -> model rows
+//
+// Every provider's catalog, for pickers that choose a subagent's model (the
+// agent editor and the approval card's one-run pick): a subagent may run on
+// any provider, not only the chat's, whose catalog is all the chat loads.
+// Reads both the chat slice and the image slice of every provider's
+// catalog and unions them with the project's saved models: an image-only
+// model (OpenRouter's /images/models rows, a Gemini Imagen model) is never
+// in the chat slice, so a pinned agent could not select one. A provider
+// without a separate image slice returns its chat list, so asking everywhere
+// is safe; the union de-dupes on provider + id. `force` bypasses the cache
+// (the picker's refresh button).
+export async function liveModelUnion(saved, providers, force = false) {
+  const live = await Promise.all(providers.map((provider) =>
+    Promise.all(['', 'image'].map((purpose) => fetchLiveModels(provider, { force, purpose })
+      .then((result) => result.models || [])
+      .catch(() => [])))
+      .then((groups) => ({ provider, models: groups.flat() }))));
+  const union = new Map();
+  for (const m of saved) {
+    if (m && m.id && m.provider) union.set(m.provider + '\u0000' + m.id, m);
+  }
+  for (const group of live) {
+    for (const m of group.models) {
+      if (!m || !m.id) continue;
+      const key = group.provider + '\u0000' + m.id;
+      if (!union.has(key)) union.set(key, Object.assign({}, m, { provider: group.provider }));
+    }
+  }
+  return Array.from(union.values());
+}
+
 // updateModelTrigger(refs, state)
 //
 // Refresh the label on the picker trigger button (the head element

@@ -79,7 +79,7 @@ The effective model is resolved in this order:
 
 A named agent does **not** inherit **Default subagent**’s pin. The Agents list shows provider-qualified pins or its inheritance rule. Approval cards state **Runs on provider / model**, including **instead of** the chat model when different, and name the winning source. The displayed default is not an override: changing only thinking does not accidentally select the chat model. **Use default** removes a per-run pick. A broken lower-priority pin cannot block an explicit approval pick; invalid winning pins/defaults fail visibly rather than silently falling back.
 
-The existing picker already supports search, provider chips, project models, live chat/image catalogs, and app-wide pinned/recent models. No new model argument is added to `subagent`, and no model catalog or provider configuration is written by browsing.
+The existing picker already supports search, provider chips, project models, live chat/image catalogs, and app-wide pinned/recent models. Both the agent editor and the approval card load the live catalog of every provider connection (`liveModelUnion` in `frontend/src/components/chat/modelPicker.js`), not only the chat's: the chat itself loads just its own provider's catalog, so a card built from it alone could not offer another provider's models. No new model argument is added to `subagent`, and no model catalog or provider configuration is written by browsing.
 
 ### Image-generation agents
 
