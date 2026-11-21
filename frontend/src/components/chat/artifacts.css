@@ -1,39 +1,65 @@
-/* A chat's artifacts (ArtifactsModal.jsx): a bottom sheet on a phone, a centered
-   one with more room. */
-.artifacts__overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  background: color-mix(in srgb, #000 45%, transparent);
-}
+/* A chat's artifacts (ArtifactsModal.jsx).
+
+   The overlay, the sheet and the desktop card come from the shared sheet
+   idiom in frontend/src/sheets.css, where both of this sheet's classes are
+   listed — its wide-screen web-preview rules already named
+   `.artifacts__overlay`. This file used to re-declare them as a bottom sheet
+   at every width (`align-items: flex-end`, `height: 92dvh`, `max-width:
+   44rem`), which on a desktop window left a phone-shaped strip pinned to the
+   bottom edge that never centred and never capped its height. What stays here
+   is only what is this sheet's own: the card size and the head/body layout. */
 .artifacts {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  max-width: 44rem;
-  height: 92dvh;
-  padding-bottom: var(--safe-bottom, env(safe-area-inset-bottom));
-  border-radius: var(--r-lg) var(--r-lg) 0 0;
-  background: var(--bg);
-  box-shadow: var(--shadow-lg);
-  overflow: hidden;
+  /* A list, then one artifact at a time, so a row is a name plus a meta line:
+     a card narrower than the Git modal (860px / 1000px) keeps those rows
+     readable instead of stretching them across the window. 45rem / 54rem is
+     720px / 864px at the default root size, and in rem the card follows the
+     reader's own text size. `--sheet-height` is only consumed inside
+     sheets.css' `min-width: 720px` block, so `vh` (no collapsing browser
+     toolbar there) matches the Git and CLI sheets. */
+  --sheet-width: 45rem;
+  --sheet-max-width: 54rem;
+  --sheet-height: min(80vh, 45rem);
 }
+/* Header bar: the same compact `--surface-2` strip as `.gm__head` and
+   `.cli__head`, and a fixed height, so the list, a detail and the "new"
+   form all open with the bar in the same place. */
 .artifacts__head {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  min-height: var(--tap);
-  padding: 0.375rem 0.625rem 0.375rem 0.875rem;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--surface-2);
   border-bottom: 1px solid var(--border);
 }
-.artifacts__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.artifacts__back, .artifacts__close { flex: none; min-height: var(--tap); min-width: var(--tap); }
-.artifacts__back { font-size: 1.25rem; line-height: 1; }
+/* 600, not <strong>'s 700: the other compact sheet titles
+   (`.fe__head-title`, `.cli__title`) are 600, and this bar sits next to them. */
+.artifacts__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The back and close glyphs are the shared .icon-btn (base.css), grown to the
+   44 px tap floor: they are the sheet's only exits, and they sit on the same
+   row, so `.tap-target`'s overlapping hit areas would steal each other's taps.
+   Size comes from this modifier rather than a per-button rule because both
+   glyphs must stay identical across the list, detail and new views. */
+.artifacts__iconbtn {
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  min-height: var(--tap);
+}
+/* The body is the sheet's only scroller. The head above and the error line
+   below it never shrink or grow, so loading the list, opening a detail, or
+   the on-screen keyboard coming up cannot move the sheet's own frame. */
 .artifacts__body {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -43,6 +69,7 @@
   overscroll-behavior: contain;
 }
 .artifacts__error {
+  flex: 0 0 auto;
   margin: 0;
   padding: 0.5rem 0.875rem;
   color: var(--danger);
@@ -55,6 +82,10 @@
 .artifacts__actions--two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .artifacts__link { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
 .artifacts__list { display: flex; flex-direction: column; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+/* Rows are transparent: the sheet itself is `--surface` (sheets.css), so the
+   old `--surface` fill would now match the sheet and the row would read as
+   its 1px border only. Transparent plus a hover surface is what `.afp__row`
+   and `.fe__row` do on the same sheet background. */
 .artifacts__row {
   display: flex;
   align-items: flex-start;
@@ -64,11 +95,14 @@
   padding: 0.625rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  background: var(--surface);
+  background: transparent;
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+@media (hover: hover) {
+  .artifacts__row:hover { background: var(--surface-2); }
 }
 .artifacts__icon { flex: none; font-size: 1.25rem; line-height: 1.5rem; }
 .artifacts__rowtext { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.125rem; }
@@ -81,7 +115,3 @@
 .artifacts__confirm { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: var(--r-md); }
 .artifacts__confirm p { margin: 0; overflow-wrap: anywhere; }
 .artifacts__file { display: none; }
-@media (min-width: 720px) {
-  .artifacts__overlay { align-items: center; }
-  .artifacts { height: min(80dvh, 48rem); border-radius: var(--r-lg); }
-}

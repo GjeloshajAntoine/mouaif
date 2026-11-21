@@ -1,18 +1,23 @@
 /* mouaif mobile-first — shared modal sheet idiom.
 
-   Six full-screen modals used to each re-declare the same overlay and
+   Seven full-screen modals used to each re-declare the same overlay and
    sheet declarations (`.afp__*` in settings.css, `.cli__*` / `.gm__*` /
    `.wp__*` / `.mcp-err__*` in chat-composer.css, `.fe__*` in
-   file-editor.css): a nine-declaration overlay block, a
-   ten-declaration sheet block, and a desktop `@media (min-width: 720px)`
-   block that centred the sheet as a fixed-width card. Diffing the six
-   copies showed only three real variables — the backdrop, the z-index,
-   and the card's desktop width/height/shadow.
+   file-editor.css, `.artifacts__*` in components/chat/artifacts.css): a
+   nine-declaration overlay block, a ten-declaration sheet block, and a
+   desktop `@media (min-width: 720px)` block that centred the sheet as a
+   fixed-width card. Diffing the copies showed only three real variables —
+   the backdrop, the z-index, and the card's desktop width/height/shadow.
+
+   The artifacts sheet joined last: it had kept its own overlay and sheet as
+   a bottom sheet at every width, so on a desktop window it stayed pinned to
+   the bottom edge as a phone-shaped strip — exactly the drift this file
+   exists to prevent.
 
    This file holds those declarations once. Each modal keeps a small
    per-modal rule with custom-property overrides only, so a change to
    the backdrop, the safe-area padding or the desktop centring is made
-   in exactly one place instead of six.
+   in exactly one place instead of seven.
 
    Import order: this file is imported early (right after base.css) so
    that every modal's own rules still win by cascade order — including
@@ -22,19 +27,21 @@
    Deliberately NOT included: `.draft-craft__overlay` /
    `.draft-craft__sheet`. That surface is a bottom-anchored sheet with
    its own radius, animation and no desktop centring; it shared no
-   duplicated block with these six. */
+   duplicated block with these seven. */
 
 /* Overlay: full-screen scrim, safe-area padded, flex parent for the
    sheet. `--sheet-z` and `--sheet-backdrop` are the only per-modal
-   variables; the defaults match the four modals that need no override
-   (`.afp__overlay`, `.cli__overlay`, `.gm__overlay`, `.fe__overlay`). */
+   variables; the defaults match the five modals that need no override
+   (`.afp__overlay`, `.cli__overlay`, `.gm__overlay`, `.fe__overlay`,
+   `.artifacts__overlay`). */
 .afp__overlay,
 .cli__overlay,
 .gm__overlay,
 .wp__overlay,
 .mcp-err__overlay,
 .mcps__overlay,
-.fe__overlay {
+.fe__overlay,
+.artifacts__overlay {
   position: fixed;
   inset: 0;
   z-index: var(--sheet-z, 60);
@@ -47,16 +54,19 @@
   animation: mouaif-overlay-fade-in 120ms ease-out;
 }
 
-/* Sheet: full-bleed on phones. Identical for all six — each modal is a
-   flex column so its head / scroller / footer own their own height. The
-   file editor adds `width: 100%; min-width: 0` in its own file. */
+/* Sheet: full-bleed on phones. Identical for all seven — each modal is a
+  flex column so its head / scroller / footer own their own height. The
+  file editor adds `width: 100%; min-width: 0` in its own file. The artifact
+  browser keeps its historical `.artifacts` class as the sheet element, so
+  that selector is here rather than an `.artifacts__sheet`. */
 .afp__sheet,
 .cli__sheet,
 .gm__sheet,
 .wp__sheet,
 .mcp-err__sheet,
 .mcps__sheet,
-.fe__sheet {
+.fe__sheet,
+.artifacts {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
@@ -72,7 +82,7 @@
 /* Desktop: centre the sheet as a card. `--sheet-width` doubles as the
    flex-basis so the card grows and shrinks around its content between
    the phone layout and `--sheet-max-width`. The defaults match
-   `.afp__sheet` (520px wide, 70vh tall, soft shadow); the other five
+   `.afp__sheet` (520px wide, 70vh tall, soft shadow); the other six
    modals override them. */
 @media (min-width: 720px) {
   .afp__overlay,
@@ -81,7 +91,8 @@
   .wp__overlay,
   .mcp-err__overlay,
   .mcps__overlay,
-  .fe__overlay {
+  .fe__overlay,
+  .artifacts__overlay {
     padding: var(--sheet-desktop-pad, 32px);
     align-items: center;
     justify-content: center;
@@ -92,7 +103,8 @@
   .wp__sheet,
   .mcp-err__sheet,
   .mcps__sheet,
-  .fe__sheet {
+  .fe__sheet,
+  .artifacts {
     flex: 0 1 var(--sheet-width, 520px);
     max-width: var(--sheet-max-width, 520px);
     width: 100%;
