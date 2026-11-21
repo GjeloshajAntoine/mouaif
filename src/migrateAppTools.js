@@ -78,21 +78,32 @@ function run(convert = config) {
   const settings = require('./settings.js');
   require('./chatdb.js').ensureChatTables();
   const db = settings.getDb();
-  const app = settings.getApp();
-  const converted = convert(app);
-  if (JSON.stringify(converted) !== JSON.stringify(app)) settings.setAppReplace(converted);
-  const dirs = new Set((app.projects || []).map((project) => project.path).filter(Boolean));
-  for (const row of db.prepare('SELECT DISTINCT project_dir FROM chat_store UNION SELECT project_dir FROM project_settings').all()) dirs.add(row.project_dir);
-  for (const dir of dirs) {
-    // An inaccessible project must leave this migration retryable, not mark
-    // old permissions as migrated and silently reset them to Ask later.
-    const current = settings.getProject(dir);
+  const stores = require('./content/stores/index.js');
+  const app = settings.updateApp((current) => {
     const next = convert(current);
-    if (JSON.stringify(next) !== JSON.stringify(current)) settings.setProject(dir, next);
+    return JSON.stringify(next) === JSON.stringify(current) ? current : next;
+  });
+  const projects = Array.isArray(app.projects) ? app.projects : [];
+  const dirs = new Set(projects.map((project) => project?.path).filter(Boolean));
+  for (const row of db.prepare('SELECT DISTINCT project_dir FROM chat_store UNION SELECT project_dir FROM project_settings').all()) dirs.add(row.project_dir);
+  let complete = true;
+  for (const dir of dirs) {
+    try {
+      stores.withWriteLock(() => {
+        const current = settings.getProject(dir);
+        const next = convert(current);
+        if (JSON.stringify(next) !== JSON.stringify(current)) settings.setProject(dir, next);
+      });
+    } catch (e) {
+      // Leave the original intact and retry on the next startup. A broken
+      // project must not block the remaining projects, chats or migrations.
+      complete = false;
+      console.warn('[migration] tool settings deferred for ' + dir + ': ' + e.message);
+    }
   }
-  const rows = db.prepare('SELECT project_dir, id, tools, tool_auth, prompt_snapshot FROM chat_store').all();
   const update = db.prepare('UPDATE chat_store SET tools = ?, tool_auth = ?, prompt_snapshot = ? WHERE project_dir = ? AND id = ?');
-  db.transaction(() => {
+  stores.withWriteLock(() => {
+    const rows = db.prepare('SELECT project_dir, id, tools, tool_auth, prompt_snapshot FROM chat_store').all();
     for (const row of rows) {
       const current = { tools: row.tools ? JSON.parse(row.tools) : null,
         toolAuth: row.tool_auth ? JSON.parse(row.tool_auth) : null,
@@ -102,7 +113,8 @@ function run(convert = config) {
       update.run(next.tools === null ? null : JSON.stringify(next.tools), next.toolAuth === null ? null : JSON.stringify(next.toolAuth),
         next.promptSnapshot === null ? null : JSON.stringify(next.promptSnapshot), row.project_dir, row.id);
     }
-  })();
+  });
+  return complete;
 }
 
 module.exports = { config, renameTool, run };

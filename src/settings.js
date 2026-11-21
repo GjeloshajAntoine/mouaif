@@ -398,7 +398,13 @@ for (const chat of list) {
 {
 name: '2026-10-01-separate-native-app-tools',
 description: 'Convert legacy mouaif selections and permissions to ordinary native tools',
-run() { require('./migrateAppTools.js').run(); }
+run() {
+  const m = require('./migrateAppTools.js');
+  // This may retry after the later rename has already run. Never reintroduce
+  // the retired name when converting an older selection or permission.
+  const rename = m.renameTool('get_app_info', 'list_features');
+  return m.run((value) => rename(m.config(value)));
+}
 },
 {
 name: '2026-10-07-drop-automatic-workspaces',
@@ -456,7 +462,7 @@ shareModelBookmarks();
 {
 name: '2026-10-30-fold-get-app-info',
 description: 'Rename stored get_app_info selections and permissions to list_features',
-run() { const m = require('./migrateAppTools.js'); m.run(m.renameTool('get_app_info', 'list_features')); }
+run() { const m = require('./migrateAppTools.js'); return m.run(m.renameTool('get_app_info', 'list_features')); }
 }
 ];
 function runMigrations() {  const d = db();
@@ -468,7 +474,7 @@ function runMigrations() {  const d = db();
   for (const m of MIGRATIONS) {
     if (ran.has(m.name)) continue;
     console.log('[migration] ' + m.name + ' — ' + m.description);
-    m.run();
+    if (m.run() === false) continue; // Partial migrations are idempotent and retry on startup.
     insert.run(m.name, new Date().toISOString());
     console.log('[migration] ' + m.name + ' done');
   }

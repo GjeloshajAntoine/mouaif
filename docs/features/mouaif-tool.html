@@ -78,7 +78,7 @@ What is my default prompt size, and switch this project to agentFiles off.</code
     }
   }
 }</code></pre>
-<p>A one-time startup migration converts older <code>mouaif</code> and <code>mouaif:&lt;action&gt;</code> selections, permissions, prompt presets, and agent allowlists to native function names. Stored Off/Ask/Allow choices are preserved; the running tool paths have no legacy-name exception.</p>
+<p>A startup migration converts older <code>mouaif</code> and <code>mouaif:&lt;action&gt;</code> selections, permissions, prompt presets, and agent allowlists to native function names. Stored Off/Ask/Allow choices are preserved; the running tool paths have no legacy-name exception. If a project settings file can&#39;t be read or saved, startup leaves it intact and continues migrating other projects and chats. Repair the file and restart to retry its migration.</p>
 <h3 id="authorization">Authorization</h3>
 <p>Each function uses the normal native-tool authorization gate independently:</p>
 <ul><li><p><strong>Settings → Project → Tools</strong> — Off / Ask / Allow for each function, project-wide.</p></li><li><p><strong>Chat → Tools card</strong> and the composer tools popup — the same segments, scoped to that chat.</p></li><li><p><code>off</code> hides the tool spec entirely; the model never pays tokens for it.</p></li><li><p><code>ask</code> shows the usual authorization card before the call runs.</p></li><li><p>Per-chat overrides beat project settings, which beat app settings.</p></li></ul>

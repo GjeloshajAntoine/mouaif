@@ -110,7 +110,7 @@ For example, this chat selects just two ordinary functions:
 }
 ```
 
-A one-time startup migration converts older `mouaif` and `mouaif:<action>` selections, permissions, prompt presets, and agent allowlists to native function names. Stored Off/Ask/Allow choices are preserved; the running tool paths have no legacy-name exception.
+A startup migration converts older `mouaif` and `mouaif:<action>` selections, permissions, prompt presets, and agent allowlists to native function names. Stored Off/Ask/Allow choices are preserved; the running tool paths have no legacy-name exception. If a project settings file can't be read or saved, startup leaves it intact and continues migrating other projects and chats. Repair the file and restart to retry its migration.
 
 ### Authorization
 

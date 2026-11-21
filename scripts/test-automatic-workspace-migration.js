@@ -31,7 +31,8 @@ const diskProject = path.join(home, 'disk-project');
 fs.mkdirSync(diskProject, { recursive: true });
 fs.writeFileSync(path.join(diskProject, '.mouaif.json'), JSON.stringify({
   autoWorkspace: true,
-  promptSize: 'extensive'
+  promptSize: 'extensive',
+  tools: { get_app_info: { mode: 'off' } }
 }, null, 2) + '\n', 'utf8');
 
 // A project whose file we cannot read must be left alone, not rewritten.
@@ -41,11 +42,8 @@ fs.writeFileSync(path.join(brokenProject, '.mouaif.json'), '{ not json', 'utf8')
 
 // ---- seed a pre-fix database before the module opens it -------------------
 //
-// Every earlier migration is pre-recorded as already run. They are not what
-// this test covers, and one of them (persist-project-total-cost) parses every
-// registered project file, so the unreadable-project fixture below would make
-// it throw before this migration ever ran. Recording them keeps the test on
-// the one migration it is about.
+// Skip unrelated early migrations, but leave the native-tool conversions
+// pending to check that a broken project doesn't block later work.
 const PRIOR_MIGRATIONS = [
   '2025-07-17-persist-project-total-cost',
   '2026-07-23-drop-unused-client-domains',
@@ -55,8 +53,7 @@ const PRIOR_MIGRATIONS = [
   '2026-08-26-persist-chat-cost-totals',
   '2026-09-12-canonicalize-project-keys',
   '2026-09-26-drop-seeded-chat-prompt',
-  '2026-09-27-snapshot-chat-prompts',
-  '2026-10-01-separate-native-app-tools'
+  '2026-09-27-snapshot-chat-prompts'
 ];
 const dbPath = path.join(home, 'store.sqlite');
 const seed = new Database(dbPath);
@@ -66,8 +63,8 @@ seed.exec('CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, run_at
 seed.prepare('INSERT INTO app_kv (key, value) VALUES (?, ?)')
   .run('settings', JSON.stringify({
     projects: [
-      { id: 'p1', path: diskProject, name: 'disk' },
-      { id: 'p2', path: brokenProject, name: 'broken' }
+      { id: 'p2', path: brokenProject, name: 'broken' },
+      { id: 'p1', path: diskProject, name: 'disk' }
     ],
     autoWorkspace: true,
     promptSize: 'average'
@@ -77,6 +74,9 @@ for (const name of PRIOR_MIGRATIONS) markRan.run(name, '2026-10-06T00:00:00.000Z
 seed.close();
 
 const settings = require(path.join(ROOT, 'src/settings.js'));
+require(path.join(ROOT, 'src/chatdb.js')).ensureChatTables();
+settings.getDb().prepare('INSERT INTO chat_store (project_dir, id, created_at, tools) VALUES (?, ?, ?, ?)')
+  .run(brokenProject, 'chat-1', '2026-10-06T00:00:00.000Z', JSON.stringify(['mouaif:info']));
 
 let pass = 0;
 let fail = 0;
@@ -95,6 +95,9 @@ check('the migration is registered and runs', () => {
   settings.runMigrations();
   const names = settings.getDb().prepare('SELECT name FROM _migrations').all().map((r) => r.name);
   assert.equal(names.includes('2026-10-07-drop-automatic-workspaces'), true);
+  assert.equal(names.includes('2026-10-07-share-model-bookmarks'), true, 'a later migration still runs');
+  assert.equal(names.includes('2026-10-01-separate-native-app-tools'), false, 'the incomplete conversion must stay retryable');
+  assert.equal(names.includes('2026-10-30-fold-get-app-info'), false, 'the incomplete rename must stay retryable');
 });
 
 check('the app-level key is gone and its neighbours survive', () => {
@@ -108,6 +111,13 @@ check('a project file is cleaned without losing other keys', () => {
   const raw = JSON.parse(fs.readFileSync(path.join(diskProject, '.mouaif.json'), 'utf8'));
   assert.equal(Object.prototype.hasOwnProperty.call(raw, 'autoWorkspace'), false);
   assert.equal(raw.promptSize, 'extensive');
+  assert.deepEqual(raw.tools, { list_features: { mode: 'off' } }, 'the healthy project keeps its migrated permission');
+});
+
+check('chats are migrated even when their project file is unreadable', () => {
+  const row = settings.getDb().prepare('SELECT tools FROM chat_store WHERE project_dir = ? AND id = ?')
+    .get(brokenProject, 'chat-1');
+  assert.deepEqual(JSON.parse(row.tools), ['list_features']);
 });
 
 check('an unreadable project file is left exactly as it was', () => {
@@ -124,6 +134,19 @@ check('a second run changes nothing', () => {
   const before = fs.readFileSync(path.join(diskProject, '.mouaif.json'), 'utf8');
   settings.runMigrations();
   assert.equal(fs.readFileSync(path.join(diskProject, '.mouaif.json'), 'utf8'), before);
+});
+
+check('repairing the file retries the deferred conversions without losing permissions', () => {
+  fs.writeFileSync(path.join(brokenProject, '.mouaif.json'), JSON.stringify({
+    tools: { 'mouaif:info': { mode: 'off' } }, promptSize: 'average'
+  }));
+  settings.runMigrations();
+  const names = settings.getDb().prepare('SELECT name FROM _migrations').all().map((r) => r.name);
+  assert.ok(names.includes('2026-10-01-separate-native-app-tools'));
+  assert.ok(names.includes('2026-10-30-fold-get-app-info'));
+  assert.deepEqual(settings.getProject(brokenProject), {
+    tools: { list_features: { mode: 'off' } }, promptSize: 'average'
+  });
 });
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
