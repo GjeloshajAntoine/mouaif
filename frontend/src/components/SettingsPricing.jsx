@@ -149,7 +149,7 @@ export function SettingsPricingView() {
         h('button', { class: 'btn', type: 'button', onClick: revert, disabled: isSaving }, 'Revert'),
         h('span', { class: 'status' + (statusMsg.kind ? ' status--' + statusMsg.kind : ''), 'aria-live': 'polite' }, statusMsg.text)
       ),
-      h('h3', null, 'Known model ids'),
+      h('h3', { class: 'group__title settings__caption' }, 'Known model ids'),
       h('p', { class: 'hint hint--compact' }, 'The chat UI renders a per-turn cost only for ids that resolve through the built-in table or this override. Tap copy to add an id to your table.'),
       h('ul', { class: 'pricing__known', 'aria-label': 'Known model ids' },
         h(Group, { title: 'Built-in defaults', ids: builtin }),

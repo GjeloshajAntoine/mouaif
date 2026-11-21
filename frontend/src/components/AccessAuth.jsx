@@ -264,21 +264,30 @@ export function AccessSettingsView() {
   }
 
   return h('section', { class: 'view settings-page' },
-    h('header', { class: 'view-head' }, h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back' }, '‹'), h('h2', { class: 'view-title' }, 'Access & passkeys')),
+    h('header', { class: 'view-head' }, h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back' }, '←'), h('h2', { class: 'view-title' }, 'Access & passkeys')),
     h('div', { class: 'settings-section' },
       h('p', { class: 'hint' }, status ? 'Signed in as ' + status.user + '. Changing the password signs out other devices and removes passkeys.' : 'Loading…'),
       h('form', { class: 'settings-section__form', onSubmit: changePassword },
-        h('label', { class: 'label', htmlFor: 'current-password' }, 'Current password'),
-        h('input', { id: 'current-password', class: 'input', type: 'password', autocomplete: 'current-password', value: currentPassword, onInput: (e) => setCurrentPassword(e.currentTarget.value), required: true }),
-        h('label', { class: 'label', htmlFor: 'new-password' }, 'New password'),
-        h('input', { id: 'new-password', class: 'input', type: 'password', autocomplete: 'new-password', minLength: 8, value: newPassword, onInput: (e) => setNewPassword(e.currentTarget.value), required: true }),
-        h('label', { class: 'label', htmlFor: 'confirm-password' }, 'Confirm new password'),
-        h('input', { id: 'confirm-password', class: 'input', type: 'password', autocomplete: 'new-password', minLength: 8, value: confirmPassword, onInput: (e) => setConfirmPassword(e.currentTarget.value), required: true }),
-        h('button', { class: 'btn btn--primary', type: 'submit', disabled: busy }, busy ? 'Saving…' : 'Change password')
+        h('div', { class: 'row' },
+          h('label', { class: 'label', htmlFor: 'current-password' }, 'Current password'),
+          h('input', { id: 'current-password', class: 'input', type: 'password', autocomplete: 'current-password', value: currentPassword, onInput: (e) => setCurrentPassword(e.currentTarget.value), required: true })
+        ),
+        h('div', { class: 'row' },
+          h('label', { class: 'label', htmlFor: 'new-password' }, 'New password'),
+          h('input', { id: 'new-password', class: 'input', type: 'password', autocomplete: 'new-password', minLength: 8, value: newPassword, onInput: (e) => setNewPassword(e.currentTarget.value), required: true })
+        ),
+        h('div', { class: 'row' },
+          h('label', { class: 'label', htmlFor: 'confirm-password' }, 'Confirm new password'),
+          h('input', { id: 'confirm-password', class: 'input', type: 'password', autocomplete: 'new-password', minLength: 8, value: confirmPassword, onInput: (e) => setConfirmPassword(e.currentTarget.value), required: true })
+        ),
+        h('div', { class: 'row row--actions' },
+          h('button', { class: 'btn btn--primary access-auth__submit', type: 'submit', disabled: busy }, busy ? 'Saving…' : 'Change password'),
+          passwordMessage && h('span', { class: 'status', 'data-state': passwordMessage.includes('do not match') || passwordMessage.includes('incorrect') ? 'error' : 'success', role: 'status' }, passwordMessage)
+        )
       ),
-      passwordMessage && h('p', { class: 'status', 'data-state': passwordMessage.includes('do not match') || passwordMessage.includes('incorrect') ? 'error' : 'success', role: 'status' }, passwordMessage),
+      h('div', { class: 'group__title access-auth__keys-title' }, 'Passkeys'),
       h('div', { class: 'row row--actions' },
-        h('button', { class: 'btn btn--primary', disabled: busy, onClick: add }, 'Add passkey'),
+        h('button', { class: 'btn btn--primary access-auth__submit', disabled: busy, onClick: add }, 'Add passkey'),
         h('button', { class: 'btn', disabled: busy, onClick: logout }, 'Sign out')
       ),
       h('div', { class: 'access-auth__keys' },

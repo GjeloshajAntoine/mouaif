@@ -47,7 +47,7 @@ Imported by style.css. */
 }
 .access-auth__code { text-align: center; font-family: var(--font-mono); font-size: 1.15rem; letter-spacing: 0.12em; text-transform: uppercase; }
 .access-auth__actions { display: grid; gap: 0.5rem; }
-.access-auth__keys { display: grid; gap: 0.5rem; padding: 0 0.65rem; }
+.access-auth__keys { display: grid; gap: 0.5rem; margin: 0 10px; }
 .access-auth__key { display: flex; align-items: center; gap: 0.75rem; min-height: var(--tap); padding: 0.5rem 0.65rem; border-radius: var(--r-md); background: var(--surface); }
 .access-auth__key > div { min-width: 0; flex: 1; display: grid; }
 .access-auth__key small { color: var(--muted); }
@@ -89,3 +89,12 @@ Imported by style.css. */
 .provider-form__more > summary::before { content: '\25B8'; margin-right: 0.4rem; transition: transform 0.15s; }
 .provider-form__more[open] > summary::before { transform: rotate(90deg); }
 .provider-form__more > summary::-webkit-details-marker { display: none; }
+
+/* ---- Settings → Access & passkeys --------------------------------- */
+/* Keep the primary action at the start of its row, like Save elsewhere
+   in Settings, instead of `.row--actions .btn--primary`'s push right. */
+.row--actions .btn--primary.access-auth__submit { margin-left: 0; }
+/* A caption between the password form and the passkey list, aligned
+   with the other inset groups (10px group margin + 4px title inset). */
+.access-auth__keys-title { margin: 14px 14px 4px; }
+.access-auth__keys > .hint { margin-inline: 0; }

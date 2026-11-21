@@ -803,6 +803,20 @@ border-left: 1px solid var(--border);
 .shared-in__code { width: 100%; box-sizing: border-box; }
 .shared-in__actions { display: flex; gap: .5rem; }
 .shared-in__actions .btn { flex: 1; min-height: var(--tap); }
+/* The page reuses the share sheet's warning box and has no padded
+   container of its own, so give its blocks the 10px settings gutter. */
+.shared-in > :not(.view-head) { margin-inline: 10px; }
+.shared-in__empty {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  text-align: center;
+  padding: 16px 12px;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-md);
+}
+.shared-in__section { margin-top: 14px; }
 
 
 /* Extension views on a project card (ProjectCardExtensions.jsx, slot

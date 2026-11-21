@@ -15,7 +15,10 @@
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  padding: 2px 10px 4px;
+  /* Always used as `row row--actions`: `.row` already sets the 10px side
+     margin, so side padding here put buttons at 20px, out of line with
+     the inputs above them. */
+  padding: 2px 0 4px;
 }
 .row--actions .status { flex: 1; }
 .row--actions .btn--primary { margin-left: auto; }
