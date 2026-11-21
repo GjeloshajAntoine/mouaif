@@ -159,30 +159,30 @@ function applyPatch({ scope, projectDir, patch, unset, actor = 'ui', remote = fa
   }
   policy.checkSecrets(body, { actor, remote });
 
-  const store = stores.storeFor('settings', scope, projectDir);
-  const current = store.read();
-  const next = { ...current };
-  for (const key of Object.keys(body)) {
-    const value = prepareValue(key, clone(body[key]), current[key]);
-    // Validate on write only, and only what changes: the raw project editor
-    // re-sends every key, and a hand-edited value it did not touch must not
-    // block the save (reads report it as a warning instead).
-    if (!same(value, current[key])) validateKey(key, value, scope);
-    next[key] = value;
+  function apply() {
+    const store = stores.storeFor('settings', scope, projectDir);
+    const current = store.read();
+    const next = { ...current };
+    for (const key of Object.keys(body)) {
+      const value = prepareValue(key, clone(body[key]), current[key]);
+      // Only validate changed values; an unchanged hand edit doesn't block a save.
+      if (!same(value, current[key])) validateKey(key, value, scope);
+      next[key] = value;
+    }
+    for (const key of removing) delete next[key];
+
+    const changes = [];
+    for (const key of keys) changes.push(...diffKey(key, current[key], next[key], { scope }));
+    const document = dryRun || !keys.length ? next : store.write(next);
+    return { changes, warnings: [], approval, document };
   }
-  for (const key of removing) delete next[key];
-
-  const changes = [];
-  for (const key of keys) changes.push(...diffKey(key, current[key], next[key], { scope }));
-  const result = { changes, warnings: [], approval, document: next };
-  if (dryRun || !keys.length) return result;
-
-  result.document = store.write(next);
+  if (dryRun || !keys.length) return apply();
+  const result = stores.withWriteLock(apply);
   events.emit('content_changed', {
     scope,
     projectDir: scope === 'project' ? projectDir : null,
     keys,
-    types: [...new Set(changes.map((c) => c.type))],
+    types: [...new Set(result.changes.map((c) => c.type))],
     actor: remote ? 'share' : actor
   });
   return result;
@@ -221,9 +221,9 @@ function readType(type, scope, projectDir) {
 //
 // A type that must react to its own writes registers here (the registry
 // stays plain data). beforeWrite(ctx) runs before the document is written and
-// its return value is handed to afterWrite(ctx, state):
-//   project hooks  capture whether the list was trusted, then trust the new
-//                  list only if it was (src/projectHooks.js)
+// its return value is handed to afterWrite(ctx, state) after commit, or to
+// afterWriteLocked(ctx, state) if it must observe this exact write:
+//   project hooks  carry trust forward while the settings lock is held
 // ctx = { type, scope, projectDir, before, after, actor, via }
 
 const writeHooks = new Map();
@@ -278,32 +278,41 @@ function writeMany({ scope, projectDir, entries, unset = [], actor = 'ui', remot
   for (const { type } of resolved) {
     if (policy.checkType({ type, scope, actor, remote, via }).approval) approval = true;
   }
-  const store = stores.storeFor([...docs][0], scope, projectDir);
-  const current = store.read();
-  let next = current;
-  const changes = [];
-  const touched = [];
-  for (const { type, value } of resolved) {
+  function apply() {
+    const store = stores.storeFor([...docs][0], scope, projectDir);
+    const current = store.read();
+    let next = current;
+    const changes = [];
+    const touched = [];
+    for (const { type, value } of resolved) {
     const parts = type.path.split('.');
     const before = getAt(current, parts);
-    next = setAt(next, parts, value === undefined ? undefined : clone(value));
-    if (type.shape === 'collection') changes.push(...collectionChanges(type, scope, before, value));
-    else if (!same(before, value)) changes.push(valueChange(type, scope, type.path, before, value));
-    if (!same(before, value)) touched.push({ type, before, after: value });
-  }
-  const dropped = unset.filter((k) => Object.prototype.hasOwnProperty.call(next, k));
-  if (dropped.length) {
-    next = { ...next };
-    for (const key of dropped) delete next[key];
-  }
-  if (dryRun || (!touched.length && !dropped.length)) return { changes, approval };
+      next = setAt(next, parts, value === undefined ? undefined : clone(value));
+      if (type.shape === 'collection') changes.push(...collectionChanges(type, scope, before, value));
+      else if (!same(before, value)) changes.push(valueChange(type, scope, type.path, before, value));
+      if (!same(before, value)) touched.push({ type, before, after: value });
+    }
+    const dropped = unset.filter((k) => Object.prototype.hasOwnProperty.call(next, k));
+    if (dropped.length) {
+      next = { ...next };
+      for (const key of dropped) delete next[key];
+    }
+    const result = { changes, approval };
+    if (dryRun || (!touched.length && !dropped.length)) return { result };
 
-  const states = touched.map((t) => {
-    const hooks = writeHooks.get(t.type.id);
-    const ctx = { type: t.type, scope, projectDir, before: t.before, after: t.after, actor, via };
-    return { hooks, ctx, state: hooks && hooks.beforeWrite ? hooks.beforeWrite(ctx) : undefined };
-  });
-  store.write(next);
+    const states = touched.map((t) => {
+      const hooks = writeHooks.get(t.type.id);
+      const ctx = { type: t.type, scope, projectDir, before: t.before, after: t.after, actor, via };
+      return { hooks, ctx, state: hooks && hooks.beforeWrite ? hooks.beforeWrite(ctx) : undefined };
+    });
+    store.write(next);
+    for (const { hooks, ctx, state } of states) {
+    if (hooks && hooks.afterWriteLocked) hooks.afterWriteLocked(ctx, state);
+    }
+    return { result, states, dropped };
+  }
+  const { result, states, dropped } = dryRun ? apply() : stores.withWriteLock(apply);
+  if (!states) return result;
   for (const { hooks, ctx, state } of states) {
     if (hooks && hooks.afterWrite) hooks.afterWrite(ctx, state);
   }
@@ -314,7 +323,7 @@ function writeMany({ scope, projectDir, entries, unset = [], actor = 'ui', remot
     types: resolved.map((e) => e.type.id),
     actor: remote ? 'share' : actor
   });
-  return { changes, approval };
+  return result;
 }
 
 module.exports = { applyPatch, writeType, writeMany, checkWrite, onWrite, readType, warningsFor, validateKey, events, carrySecrets };

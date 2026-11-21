@@ -111,13 +111,16 @@ function dbStamp() {
 // readRow(key, load) — `load()` returns the row's parsed entry
 // (`{ exists, value }`). Cached until any write reaches the store.
 function readRow(key, load) {
+  // A transaction may see uncommitted writes or roll them back. Don't let
+  // that snapshot populate the cache used by readers outside the transaction.
+  if (contentDb.db().inTransaction) return load();
   const stamp = dbStamp();
   const hit = rowCache.get(key);
   if (hit && hit.stamp === stamp) return { exists: hit.exists, value: clone(hit.value) };
   const entry = load();
-  // load() may have written (the app row's corrupt-blob quarantine); stamp
-  // after it so that write does not make the entry look stale at once.
-  rowCache.set(key, { stamp: dbStamp(), exists: entry.exists, value: clone(entry.value) });
+  // Use the stamp from before the read. Another connection might have
+  // committed since load(), and a newer stamp would hide that update.
+  rowCache.set(key, { stamp, exists: entry.exists, value: clone(entry.value) });
   return entry;
 }
 
@@ -125,6 +128,7 @@ function readRow(key, load) {
 // a read-only check (the storage-mode marker). Never hand it to a caller that
 // could mutate it.
 function peekRow(key, load) {
+  if (contentDb.db().inTransaction) return load();
   const stamp = dbStamp();
   let hit = rowCache.get(key);
   if (!hit || hit.stamp !== stamp) {
@@ -134,9 +138,10 @@ function peekRow(key, load) {
   return hit;
 }
 
-// Record what was just written to the row.
-function wroteRow(key, value, exists = true) {
-  rowCache.set(key, { stamp: dbStamp(), exists, value: clone(value) });
+// Invalidate instead of stamping the writer's value: another connection
+// may have committed by the time we can read a fresh stamp.
+function wroteRow(key) {
+  rowCache.delete(key);
 }
 
 function clear() {

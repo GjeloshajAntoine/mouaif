@@ -269,16 +269,21 @@ function id() {
   return crypto.randomBytes(8).toString('hex');
 }
 
-function readProjects() {
-  const app = settings.getApp();
+function readProjects(app = settings.getApp()) {
   const list = Array.isArray(app.projects) ? app.projects : [];
   // Defensive copy, validated.
   return list.filter(p => p && typeof p.path === 'string' && typeof p.id === 'string');
 }
 
-function writeProjects(list) {
-  // Single shallow patch — settings.setApp does the merge.
-  settings.setApp({ projects: list });
+// Keep edits to the list itself inside the app document's write lock.
+function updateProjects(update) {
+  let result;
+  settings.updateApp((app) => {
+    const change = update(readProjects(app));
+    result = change.result;
+    return change.list ? { ...app, projects: change.list } : app;
+  });
+  return result;
 }
 
 function emptyTotalCost() {
@@ -303,29 +308,29 @@ function listProjects() {
   }));
 }
 function setProjectTotalCost(projectDir, totalCost) {
-  const list = readProjects();
-  const idx = list.findIndex((project) => path.resolve(project.path) === path.resolve(projectDir));
-  if (idx < 0) return null;
-  const normalized = normalizeTotalCost(totalCost);
-  list[idx] = { ...list[idx], totalCost: normalized };
-  writeProjects(list);
-  return normalized;
+  return updateProjects((list) => {
+    const idx = list.findIndex((project) => path.resolve(project.path) === path.resolve(projectDir));
+    if (idx < 0) return { result: null };
+    const normalized = normalizeTotalCost(totalCost);
+    list[idx] = { ...list[idx], totalCost: normalized };
+    return { list, result: normalized };
+  });
 }
 function adjustProjectTotalCost(projectDir, totalDelta, knownCountDelta) {
-  const list = readProjects();
-  const idx = list.findIndex((project) => path.resolve(project.path) === path.resolve(projectDir));
-  if (idx < 0) return null;
-  const current = normalizeTotalCost(list[idx].totalCost);
-  const knownCount = Math.max(0, current.knownCount + knownCountDelta);
-  const totalCost = {
-    total: knownCount > 0 ? Math.max(0, current.total + totalDelta) : 0,
-    known: knownCount > 0,
-    currency: 'USD',
-    knownCount
-  };
-  list[idx] = { ...list[idx], totalCost };
-  writeProjects(list);
-  return totalCost;
+  return updateProjects((list) => {
+    const idx = list.findIndex((project) => path.resolve(project.path) === path.resolve(projectDir));
+    if (idx < 0) return { result: null };
+    const current = normalizeTotalCost(list[idx].totalCost);
+    const knownCount = Math.max(0, current.knownCount + knownCountDelta);
+    const totalCost = {
+      total: knownCount > 0 ? Math.max(0, current.total + totalDelta) : 0,
+      known: knownCount > 0,
+      currency: 'USD',
+      knownCount
+    };
+    list[idx] = { ...list[idx], totalCost };
+    return { list, result: totalCost };
+  });
 }
 
 function getProject(pid) {
@@ -343,27 +348,25 @@ function registerProject(absPath) {
     e.path = safe;
     throw e;
   }
-  const existing = readProjects();
-  // Dedupe by canonical path.
-  const dupe = existing.find(p => path.resolve(p.path) === safe);
-  if (dupe) return dupe;
-  const row = {
-id: id(),
-path: safe,
-name: path.basename(safe),
-createdAt: new Date().toISOString(),
-totalCost: emptyTotalCost()
-};
-  writeProjects([...existing, row]);
-  return row;
+  return updateProjects((list) => {
+    const dupe = list.find(p => path.resolve(p.path) === safe);
+    if (dupe) return { result: dupe };
+    const row = {
+      id: id(),
+      path: safe,
+      name: path.basename(safe),
+      createdAt: new Date().toISOString(),
+      totalCost: emptyTotalCost()
+    };
+    return { list: [...list, row], result: row };
+  });
 }
 
 function removeProject(pid) {
-  const before = readProjects();
-  const after = before.filter(p => p.id !== pid);
-  if (after.length === before.length) return false;
-  writeProjects(after);
-  return true;
+  return updateProjects((before) => {
+    const after = before.filter(p => p.id !== pid);
+    return after.length === before.length ? { result: false } : { list: after, result: true };
+  });
 }
 
 // Rename a registered project's display label. The on-disk folder
@@ -374,13 +377,13 @@ function renameProject(pid, newName) {
   if (typeof newName !== 'string') return null;
   const trimmed = newName.trim();
   if (!trimmed) return null;
-  const list = readProjects();
-  const idx = list.findIndex(p => p.id === pid);
-  if (idx < 0) return null;
-  const updated = Object.assign({}, list[idx], { name: trimmed });
-  list[idx] = updated;
-  writeProjects(list);
-  return updated;
+  return updateProjects((list) => {
+    const idx = list.findIndex(p => p.id === pid);
+    if (idx < 0) return { result: null };
+    const updated = { ...list[idx], name: trimmed };
+    list[idx] = updated;
+    return { list, result: updated };
+  });
 }
 
 // Put the registered projects in the order of `ids` (the order the cards are
@@ -391,18 +394,21 @@ function renameProject(pid, newName) {
 // strings.
 function reorderProjects(ids) {
   if (!Array.isArray(ids) || !ids.every(x => typeof x === 'string')) return null;
-  const list = readProjects();
-  const byId = new Map(list.map(p => [p.id, p]));
-  const seen = new Set();
-  const head = [];
-  for (const pid of ids) {
-    if (!byId.has(pid) || seen.has(pid)) continue;
-    seen.add(pid);
-    head.push(byId.get(pid));
-  }
-  const next = head.concat(list.filter(p => !seen.has(p.id)));
-  if (next.some((p, i) => p !== list[i])) writeProjects(next);
-  return next.map(project => ({ ...project, totalCost: normalizeTotalCost(project.totalCost) }));
+  return updateProjects((list) => {
+    const byId = new Map(list.map(p => [p.id, p]));
+    const seen = new Set();
+    const head = [];
+    for (const pid of ids) {
+      if (!byId.has(pid) || seen.has(pid)) continue;
+      seen.add(pid);
+      head.push(byId.get(pid));
+    }
+    const next = head.concat(list.filter(p => !seen.has(p.id)));
+    return {
+      list: next.some((p, i) => p !== list[i]) ? next : null,
+      result: next.map(project => ({ ...project, totalCost: normalizeTotalCost(project.totalCost) }))
+    };
+  });
 }
 
 module.exports = {

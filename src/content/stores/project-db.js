@@ -65,7 +65,7 @@ function writeRow(projectDir, next) {
        ON CONFLICT(project_dir) DO UPDATE SET value = excluded.value`
     )
     .run(dir, JSON.stringify(next));
-  cache.wroteRow('project:' + dir, next);
+  cache.wroteRow('project:' + dir);
   return next;
 }
 
@@ -78,7 +78,7 @@ function deleteRow(projectDir) {
   contentDb.db()
     .prepare(`DELETE FROM ${PROJECT_SETTINGS_TABLE} WHERE project_dir = ?`)
     .run(dir);
-  cache.wroteRow('project:' + dir, {}, false);
+  cache.wroteRow('project:' + dir);
 }
 
 function createProjectDbStore(projectDir) {

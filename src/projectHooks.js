@@ -267,7 +267,7 @@ function append(projectDir, hook) {
   let id = entry.id;
   for (let i = 2; ids.has(id); i++) id = entry.id.slice(0, 34) + '-' + i;
   entry.id = id;
-  // The trust carry-over runs as the write's afterWrite step (below).
+  // The trust carry-over runs while the settings write lock is held (below).
   const r = collection.replace('hooks', 'project', projectDir, current.concat(entry), { via: 'hook_create' });
   require('./app-events.js').projectChanged(projectDir, 'hooks');
   return { hook: entry, trusted: wasTrusted, changes: r.changes };
@@ -286,7 +286,7 @@ function trustedBefore(projectDir) {
 // user approved, and a write can never trust a list that was not.
 require('./content/service.js').onWrite('hooks', {
   beforeWrite: (ctx) => ({ wasTrusted: trustedBefore(ctx.projectDir) }),
-  afterWrite: (ctx, state) => {
+  afterWriteLocked: (ctx, state) => {
     cache.delete(ctx.projectDir);
     const after = status(ctx.projectDir);
     if (state && state.wasTrusted && after.hash && !after.errors.length) setTrust(ctx.projectDir, after.hash);

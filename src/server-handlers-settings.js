@@ -292,36 +292,19 @@ async function handleSettings(req, res, parsed) {
 
   // POST /api/settings/app/reset  body: { keys: ['models', 'flags'] }
   // Clears the listed app-level keys, restoring them to defaults.
-  // Implementation: build a fresh patch that contains only the keys
-  // NOT in the reset list. setApp shallow-merges, so omitting a key
-  // from the patch is a no-op — we need a stronger reset, so we
-  // explicitly delete the keys from a clone of the current app and
-  // write that clone back.
+  // Delete only the listed keys from the latest app document.
   if (urlPath === '/api/settings/app/reset' && method === 'POST') {
     const body = await readJsonOr400(req, res);
     if (!body) return;
     const keys = Array.isArray(body && body.keys) ? body.keys : [];
     const bad = keys.filter(k => !RESETTABLE_APP_KEYS.has(k));
     if (bad.length) return sendJSON(res, 400, { error: 'Unknown key(s)', bad });
-    // Build a fresh object that omits the reset keys, then write it
-    // through. SQLite stores the new object verbatim (setApp uses
-    // { ...current, ...patch } internally; here we pass a patch that
-    // does NOT include the reset keys, but the merged result still
-    // contains them because the stored `current` does). So we need a
-    // explicit delete: a special-cased "replace" path. The simplest
-    // correct approach is to use the app store's underlying SQL: an
-    // UPSERT of an object that has the keys removed.
-    const current = settings.getApp();
-    const next = Object.assign({}, current);
-    for (const k of keys) delete next[k];
     try {
-      // setApp is shallow-merge; passing the trimmed object and using
-      // a direct write would be ideal, but we don't expose a
-      // replace-at-the-root method. Cheapest correct option: pass an
-      // empty patch alongside a sentinel, OR just deep-copy the app
-      // and write the trimmed version through a new method.
-      // -> we add setAppReplace for this.
-      const result = settings.setAppReplace(next);
+    const result = settings.updateApp((current) => {
+      const next = { ...current };
+      for (const k of keys) delete next[k];
+      return next;
+    });
       return sendJSON(res, 200, { app: settingsForClient(result), reset: keys });
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });

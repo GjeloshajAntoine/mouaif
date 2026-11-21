@@ -46,6 +46,8 @@ Both responses add a `changes` list describing what the write did:
 }
 ```
 
+When mouaif processes share the same app database, settings patches are merged under a shared write lock, including patches to file-backed projects. Independent keys and concurrent project registrations are preserved. If both writes change the same setting, the last write wins.
+
 Every write also sends a `content_changed` server event (`{ scope, projectDir, keys, types, actor }`) on `/events`.
 
 ## Where the app store lives

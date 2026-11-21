@@ -18,6 +18,7 @@
 // The project's mode is the `__dbBacked` marker in its `project_settings` row
 // (see project-db.js). setProjectMode() moves every document between modes.
 
+const contentDb = require('../db.js');
 const appDb = require('./app-db.js');
 const projectFile = require('./project-file.js');
 const projectDb = require('./project-db.js');
@@ -54,6 +55,14 @@ function storeFor(doc, scope, projectDir, mode) {
   return doc === 'mcp' ? projectMcp.createProjectMcpStore(projectDir, m, settings) : settings;
 }
 
+// Take the write reservation before reading a document. SQLite also serves
+// as the cross-process lock for settings files when workers share an app DB;
+// their rename is atomic, but that alone cannot protect a read/merge/write.
+// Callbacks must be synchronous. Emit notices only after this returns.
+function withWriteLock(fn) {
+  return contentDb.db().transaction(fn).immediate();
+}
+
 // Move a project between file and DB storage.
 //
 // Settings: to DB, the file is copied into the DB — the file is what the
@@ -68,15 +77,17 @@ function storeFor(doc, scope, projectDir, mode) {
 // so it only flips at the last step: a write that throws on the way leaves the
 // project in its old mode with every document where that mode reads it.
 function setProjectMode(projectDir, dbBacked) {
-  const current = projectMode(projectDir);
-  const target = dbBacked ? 'db' : 'file';
-  if (current === target) return target;
-  const from = storeFor('settings', 'project', projectDir, current);
-  const to = storeFor('settings', 'project', projectDir, target);
-  to.write(stripMarker(from.read()));
-  projectMcp.moveMode(projectDir, target);
-  if (from.clear) from.clear();
-  return target;
+  return withWriteLock(() => {
+    const current = projectMode(projectDir);
+    const target = dbBacked ? 'db' : 'file';
+    if (current === target) return target;
+    const from = storeFor('settings', 'project', projectDir, current);
+    const to = storeFor('settings', 'project', projectDir, target);
+    to.write(stripMarker(from.read()));
+    projectMcp.moveMode(projectDir, target);
+    if (from.clear) from.clear();
+    return target;
+  });
 }
 
 function stripMarker(value) {
@@ -88,6 +99,7 @@ function stripMarker(value) {
 module.exports = {
   DOCS,
   storeFor,
+  withWriteLock,
   projectMode,
   setProjectMode,
   stripMarker

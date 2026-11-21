@@ -66,6 +66,7 @@
       &quot;label&quot;: &quot;Tool output size&quot;, &quot;page&quot;: &quot;settings/project/output&quot;, &quot;before&quot;: null, &quot;after&quot;: &quot;full&quot; }
   ]
 }</code></pre>
+<p>When mouaif processes share the same app database, settings patches are merged under a shared write lock, including patches to file-backed projects. Independent keys and concurrent project registrations are preserved. If both writes change the same setting, the last write wins.</p>
 <p>Every write also sends a <code>content_changed</code> server event (<code>{ scope, projectDir, keys, types, actor }</code>) on <code>/events</code>.</p>
 <h2 id="where-the-app-store-lives">Where the app store lives</h2>
 <p>App-level settings are stored as one JSON object in the <code>app_kv</code> row of <code>~/.mouaif/store.sqlite</code> (key <code>settings</code>), next to the purpose-built tables for project settings, the MCP tool cache and recent models.</p>

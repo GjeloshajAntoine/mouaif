@@ -93,7 +93,7 @@ function readRow(projectDir) {
 function writeRow(projectDir, next) {
   const dir = contentDb.requireCanonicalProjectDir(projectDir);
   stmts().put.run(dir, DOC, JSON.stringify(next));
-  cache.wroteRow(rowKey(dir), next);
+  cache.wroteRow(rowKey(dir));
   return next;
 }
 
@@ -101,7 +101,7 @@ function deleteRow(projectDir) {
   const dir = contentDb.canonicalProjectDir(projectDir);
   if (!dir) return;
   stmts().del.run(dir, DOC);
-  cache.wroteRow(rowKey(dir), {}, false);
+  cache.wroteRow(rowKey(dir));
 }
 
 // ---- Adapters ------------------------------------------------------------

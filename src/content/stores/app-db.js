@@ -38,11 +38,13 @@ function loadRow(key) {
     const quarantineKey = key + QUARANTINE_SUFFIX + new Date().toISOString().replace(/[:.]/g, '-')
       + '-' + crypto.randomBytes(3).toString('hex');
     try {
-      d.transaction(() => {
-        d.prepare(`INSERT OR REPLACE INTO ${APP_KV_TABLE} (key, value) VALUES (?, ?)`)
-          .run(quarantineKey, row.value);
-        d.prepare(`DELETE FROM ${APP_KV_TABLE} WHERE key = ?`).run(key);
-      })();
+      const quarantined = d.transaction(() => {
+      const removed = d.prepare(`DELETE FROM ${APP_KV_TABLE} WHERE key = ? AND value = ?`).run(key, row.value);
+      if (!removed.changes) return false;
+      d.prepare(`INSERT INTO ${APP_KV_TABLE} (key, value) VALUES (?, ?)`).run(quarantineKey, row.value);
+      return true;
+      }).immediate();
+      if (!quarantined) return loadRow(key);
       console.error('[settings] app settings were unreadable (' + e.message
         + '); the stored value was preserved as ' + quarantineKey
         + ' and settings start from defaults. See listQuarantinedAppSettings().');
@@ -64,7 +66,7 @@ function writeRow(key, next) {
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`
     )
     .run(key, JSON.stringify(next));
-  cache.wroteRow('app:' + key, next);
+  cache.wroteRow('app:' + key);
   return next;
 }
 
