@@ -27,18 +27,59 @@
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   touch-action: pan-y;
-  scrollbar-width: thin;
+  /* Colour tokens for the bar below, mixed from --fg because --fg is the far
+     end from --bg in every built-in theme (light ink on the dark ones, dark
+     ink on Paper/Parchment/Yellow Paper), so one mix direction stays legible
+     in all of them. The thumb used to be --border-strong: #333d52 on
+     midnight's #131824, 1.79:1 — a bar on a dark theme that could be neither
+     seen nor aimed at. Tokens because the two engine paths below must agree. */
+  --chat-scroll-thumb: color-mix(in srgb, var(--fg) 65%, var(--bg));
+  --chat-scroll-thumb-hot: color-mix(in srgb, var(--fg) 90%, var(--bg));
+  --chat-scroll-track: color-mix(in srgb, var(--fg) 10%, var(--bg));
 }
 /* Classic desktop scrollbars consume inline space. Reserve the same gutter
    on both sides so the centred rows still align with the head/composer.
-   Phones retain their existing edge-to-edge scroll surface. */
+   Phones retain their existing edge-to-edge scroll surface.
+   One gutter, never two: this rule reserves it and nothing adds padding for
+   the bar, so rows keep their full reading width. */
 @media (min-width: 48rem) {
   .chat-view__transcript { scrollbar-gutter: stable both-edges; }
 }
-.chat-view__transcript::-webkit-scrollbar { width: 6px; }
+/* The bar, in two engine-specific halves. Chromium and Safari skin the
+   classic bar through the ::-webkit-scrollbar pseudos; Firefox ignores those
+   and needs the standard properties, which are therefore scoped to Firefox
+   below. Do not hoist them out of the @supports: a Chromium that implements
+   scrollbar-width/scrollbar-color overrides the ::-webkit-scrollbar skin
+   with them when either is non-auto, and an unguarded `scrollbar-width:
+   thin` — the rule that used to sit in the scroller block — is how the skin
+   here was being replaced by a default-coloured thin bar entirely.
+   10px, not the old 6px: wide enough to aim at. Phones paint an overlay
+   indicator and honour neither path, so a narrow viewport keeps its
+   edge-to-edge scroll surface and loses no reading width. The lane a classic
+   bar does take is measured from the live scroller (syncNavScrollbarLane in
+   components/chat/scroll.js), never assumed to be this width. */
+.chat-view__transcript::-webkit-scrollbar { width: 10px; }
+.chat-view__transcript::-webkit-scrollbar-track { background: var(--chat-scroll-track); }
 .chat-view__transcript::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--r-sm);
+  background: var(--chat-scroll-thumb);
+  border-radius: var(--r-pill);
+}
+/* Brighter under the pointer and while dragging (a classic bar reports a
+   press on the thumb as :active), so the bar answers a grab. The resting
+   thumb is already legible: this is feedback, not the only cue, and nothing
+   here is hover-only. */
+.chat-view__transcript::-webkit-scrollbar-thumb:hover,
+.chat-view__transcript::-webkit-scrollbar-thumb:active {
+  background: var(--chat-scroll-thumb-hot);
+}
+/* `-moz-appearance` is the one property feature query only Firefox answers,
+   so this is the Firefox half: its `thin` is at least the 8px grab floor, and
+   scrollbar-color carries the same thumb/track pair as the pseudos above. */
+@supports (-moz-appearance: none) {
+  .chat-view__transcript {
+    scrollbar-width: thin;
+    scrollbar-color: var(--chat-scroll-thumb) var(--chat-scroll-track);
+  }
 }
 
 .chat-msg {
