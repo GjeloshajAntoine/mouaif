@@ -27,7 +27,7 @@ Each folder name in the breadcrumb is independently tappable: tap an ancestor to
 
 ### Right-hand pane modes
 
-- **Editor** — header shows the relative path with a `•` when dirty, **Revert** + **Save** buttons, the CodeMirror host, and a status row. Syntax highlighting uses the One Dark palette (readable on the dark editor surface), not the light `defaultHighlightStyle`.
+- **Editor** — header shows the relative path with a `•` when dirty, **Revert** + **Save** buttons, the CodeMirror host, and a status row. Syntax highlighting uses the One Dark palette (readable on the dark editor surface), not the light `defaultHighlightStyle`. The header is deliberately compact — 40 px tall, with 30 px buttons and a `0.74rem` path and label — matching the web preview viewer's header, so the path and every action share one row.
 - **Preview** — header shows the relative path, **Edit** (only for SVG) + **Close**, the centered image, and a status row with the file size and MIME type. Every previewable image, SVG included, is painted by one `<img>` whose `src` is the `data:` URL the server returned. An SVG loaded that way is a separate document with scripting disabled: `<script>`, `on*` handlers, `<foreignObject>` HTML content and external fetches do not run. See **Why the SVG preview is an image, not markup** below.
 - **Empty state** — "Pick a file from the list to start editing, or tap an image to preview it."
 

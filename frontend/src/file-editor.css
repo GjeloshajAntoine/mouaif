@@ -41,9 +41,9 @@
   display: block;
   width: 100%;
   min-width: 0;
-  height: 36px;
+  height: 30px;
   font-family: var(--font-mono);
-  font-size: 0.8rem;
+  font-size: 0.74rem;
   padding: 0 10px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -52,8 +52,15 @@
 }
 .fe__path-input:focus { border-color: var(--accent); outline: none; }
 /* Icon buttons use the shared .icon-btn utility (forms.css); the file
-   editor bumps the glyph size and adds a sticky "active" toggle state. */
-.fe__iconbtn { font-size: 0.8rem; }
+   editor sizes them like the web preview's header actions (30 px, 0.74rem)
+   and adds a sticky "active" toggle state. */
+.fe__iconbtn {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  font-size: 0.74rem;
+}
 .fe__iconbtn.is-active { background: var(--accent-soft); color: var(--accent); }
 @media (hover: hover) {
   .fe__iconbtn.is-active:hover { background: var(--accent-soft); color: var(--accent); }
@@ -215,8 +222,9 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
+  gap: 6px;
+  padding: 4px 6px 4px 12px;
+  min-height: 40px;
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
 }
@@ -224,17 +232,17 @@
   flex: 1 1 auto;
   min-width: 0;
   font-family: var(--font-mono);
-  font-size: 0.8rem;
+  font-size: 0.74rem;
   color: var(--fg);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .fe__editor-actions { flex: 0 0 auto; display: flex; gap: 4px; overflow-x: auto; }
-.fe__editor-actions .btn { min-height: var(--tap); padding: 0 10px; font-size: 0.8rem; }
+.fe__editor-actions .btn { min-height: 30px; padding: 0 8px; font-size: 0.74rem; font-weight: 600; }
 /* An artifact's extra button must not squeeze its name out on a phone. */
 @media (max-width: 480px) {
-  .fe__editor-actions--artifact .fe__draft-craft { min-width: var(--tap); justify-content: center; }
+  .fe__editor-actions--artifact .fe__draft-craft { min-width: 30px; justify-content: center; }
   .fe__editor-actions--artifact .fe__draft-craft span { display: none; }
 }
 /* Full editor: this row is the sheet's only bar (it also carries the
