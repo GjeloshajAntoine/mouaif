@@ -33,6 +33,8 @@ Each folder name in the breadcrumb is independently tappable to jump directly to
 
 The two panes never appear together. Opening a text file clears the preview, opening an image clears the editor and destroys the CodeMirror view to free memory. If the open file has unsaved changes, opening an image asks to discard them first, as opening another file does. When you tap several files quickly, only the last one you tapped opens, even if an earlier read finishes after it.
 
+Each editor save stages its own temporary file beside the destination before replacing it. If two tabs save the same file, both saves can finish without corrupting the file; the last completed replacement wins.
+
 ### Layout toggle — split vs full-editor
 The modal opens in **split view** by default. On tablet/desktop the file list sits on the left (34% width, up to 340 px) and the editor/preview on the right. On phones the list is stacked above the editor. While no file is open, the list and the empty state share the body. Once a file or image is open, the list shrinks to fit its rows, up to 36% of the body, and scrolls past that. The editor gets the rest of the space.
 

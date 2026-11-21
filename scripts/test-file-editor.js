@@ -102,6 +102,17 @@ t('readFile sibling relPath is ..-prefixed', sibling && sibling.relPath && sibli
   const after = fs.readFileSync(path.join(root, 'hello.txt'), 'utf8');
   t('writeFile persisted', after === 'updated\n');
 
+  const target = path.join(root, 'hello.txt');
+  const bodies = Array.from({ length: 16 }, (_, i) => `save ${i}\n`.repeat(4096));
+  if (process.platform !== 'win32') fs.chmodSync(target, 0o640);
+  const saves = await Promise.allSettled(bodies.map((body) => files.writeFile(root, target, body)));
+  t('all overlapping saves succeed', saves.every((result) => result.status === 'fulfilled'));
+  t('overlapping saves leave one complete body', bodies.includes(fs.readFileSync(target, 'utf8')));
+  t('overlapping saves leave no staging files', !fs.readdirSync(root).some((name) => name.includes('.mouaif-tmp')));
+  if (process.platform !== 'win32') {
+    t('overlapping saves preserve file permissions', (fs.statSync(target).mode & 0o777) === 0o640);
+  }
+
   // 8. writeFile rejects binary
   let wb = null;
   try { await files.writeFile(root, path.join(root, 'binary.png'), 'no'); }

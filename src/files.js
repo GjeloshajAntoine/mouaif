@@ -23,6 +23,7 @@
 // non-text files with a typed EBINARY error so the caller can show
 // "this file cannot be edited here" instead of a 500.
 
+const { randomUUID } = require('crypto');
 const fs = require('fs');
 const fsp = require('fs').promises;
 const path = require('path');
@@ -355,9 +356,9 @@ async function readMedia(projectDir, filePath, opts) {
 
 // ---- Public: write -----------------------------------------------------
 
-// Atomic write: stage to <file>.mouaif-tmp then rename. Same pattern
-// used by src/tools/files.js so a crash mid-write cannot truncate the
-// real file. Preserves the existing file mode when overwriting.
+// Stage each save separately, then rename atomically. Overlapping saves
+// leave one complete version, never a shared staging file. Preserve the
+// existing file's permissions when overwriting.
 async function writeFile(projectDir, filePath, content) {
   if (typeof content !== 'string') {
     throw err('EBADINPUT', 'content must be a string');
@@ -398,16 +399,22 @@ async function writeFile(projectDir, filePath, content) {
     throw err('ETOOLARGE', 'Refusing to write file larger than the editor size cap', { path: abs, size, maxBytes: DEFAULT_MAX_BYTES });
   }
 
-  const tmp = abs + '.mouaif-tmp';
-  let st;
-  try { st = await fsp.stat(abs); }
-  catch (e) { if (e.code !== 'ENOENT') throw e; }
+  const tmp = path.join(parent, '.mouaif-tmp-' + randomUUID());
+  let ownsTmp = false;
   try {
-    await fsp.writeFile(tmp, content, { encoding: 'utf8', mode: st ? st.mode : 0o644 });
+    const handle = await fsp.open(tmp, 'wx', existing ? 0o600 : 0o644);
+    ownsTmp = true;
+    try {
+      await handle.writeFile(content, 'utf8');
+      if (existing) await handle.chmod(existing.mode & 0o777);
+    } finally {
+      await handle.close();
+    }
     await fsp.rename(tmp, abs);
   } catch (e) {
-    // Clean up the staging file on failure.
-    try { await fsp.unlink(tmp); } catch { /* ignore */ }
+    if (ownsTmp) {
+      try { await fsp.unlink(tmp); } catch { /* ignore */ }
+    }
     if (e.code === 'EACCES') throw err('EACCES', e.message, { path: abs });
     throw e;
   }
