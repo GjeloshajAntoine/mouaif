@@ -40,11 +40,11 @@ npm run dev:web      # vite dev server on :5173 (not used by the Node server)
 | --- | --- |
 | `messages` | transcript rows held client-side (saved and unsaved) |
 | `pager` | backward-pagination cursor (`pagination.js`) |
-| `transcriptNextSeq` | next saved-row seq the reconcile poll expects |
+| `transcriptNextSeq` | next saved-row seq the catch-up sync expects |
 | `nextLiveSeq` | `/live?fromLiveSeq=` replay cursor |
 | `liveRun` | follower live-socket marker |
 | `runSettled` | latch that keeps a torn run settled |
-| `watchingStableTicks` | stable-tick counter for the reload follow poll |
+| `watchingStableTicks` | stable-tick counter for the reload follow sync |
 | `usedTools` | tool names called in this chat |
 
 `useChatState` holds the session in one ref, and the `state` bag exposes its fields through the same getters as before (`state.messages`, `state.transcriptNextSeq`, …), so the imperative modules did not change. One effect keyed on `[chatId, projectDir]` replaces the whole object when the chat changes (`ensureChatSession`). Before this, each field had its own reset effect, and some keyed on `chatId` alone, so the same chat id in another project kept the previous values. Because the object is replaced rather than cleared, a late write from the previous chat lands in the detached session. `state.session` exposes the current object so async code can compare identities across an `await`.
@@ -62,10 +62,12 @@ A row's kind comes from `messageKind(m)` in `messageKind.js`, which returns `'us
 ### Live runs after a reload
 
 When a chat page is reloaded while an agent run is still active on the
-server, the replacement page polls the persisted transcript once per second.
-New assistant segments, tool calls, and tool results therefore appear as they
-are saved, without requiring another manual reload. A tab that owns the live
-SSE stream does not poll over its in-progress rendering. The server-side run is
+server, the replacement page follows the persisted transcript: each saved row
+sends a `chat_rows` notice on the app event stream ([live events](live-events.md)),
+and the page fetches the rows after its cursor. New assistant segments, tool
+calls, and tool results therefore appear as they are saved, without requiring
+another manual reload. A tab that owns the live SSE stream does not sync over
+its in-progress rendering. The server-side run is
 not cancelled just because the browser's SSE connection closes; stream writes
 are best-effort and the persisted transcript remains authoritative.
 
@@ -106,7 +108,7 @@ server (`409 EALREADY_RUNNING`). The send path in
 [frontend/src/components/chat/stream.js](../../../frontend/src/components/chat/stream.js)
 treats that status specially: it drops the optimistic bubble, restores the
 composer (text, attachments, and the debounced draft), and shows a busy status
-instead of an error card, so the same-disk poll cannot wipe the message.
+instead of an error card, so the catch-up sync cannot wipe the message.
 
 Image attachments are also persisted as a chat-level draft. `chat_store`
 carries a `draft_attachments` column (JSON array), written alongside the text

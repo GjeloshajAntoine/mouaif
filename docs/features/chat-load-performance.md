@@ -6,7 +6,7 @@ Opening a long, tool-heavy chat should feel instant even when the transcript run
 
 ## Usage
 
-No user-visible controls — the behavior is automatic. Open any chat (especially a long agentic one) and it paints progressively; the 1-second reconcile poll and the post-stream reconciliation no longer re-download the whole transcript unless something actually changed — and when it did, they transfer only the rows appended after the client's known prefix. A long chat additionally loads just its newest page up front; older history is fetched on demand as the user scrolls to the top (see [Chat backward pagination](./chat-backward-pagination.md)).
+No user-visible controls — the behavior is automatic. Open any chat (especially a long agentic one) and it paints progressively; the catch-up sync that runs when another tab or device changes the chat ([live events](./live-events.md)) and the post-stream reconciliation no longer re-download the whole transcript unless something actually changed — and when it did, they transfer only the rows appended after the client's known prefix. A long chat additionally loads just its newest page up front; older history is fetched on demand as the user scrolls to the top (see [Chat backward pagination](./chat-backward-pagination.md)).
 
 Returning to the Chats tab reads only the visible page of chat metadata and its persisted cost totals. Projects with long histories and active or very large transcripts therefore do not delay the visible project chat list.
 
