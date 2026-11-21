@@ -5,14 +5,15 @@
 // has an active run (running or paused) and when a run needs attention
 // (stalled or out of budget). It shows the goal and what is left, and gives the
 // user Pause / Resume and Stop. Stop takes two taps so a stray touch cannot end
-// a day of work. State comes from GET /api/chats/:id/run, polled while visible.
+// a day of work. State comes from GET /api/chats/:id/run, fetched again when the
+// server says the run changed, when a turn ends (a recurring task may have been
+// scheduled), and when the page comes back (docs/features/live-events.md).
 import { h, Fragment } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
+import { subscribeChanges } from '../../liveEvents.js';
 import { runLine, STATUS_TEXT, ATTENTION, isActive, runListItems, runWhen, runsLabel, PROMPT_MAX } from './runDock.js';
 
-const POLL_ACTIVE_MS = 5000;
-const POLL_IDLE_MS = 30000;
 const CONFIRM_MS = 4000;
 
 function dismissKey(chatId) { return 'mouaif.runDock.dismissed.' + chatId; }
@@ -40,7 +41,6 @@ export function RunDock({ projectDir, chatId, onJumpToSeq }) {
   useEffect(() => {
     if (!projectDir || !chatId) return undefined;
     let stopped = false;
-    let timer = null;
     setRun(null);
     setScheduledRuns(0);
     setListOpen(false);
@@ -51,17 +51,14 @@ export function RunDock({ projectDir, chatId, onJumpToSeq }) {
     setError('');
     setDismissed(readDismissed(chatId));
     const load = async () => {
-      let next = null;
       try {
-        if (typeof document === 'undefined' || document.visibilityState !== 'hidden') {
-          const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/run?projectDir=' + encodeURIComponent(projectDir));
-          if (!stopped && r.status === 200) { next = r.body.run || null; setRun(next); setScheduledRuns(r.body.scheduledRuns || 0); }
-        }
+        const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/run?projectDir=' + encodeURIComponent(projectDir));
+        if (!stopped && r.status === 200) { setRun(r.body.run || null); setScheduledRuns(r.body.scheduledRuns || 0); }
       } catch { /* offline: keep the last state */ }
-      if (!stopped) timer = setTimeout(load, next && isActive(next) ? POLL_ACTIVE_MS : POLL_IDLE_MS);
     };
     load();
-    return () => { stopped = true; if (timer) clearTimeout(timer); };
+    const unsubscribe = subscribeChanges({ projectDir, chatId, project: ['run'], runEnd: true, onChange: load });
+    return () => { stopped = true; unsubscribe(); };
   }, [projectDir, chatId]);
 
   useEffect(() => {

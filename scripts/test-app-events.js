@@ -96,6 +96,31 @@ async function main() {
     [{ projectDir, chatId: chat.id, callId: 'call-1', open: true }, { projectDir, chatId: chat.id, callId: 'call-1', open: false }]);
   console.log('PASS auth_pending on park and decision');
 
+  // Project and app notices.
+  page.clear();
+  caller.clear();
+  const projectHooks = require('../src/projectHooks.js');
+  projectHooks.setTrust(projectDir, 'h1');
+  projectHooks.setTrust(projectDir, 'h2', 'ext:demo');
+  projectHooks.revoke(projectDir, 'ext:demo');
+  require('../src/app-context.js').set({ projectDir, chatId: chat.id, extensionId: 'x', surfaceId: 'v', title: 'View' }, { content: [{ type: 'text', text: 'ctx' }] });
+  require('../src/share-store.js').updatePeer('nobody', { lastSeen: 'now' });
+  require('../src/share-store.js').updatePeer('nobody', { machine: 'm' });
+  await flush();
+  assert.deepEqual(page.events().map((e) => e.event + ':' + e.data.what + (e.data.chatId ? ':' + e.data.chatId : '')),
+    ['project_changed:hooks', 'project_changed:extensions', 'project_changed:app_context:' + chat.id, 'app_changed:share']);
+  assert.deepEqual(caller.events().map((e) => e.event + ':' + e.data.what), ['project_changed:hooks', 'project_changed:extensions', 'project_changed:app_context'],
+    'a share caller gets its project\'s notices and no app-wide ones');
+  console.log('PASS hooks, extensions, app context and share writes send their notices');
+
+  page.clear();
+  require('../src/runs.js').createRunStore().start({ projectDir, chatId: chat.id, goal: 'g', maxTurns: 3, deadlineAt: Date.now() + 60000 });
+  require('../src/webhooks.js').createWebhookStore().upsert({ projectDir, chatId: chat.id, prompt: 'p', method: 'POST' });
+  require('../src/chatHooks.js').removeChat(projectDir, chat.id);
+  await flush();
+  assert.deepEqual(page.events().map((e) => e.data.what + ':' + e.data.chatId), ['run:' + chat.id, 'webhook:' + chat.id, 'chat_hooks:' + chat.id]);
+  console.log('PASS run, webhook and chat hook writes send their notices');
+
   page.close();
   caller.close();
   assert.equal(appEvents.clients.size, 0);

@@ -7,6 +7,7 @@
 import { h } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { shareState, loadShareState, shareApi } from '../api.js';
+import { subscribeChanges } from '../liveEvents.js';
 
 const ACCESS = [
   { value: 'files', label: 'Files only', hint: 'Chats, files and git history. No shell or commands.' },
@@ -90,10 +91,12 @@ export function ShareSheet({ project, onClose }) {
 
   useEffect(() => {
     loadShareState();
-    const timer = setInterval(() => loadShareState(), 4000);
+    // A peer accepting, a code being used, a peer going online: the server
+    // says so (docs/features/live-events.md).
+    const unsubscribe = subscribeChanges({ app: ['share'], onChange: () => loadShareState() });
     const onKey = (e) => { if (e.key === 'Escape') closeRef.current(); };
     window.addEventListener('keydown', onKey);
-    return () => { clearInterval(timer); window.removeEventListener('keydown', onKey); };
+    return () => { unsubscribe(); window.removeEventListener('keydown', onKey); };
   }, []);
 
   function onCode(id, code) { setCodes((prev) => Object.assign({}, prev, { [id]: code })); }

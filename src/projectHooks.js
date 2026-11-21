@@ -215,10 +215,18 @@ function setTrust(projectDir, hash, key = HOOKS_KEY) {
   store().prepare(`INSERT INTO hook_trust (project_dir, key, hash, trusted_at) VALUES (?, ?, ?, ?)
     ON CONFLICT(project_dir, key) DO UPDATE SET hash = excluded.hash, trusted_at = excluded.trusted_at`)
     .run(dirKey(projectDir), key, hash, Date.now());
+  trustChanged(projectDir, key);
+}
+
+// Open chats show a bar for untrusted hooks and extensions: tell them.
+function trustChanged(projectDir, key) {
+  require('./app-events.js').projectChanged(projectDir, key === HOOKS_KEY ? 'hooks' : 'extensions');
 }
 
 function revoke(projectDir, key = HOOKS_KEY) {
-  return store().prepare('DELETE FROM hook_trust WHERE project_dir = ? AND key = ?').run(dirKey(projectDir), key).changes > 0;
+  const removed = store().prepare('DELETE FROM hook_trust WHERE project_dir = ? AND key = ?').run(dirKey(projectDir), key).changes > 0;
+  if (removed) trustChanged(projectDir, key);
+  return removed;
 }
 
 // status(projectDir) -> { hooks, errors, files, hash, trusted, trustedHash, changed }
@@ -261,6 +269,7 @@ function append(projectDir, hook) {
   entry.id = id;
   // The trust carry-over runs as the write's afterWrite step (below).
   const r = collection.replace('hooks', 'project', projectDir, current.concat(entry), { via: 'hook_create' });
+  require('./app-events.js').projectChanged(projectDir, 'hooks');
   return { hook: entry, trusted: wasTrusted, changes: r.changes };
 }
 

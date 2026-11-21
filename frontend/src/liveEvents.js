@@ -167,3 +167,31 @@ export function isLiveEventsDown(projectDir) {
   const stream = streams.get(streamUrl(projectDir || ''));
   return !!(stream && stream.down);
 }
+
+// subscribeChanges({ projectDir, project, app, runEnd, chatId, onChange }) -> unsubscribe
+//
+// For views that just refetch when something they show may have changed.
+// `onChange()` runs for:
+//  - a `project_changed` notice whose `what` is in `project` (and, when
+//    `chatId` is given and the notice names a chat, for that chat);
+//  - an `app_changed` notice whose `what` is in `app`;
+//  - with `runEnd`, a turn ending in the project (`chat_run` running:false):
+//    the model may have edited the files the view reads;
+//  - every (re)connect, including the tab being shown again.
+export function subscribeChanges({ projectDir = '', project = [], app = [], runEnd = false, chatId = '', onChange }) {
+  return subscribeLiveEvents({
+    projectDir,
+    onEvent(name, data) {
+      if (name === 'project_changed') {
+        if (!project.includes(data.what)) return;
+        if (chatId && data.chatId && data.chatId !== chatId) return;
+      } else if (name === 'app_changed') {
+        if (!app.includes(data.what)) return;
+      } else if (name === 'chat_run') {
+        if (!runEnd || data.running) return;
+      } else return;
+      onChange(data);
+    },
+    onResync: () => onChange(null)
+  });
+}

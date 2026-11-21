@@ -73,7 +73,7 @@ function createRunStore({ getDb = () => require('./settings.js').getDb(), now = 
       return db;
     } catch (e) { throw err('ESTORE', 'Run store unavailable: ' + (e && e.message)); }
   }
-  return {
+  const runStore = {
     get(projectDir, chatId) {
       const row = open().prepare('SELECT * FROM agent_run WHERE project_dir = ? AND chat_id = ?').get(projectDir, chatId);
       return row ? rowToRun(row) : null;
@@ -125,6 +125,19 @@ function createRunStore({ getDb = () => require('./settings.js').getDb(), now = 
       return open().prepare("SELECT * FROM agent_run WHERE status = 'running'").all().map(rowToRun);
     }
   };
+  // The chat's run dock shows this state: a write tells open pages (a
+  // `project_changed` notice; src/app-events.js).
+  const notify = (projectDir, chatId) => require('./app-events.js').projectChanged(projectDir, 'run', chatId);
+  for (const name of ['start', 'retarget', 'setGoal', 'setStatus', 'countTurn', 'countNudge', 'touch']) {
+    const fn = runStore[name];
+    runStore[name] = function runWrite(...args) {
+      const out = fn.apply(this, args);
+      if (name === 'start') notify(args[0].projectDir, args[0].chatId);
+      else notify(args[0], args[1]);
+      return out;
+    };
+  }
+  return runStore;
 }
 
 // The run bar's one-line goal for a recurring task's prompt.

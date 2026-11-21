@@ -6,6 +6,7 @@
 import { h } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
 import { shareState, loadShareState, shareApi, projectsReload } from '../api.js';
+import { subscribeChanges } from '../liveEvents.js';
 import { back } from '../router.js';
 
 function accessLabel(access) {
@@ -73,8 +74,9 @@ export function SharedWithMeView() {
   const state = shareState.value;
   useEffect(() => {
     loadShareState();
-    const timer = setInterval(() => loadShareState(), 4000);
-    return () => clearInterval(timer);
+    // Refetched when the share state changes on the server
+    // (docs/features/live-events.md).
+    return subscribeChanges({ app: ['share'], onChange: () => loadShareState() });
   }, []);
   const pending = (state.incoming || []).filter((s) => s.status === 'pending');
   const added = (state.incoming || []).filter((s) => s.status === 'active');

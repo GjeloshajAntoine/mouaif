@@ -1,6 +1,7 @@
 import { h } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
+import { subscribeChanges } from '../../liveEvents.js';
 
 // OAuth settings for a remote (HTTP or legacy SSE) MCP server.
 //
@@ -44,9 +45,11 @@ export function McpOAuth({ id, projectDir, saved, value, onChange }) {
       } catch { if (!cancelled) setMessage('Could not reach mouaif.'); }
     }
     refresh();
-    const timer = setInterval(refresh, 3000);
+    // A sign-in finishing in another window saves the token on the server,
+    // which says so (docs/features/live-events.md).
+    const unsubscribe = subscribeChanges({ app: ['mcp_auth'], onChange: refresh });
     window.addEventListener('focus', refresh);
-    return () => { cancelled = true; clearInterval(timer); window.removeEventListener('focus', refresh); };
+    return () => { cancelled = true; unsubscribe(); window.removeEventListener('focus', refresh); };
   }, [base, qs, canSignIn, value.enabled, isCC]);
 
   async function signIn() {

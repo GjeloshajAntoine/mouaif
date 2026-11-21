@@ -6,16 +6,15 @@
 // panel with the full link, a ready-to-paste curl, the method, pause / resume,
 // the prompt, a new link, delete, and every call with the data it carried and
 // a jump to the turn it started. State comes from GET /api/chats/:id/webhook,
-// polled while the page is visible.
+// fetched again when the server says the webhook changed or a call came in,
+// and when the page comes back (docs/features/live-events.md).
 import { h, Fragment } from 'preact';
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
+import { subscribeChanges } from '../../liveEvents.js';
 import { webhookUrl, curlExample, webhookLine, eventWhen, eventSections, copyText, methodLabel,
   WEBHOOK_METHODS, WEBHOOK_PROMPT_MAX, EVENT_STATUS_TEXT, WEBHOOK_ICON_PATH } from './webhookDock.js';
 
-const POLL_OPEN_MS = 4000;
-const POLL_ACTIVE_MS = 10000;
-const POLL_NONE_MS = 15000;
 const CONFIRM_MS = 4000;
 const FLASH_MS = 1600;
 
@@ -58,19 +57,17 @@ export function WebhookDock({ projectDir, chatId, onJumpToSeq }) {
   useEffect(() => {
     if (!projectDir || !chatId) return undefined;
     let stopped = false;
-    let timer = null;
-    let has = false;
     const load = async () => {
       try {
-        if (typeof document === 'undefined' || document.visibilityState !== 'hidden') {
-          const r = await fetchJson(base + '?projectDir=' + encodeURIComponent(projectDir));
-          if (!stopped && r.status === 200) { apply(r.body); has = !!r.body.webhook; }
-        }
+        const r = await fetchJson(base + '?projectDir=' + encodeURIComponent(projectDir));
+        if (!stopped && r.status === 200) apply(r.body);
       } catch { /* offline: keep the last state */ }
-      if (!stopped) timer = setTimeout(load, open ? POLL_OPEN_MS : has ? POLL_ACTIVE_MS : POLL_NONE_MS);
     };
     load();
-    return () => { stopped = true; if (timer) clearTimeout(timer); };
+    // A turn a call started ends with its row in the chat: refetch then too,
+    // so the call's run number and status are current.
+    const unsubscribe = subscribeChanges({ projectDir, chatId, project: ['webhook'], runEnd: true, onChange: load });
+    return () => { stopped = true; unsubscribe(); };
   }, [projectDir, chatId, open, refresh, base, apply]);
 
   useEffect(() => {

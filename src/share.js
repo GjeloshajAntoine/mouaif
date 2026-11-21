@@ -130,6 +130,8 @@ function registerConn(conn) {
   const old = state.conns.get(conn.peerId);
   if (old && old !== conn) old.close('replaced by a newer connection');
   state.conns.set(conn.peerId, conn);
+  // A peer coming online or going away changes what the share sheets show.
+  store.shareChanged();
   const ws = conn.ws;
   ws.on('message', (data, isBinary) => {
     try {
@@ -150,7 +152,7 @@ function registerConn(conn) {
   ws.on('close', () => {
     clearInterval(ping);
     conn.close('share connection closed');
-    if (state.conns.get(conn.peerId) === conn) state.conns.delete(conn.peerId);
+    if (state.conns.get(conn.peerId) === conn) { state.conns.delete(conn.peerId); store.shareChanged(); }
     if (conn.direction === 'in' && conn.unpaired) {
       state.unpaired = Math.max(0, state.unpaired - 1);
       forgetUnpaired(conn.peerId);

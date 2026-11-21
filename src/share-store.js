@@ -372,10 +372,25 @@ function usageFor(shareId) {
   };
 }
 
+// The share sheets and the projects page show this state: a write tells open
+// pages (an `app_changed` notice; src/app-events.js). A peer's last-seen time
+// is not shown, so it alone sends nothing.
+function shareChanged() {
+  require('./app-events.js').appChanged('share');
+}
+function notifying(fn) {
+  return function shareWrite(...args) {
+    const out = fn(...args);
+    shareChanged();
+    return out;
+  };
+}
+
 module.exports = {
   CODE_TTL_MS,
   MAX_CODE_ATTEMPTS,
   ensureTables,
+  shareChanged,
   identity,
   fingerprint,
   sign,
@@ -385,20 +400,24 @@ module.exports = {
   wsUrlFor,
   getPeer,
   listPeers,
-  outgoingPeerFor,
-  incomingPeerFor,
-  updatePeer,
-  deletePeer,
-  issueCode,
-  consumeCode,
+  outgoingPeerFor: notifying(outgoingPeerFor),
+  incomingPeerFor: notifying(incomingPeerFor),
+  updatePeer(id, fields) {
+    const out = updatePeer(id, fields);
+    if (fields && Object.keys(fields).some((k) => k !== 'lastSeen')) shareChanged();
+    return out;
+  },
+  deletePeer: notifying(deletePeer),
+  issueCode: notifying(issueCode),
+  consumeCode: notifying(consumeCode),
   normalizeCode,
   getShare,
   listShares,
-  createOutgoingShare,
-  upsertIncomingShare,
-  setShareStatus,
-  setShareAccess,
-  deleteShare,
-  recordUsage,
+  createOutgoingShare: notifying(createOutgoingShare),
+  upsertIncomingShare: notifying(upsertIncomingShare),
+  setShareStatus: notifying(setShareStatus),
+  setShareAccess: notifying(setShareAccess),
+  deleteShare: notifying(deleteShare),
+  recordUsage: notifying(recordUsage),
   usageFor
 };

@@ -15,10 +15,10 @@ import { safeMode } from '../../theme/runtime.js';
 import { McpAppFrame } from './McpAppFrame.jsx';
 import { claimSurface, releaseSurface, touchSurface } from './appHostContext.js';
 import { registerSurface, unregisterSurface } from './extensionEvents.js';
+import { subscribeChanges } from '../../liveEvents.js';
 import './extension-ui.css';
 
 export const EXTENSIONS_CHANGED = 'mouaif:extensions-changed';
-const POLL_MS = 30000;
 
 export const PUZZLE_PATH = 'M10 3a2 2 0 0 1 4 0v2h4a1 1 0 0 1 1 1v4h-2a2 2 0 0 0 0 4h2v4a1 1 0 0 1-1 1h-4v-2a2 2 0 0 0-4 0v2H6a1 1 0 0 1-1-1v-4h2a2 2 0 0 0 0-4H5V6a1 1 0 0 1 1-1h4V3Z';
 
@@ -27,7 +27,10 @@ export function PuzzleIcon({ size = 16 }) {
     'stroke-linejoin': 'round', 'aria-hidden': 'true' }, h('path', { d: PUZZLE_PATH }));
 }
 
-// One request and one timer per project, however many slots are listening.
+// One request and one event subscription per project, however many slots
+// are listening. The list is refetched when an extension is trusted, turned
+// on or off, or imported, when a turn ends (the model may have edited an
+// extension file), and when the page comes back (docs/features/live-events.md).
 const surfaceFeeds = new Map();
 
 function loadSurfaces(projectDir, feed) {
@@ -47,7 +50,7 @@ function subscribeSurfaces(projectDir, listener) {
     feed = { surfaces: [], json: '[]', listeners: new Set() };
     surfaceFeeds.set(projectDir, feed);
     feed.refresh = () => loadSurfaces(projectDir, feed);
-    feed.timer = setInterval(() => { if (document.visibilityState !== 'hidden') feed.refresh(); }, POLL_MS);
+    feed.unsubscribe = subscribeChanges({ projectDir, project: ['extensions'], app: ['extensions'], runEnd: true, onChange: feed.refresh });
     window.addEventListener(EXTENSIONS_CHANGED, feed.refresh);
     feed.refresh();
   }
@@ -56,7 +59,7 @@ function subscribeSurfaces(projectDir, listener) {
   return () => {
     feed.listeners.delete(listener);
     if (feed.listeners.size) return;
-    clearInterval(feed.timer);
+    feed.unsubscribe();
     window.removeEventListener(EXTENSIONS_CHANGED, feed.refresh);
     surfaceFeeds.delete(projectDir);
   };

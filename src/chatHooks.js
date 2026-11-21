@@ -164,4 +164,21 @@ function chatIds(projectDir) {
   return store().prepare('SELECT DISTINCT chat_id FROM chat_hook WHERE project_dir = ?').all(projectDir).map((r) => r.chat_id);
 }
 
-module.exports = { MAX_PER_CHAT, STATUSES, list, active, get, add, update, remove, removeChat, promote, chatIds };
+// The chat's hooks dock shows this list: a write tells open pages (a
+// `project_changed` notice; src/app-events.js).
+function notifying(fn) {
+  return function chatHookWrite(projectDir, chatId, ...rest) {
+    const out = fn(projectDir, chatId, ...rest);
+    require('./app-events.js').projectChanged(projectDir, 'chat_hooks', chatId);
+    return out;
+  };
+}
+
+module.exports = {
+  MAX_PER_CHAT, STATUSES, list, active, get, chatIds,
+  add: notifying(add),
+  update: notifying(update),
+  remove: notifying(remove),
+  removeChat: notifying(removeChat),
+  promote: notifying(promote)
+};

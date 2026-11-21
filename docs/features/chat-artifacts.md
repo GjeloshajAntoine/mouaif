@@ -122,7 +122,7 @@ A reload starts the app over, so state kept only in the page is lost. To tell a 
 
 Apps have no network, so links are inlined when the app mounts (`resolveLinks`), in `POST /api/mcp/apps/mount`. JSON and JavaScript escape `<` without changing their meaning. Other text containing `</script` or `<!--` is decoded into its element by an inline script, so it arrives unchanged.
 
-Every write gives an artifact a new `revision`: a random token in the DB, size and modified time for a file. The mount records the revisions of the app's own artifact and its linked artifacts. `POST /api/mcp/apps/:mountId/status`, polled every 5 seconds, returns the current ones, and `McpAppFrame.jsx` mounts again when they differ. This covers every writer, including a shell command or another device. A save made in this page dispatches `ARTIFACTS_CHANGED` so the check happens right away.
+Every write gives an artifact a new `revision`: a random token in the DB, size and modified time for a file. The mount records the revisions of the app's own artifact and its linked artifacts. `POST /api/mcp/apps/:mountId/status` returns the current ones, and `McpAppFrame.jsx` mounts again when they differ. The check runs, at most every 2 seconds, when the chat saves a row or a turn ends, which covers the model's tools and another device using the chat ([live events](live-events.md)), and when the page comes back. A save made in this page dispatches `ARTIFACTS_CHANGED` so the check happens right away. A file edited outside any chat while the view is on screen shows on the next of those.
 
 ## HTTP interface
 

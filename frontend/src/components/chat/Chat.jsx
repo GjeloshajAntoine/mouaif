@@ -33,6 +33,7 @@ import { ExtensionSheet } from './ExtensionSheet.jsx';
 import { registerSheetOpener, COMPOSER_INSERT, ARTIFACTS_CHANGED } from './extensionEvents.js';
 import { setToolRenderers, setMessageActions } from './extensionRenderer.js';
 import { AppContextBar } from './AppContextBar.jsx';
+import { subscribeChanges } from '../../liveEvents.js';
 import { PreviewUrlPrompt } from './PreviewUrlPrompt.jsx';
 import { authorizationCard } from './cards.js';
 import { requestWebpreview, setStatus } from '../../api.js';
@@ -508,16 +509,18 @@ setPreviewPromptOpen(false);
       s.state,
       atArgBarRef.current
     );
-    // Refresh items periodically so new files / tools show up. A hidden tab
-    // skips the tick: nobody can type `@` there, and a phone left on a chat
-    // would otherwise keep three requests every 5 s going in the background.
-    const timer = setInterval(() => {
-      if (document.visibilityState === 'hidden') return;
-      refreshAtMentionItems();
-    }, 5000);
+    // Keep the items current without polling: opening the popup rescans
+    // (atMention.js); otherwise refresh when a turn ends (it may have made
+    // files), when extensions or hooks change, and when the page comes back
+    // (docs/features/live-events.md). The context chips under the composer
+    // read these items too.
+    const projectDir = s.state.props && s.state.props.projectDir;
+    const unsubscribe = projectDir
+      ? subscribeChanges({ projectDir, project: ['extensions', 'hooks'], app: ['extensions'], runEnd: true, onChange: () => refreshAtMentionItems() })
+      : () => {};
     return () => {
       cleanup();
-      clearInterval(timer);
+      unsubscribe();
     };
   }, [refs.promptInput, refs.promptInput.current, s.state.props && s.state.props.projectDir, s.state.props && s.state.props.chatId]);
 

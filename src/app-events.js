@@ -106,9 +106,10 @@ function authPendingChanged(projectDir, chatId, callId, open) {
 
 // ---- Project and app notices -------------------------------------------------
 
-// projectChanged(projectDir, what) — something project-scoped changed:
-// `hooks`, `extensions`, `files`, `tools`, `mcp_auth`. Coalesced per
-// (project, what) like chat_rows.
+// projectChanged(projectDir, what, chatId?) — something project-scoped
+// changed: `hooks` (project hook trust or list), `extensions` (project
+// extension trust or switch), `app_context` (a chat's extension-view context,
+// with its chatId). Coalesced per (project, what, chat) like chat_rows.
 const projectQueue = new Map();
 let projectFlush = null;
 
@@ -119,16 +120,30 @@ function flushProject() {
   for (const data of list) broadcast('project_changed', data);
 }
 
-function projectChanged(projectDir, what) {
+function projectChanged(projectDir, what, chatId) {
   if (!clients.size || !projectDir || !what) return;
-  projectQueue.set(String(projectDir) + '\0' + what, { projectDir, what });
+  const data = chatId ? { projectDir, what, chatId } : { projectDir, what };
+  projectQueue.set(String(projectDir) + '\0' + what + '\0' + (chatId || ''), data);
   if (!projectFlush) projectFlush = setImmediate(flushProject);
 }
 
-// appChanged(what) — something app-wide changed: `share`, `mcp_auth`.
+// appChanged(what) — something app-wide changed: `share` (shares, peers,
+// whether a peer is online), `extensions` (app extensions), `mcp_auth` (an
+// MCP server sign-in). Coalesced per `what`. Never sent to a share caller.
+const appQueue = new Set();
+let appFlush = null;
+
+function flushApp() {
+  appFlush = null;
+  const list = Array.from(appQueue);
+  appQueue.clear();
+  for (const what of list) broadcast('app_changed', { what });
+}
+
 function appChanged(what) {
   if (!clients.size || !what) return;
-  broadcast('app_changed', { what });
+  appQueue.add(what);
+  if (!appFlush) appFlush = setImmediate(flushApp);
 }
 
 // The events a share caller may receive for its own project.

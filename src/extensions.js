@@ -357,6 +357,7 @@ function setProjectOff(projectDir, id, off) {
   if (off) next[id] = { enabled: false };
   else delete next[id];
   settings.setProject(projectDir, { extensions: next });
+  require('./app-events.js').projectChanged(projectDir, 'extensions');
 }
 
 // projectFiles(projectDir) -> [{ id, file, raw?, ext?, error?, hash, trusted, changed }]
@@ -535,9 +536,22 @@ function surfaces(projectDir, slot) {
   return out;
 }
 
+// App extensions show in every project's chats: a change tells open pages.
+function notifyingApp(fn) {
+  return function appWrite(...args) {
+    const out = fn(...args);
+    require('./app-events.js').appChanged('extensions');
+    return out;
+  };
+}
+
 module.exports = {
   surfaces,
   FORMAT, PERMISSIONS, SLOTS, CHAT_SLOTS, SHORTCUT_SLOTS, UI_EVENTS, SUFFIX, PROJECT_DIR,
-  validate, summary, importApp, setAppEnabled, removeApp, exportApp, setProjectOff,
+  validate, summary,
+  importApp: notifyingApp(importApp),
+  setAppEnabled: notifyingApp(setAppEnabled),
+  removeApp: notifyingApp(removeApp),
+  exportApp, setProjectOff,
   projectFiles, trustProject, revokeProject, list, active, runtimeHooks, surface, clearCache
 };

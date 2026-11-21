@@ -6,21 +6,20 @@
 // added it (you or the model), Pause / Resume, Edit, All chats (make it an
 // app hook) and Delete
 // (both tap twice), a way to add another hook to this chat, and the latest
-// hook runs in this chat. State comes from GET /api/chats/:id/hooks, polled
-// while the page is visible and refreshed at once when the model's hook tools
-// finish (CHAT_HOOKS_CHANGED). The hook editor is the Settings one, loaded on
+// hook runs in this chat. State comes from GET /api/chats/:id/hooks, fetched
+// again when the server says the chat's hooks or hook runs changed, when the
+// page comes back (docs/features/live-events.md), and at once when the
+// model's hook tools finish (CHAT_HOOKS_CHANGED). The hook editor is the Settings one, loaded on
 // first use so the chat bundle does not carry it.
 import { h, Fragment } from 'preact';
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
 import { EVENT_LABELS, matchSummary, RunRow } from '../settings/hookText.js';
 import { handlerText } from '../settings/ProjectHooksReview.jsx';
+import { subscribeChanges } from '../../liveEvents.js';
 import '../settings/hooks.css';
 import { CHAT_HOOKS_CHANGED, HOOK_ICON_PATH } from './hookEvents.js';
 
-const POLL_OPEN_MS = 4000;
-const POLL_SOME_MS = 10000;
-const POLL_NONE_MS = 15000;
 const CONFIRM_MS = 4000;
 const BLANK = { id: '', name: '', event: 'tool.before', handler: { kind: 'command', command: '' } };
 
@@ -57,19 +56,15 @@ export function HooksDock({ projectDir, chatId }) {
   useEffect(() => {
     if (!projectDir || !chatId) return undefined;
     let stopped = false;
-    let timer = null;
-    let has = false;
     const load = async () => {
       try {
-        if (typeof document === 'undefined' || document.visibilityState !== 'hidden') {
-          const r = await fetchJson(base + '?projectDir=' + encodeURIComponent(projectDir));
-          if (!stopped && r.status === 200) { apply(r.body); has = !!(r.body.hooks && r.body.hooks.length); }
-        }
+        const r = await fetchJson(base + '?projectDir=' + encodeURIComponent(projectDir));
+        if (!stopped && r.status === 200) apply(r.body);
       } catch { /* offline: keep the last state */ }
-      if (!stopped) timer = setTimeout(load, open ? POLL_OPEN_MS : has ? POLL_SOME_MS : POLL_NONE_MS);
     };
     load();
-    return () => { stopped = true; if (timer) clearTimeout(timer); };
+    const unsubscribe = subscribeChanges({ projectDir, chatId, project: ['chat_hooks'], onChange: load });
+    return () => { stopped = true; unsubscribe(); };
   }, [projectDir, chatId, open, refresh, base, apply]);
 
   // The model's hook_create / hook_delete just finished: reload now.

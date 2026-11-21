@@ -1000,6 +1000,8 @@ function logRun(note, ctx = {}) {
       Number.isFinite(note.ms) ? Math.round(note.ms) : null, detail ? clip(detail, 300) : null,
       note.error ? clip(note.error, 300) : null);
     d.prepare('DELETE FROM hook_run WHERE id <= (SELECT id FROM hook_run ORDER BY id DESC LIMIT 1 OFFSET ?)').run(KEEP_RUNS);
+    // The chat's hooks dock lists these runs.
+    if (ctx.projectDir && ctx.chatId) require('./app-events.js').projectChanged(ctx.projectDir, 'chat_hooks', ctx.chatId);
   } catch { /* the log is best-effort */ }
 }
 

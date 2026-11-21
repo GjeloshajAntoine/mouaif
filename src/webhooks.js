@@ -231,6 +231,25 @@ function createWebhookStore({ getDb = () => require('./settings.js').getDb(), no
       return row ? row.n + 1 : 1;
     }
   };
+  // The chat's webhook dock shows the hook and its calls: a write tells open
+  // pages (a `project_changed` notice; src/app-events.js).
+  const notify = (hook) => {
+    if (hook && hook.projectDir && hook.chatId) require('./app-events.js').projectChanged(hook.projectDir, 'webhook', hook.chatId);
+  };
+  for (const name of ['upsert', 'update', 'remove', 'record', 'started', 'failed']) {
+    const fn = store[name];
+    store[name] = function webhookWrite(...args) {
+      const first = args[0];
+      // A removed hook can no longer be looked up: read it first.
+      const before = name === 'update' || name === 'remove' ? store.byId(first) : null;
+      const out = fn.apply(this, args);
+      if (name === 'upsert') notify(out && out.hook);
+      else if (name === 'record') notify(first);
+      else if (name === 'started' || name === 'failed') notify(first && store.byId(first.hookId));
+      else notify(before);
+      return out;
+    };
+  }
   return store;
 }
 

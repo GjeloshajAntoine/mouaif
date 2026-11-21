@@ -4,25 +4,21 @@
 // (src/app-context.js), a bar above the composer says so: which views, and
 // whether their context goes with the next prompt or was already sent. The
 // panel shows each entry exactly as the model receives it, with Clear and
-// Clear all. Reloaded when a view changes its context, after each prompt,
-// and every 20 s while visible, as long as an extension view is active or
-// context is showing.
+// Clear all. Reloaded when a view changes its context (in this page or any
+// other), after a prompt carries it, and when the page comes back
+// (docs/features/live-events.md).
 import { h, Fragment } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
 import { APP_CONTEXT_CHANGED } from './extensionEvents.js';
-import { PuzzleIcon, useExtensionSurfaces } from './ExtensionDocks.jsx';
+import { PuzzleIcon } from './ExtensionDocks.jsx';
+import { subscribeChanges } from '../../liveEvents.js';
 import './extension-ui.css';
-
-const POLL_MS = 20000;
 
 export function AppContextBar({ projectDir, chatId }) {
   const [entries, setEntries] = useState([]);
   const [open, setOpen] = useState(false);
   const [tick, setTick] = useState(0);
-  const surfaces = useExtensionSurfaces(projectDir, '');
-  const shouldPoll = useRef(false);
-  shouldPoll.current = surfaces.length > 0 || entries.length > 0;
   const base = '/api/extensions/context?projectDir=' + encodeURIComponent(projectDir || '') + '&chatId=' + encodeURIComponent(chatId || '');
   useEffect(() => {
     if (!projectDir || !chatId) { setEntries([]); return undefined; }
@@ -32,10 +28,12 @@ export function AppContextBar({ projectDir, chatId }) {
   }, [base, tick]);
   useEffect(() => {
     const bump = () => setTick((n) => n + 1);
-    const timer = setInterval(() => { if (shouldPoll.current && document.visibilityState !== 'hidden') bump(); }, POLL_MS);
     window.addEventListener(APP_CONTEXT_CHANGED, bump);
-    return () => { clearInterval(timer); window.removeEventListener(APP_CONTEXT_CHANGED, bump); };
-  }, []);
+    const unsubscribe = projectDir && chatId
+      ? subscribeChanges({ projectDir, chatId, project: ['app_context'], onChange: bump })
+      : () => {};
+    return () => { unsubscribe(); window.removeEventListener(APP_CONTEXT_CHANGED, bump); };
+  }, [projectDir, chatId]);
   useEffect(() => { setOpen(false); }, [projectDir, chatId]);
   if (!entries.length) return null;
   const pending = entries.filter((e) => !e.sent).length;

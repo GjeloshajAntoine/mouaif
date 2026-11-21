@@ -5,6 +5,7 @@ import { useModal } from '../../hooks/useModal.js';
 import { boundedHeight, connectMcpApp, containerDimensionsFor } from './mcpAppBridge.js';
 import { THEME_PAINTED, surfaceHostContext, themeHostContext } from './appHostContext.js';
 import { performHostAction, APP_CONTEXT_CHANGED, ARTIFACTS_CHANGED } from './extensionEvents.js';
+import { subscribeLiveEvents } from '../../liveEvents.js';
 import './mcp-app.css';
 
 // `surface` ({ extensionId, surfaceId, slot, projectName }) mounts an
@@ -186,7 +187,7 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
     const fail = async error => {
     if (!active || closing) return;
     closing = true;
-    clearTimeout(timeout); clearInterval(poll);
+    clearTimeout(timeout); clearTimeout(checkTimer); unsubscribeLive();
     ctl.abort(); // settle host-owned approval UI before waiting for teardown
     const bridge = session.current; session.current = null;
     // Revoke independently of app cooperation or frame connectivity.
@@ -282,7 +283,25 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
     }
     catch (error) { if (active) await fail(error); }
     };
-    const poll = setInterval(checkStatus, 5000);
+    // No poll (docs/features/live-events.md): the app's file or a linked
+    // artifact changes when the chat writes rows (a tool edited it) or a turn
+    // ends, so check then, at most every 2 s, and when the page comes back.
+    let checkTimer = null;
+    let lastCheck = 0;
+    const checkSoon = () => {
+      if (!active || checkTimer) return;
+      const wait = Math.max(0, lastCheck + 2000 - Date.now());
+      checkTimer = setTimeout(() => { checkTimer = null; lastCheck = Date.now(); void checkStatus(); }, wait);
+    };
+    const unsubscribeLive = subscribeLiveEvents({
+      projectDir,
+      onEvent(name, data) {
+        if (name === 'chat_rows' && (!chatId || data.chatId === chatId)) checkSoon();
+        else if (name === 'chat_run' && !data.running) checkSoon();
+        else if (name === 'project_changed' && data.what === 'extensions') checkSoon();
+      },
+      onResync: checkSoon
+    });
     // A change made in this page does not wait for the next poll.
     const onArtifactsChanged = event => {
       if (mount.revision && event.detail?.projectDir === projectDir && event.detail?.chatId === chatId) void checkStatus();
@@ -296,7 +315,7 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
     };
     window.addEventListener(THEME_PAINTED, onTheme);
     return () => {
-    active = false; closeView.current = null; clearTimeout(timeout); clearInterval(poll); ctl.abort();
+    active = false; closeView.current = null; clearTimeout(timeout); clearTimeout(checkTimer); unsubscribeLive(); ctl.abort();
     frameEl?.removeEventListener('load', onFrameLoad);
     window.removeEventListener(THEME_PAINTED, onTheme);
     window.removeEventListener(ARTIFACTS_CHANGED, onArtifactsChanged);

@@ -2,6 +2,7 @@
 import { h, Fragment } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { fetchJson, projectsReload, shareState, loadShareState, shareApi } from '../api.js';
+import { subscribeChanges } from '../liveEvents.js';
 import { ShareSheet } from './ShareSheet.jsx';
 import { projectCards, projectCountText } from '../sharedProjects.js';
 import { nav } from '../router.js';
@@ -671,11 +672,9 @@ export function ProjectsView() {
   }, [projectsReload.value]);
 
   // Shared projects come and go with the other machine: refresh their
-  // online state while the list is on screen.
-  useEffect(() => {
-    const timer = setInterval(() => { if (!document.hidden) loadShareState(); }, 15000);
-    return () => clearInterval(timer);
-  }, []);
+  // online state when the server says it changed
+  // (docs/features/live-events.md).
+  useEffect(() => subscribeChanges({ app: ['share'], onChange: () => loadShareState() }), []);
 
   // Save a new card order. The list is reordered at once (the card is already
   // where the user put it) and the server confirms; if it does not, the list is

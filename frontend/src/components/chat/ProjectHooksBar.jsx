@@ -5,17 +5,19 @@
 // while the project defines hooks or extensions the user has not trusted (or
 // that changed since): they are off until reviewed. "Review" opens the same
 // review as Settings, with "Trust and turn on" per item. "Not now" hides the
-// bar for what it shows now until the page reloads. Polled slowly: these
-// rarely change.
+// bar for what it shows now until the page reloads. Reloaded when a trust or
+// the hook list changes, when a turn ends (the model may have edited a hook
+// or extension file), and when the page comes back
+// (docs/features/live-events.md).
 import { h, Fragment } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
 import { ProjectHooksReview, useProjectHooks } from '../settings/ProjectHooksReview.jsx';
 import { ExtensionSummary } from '../settings/ExtensionSummary.jsx';
 import { HOOK_ICON_PATH } from './hookEvents.js';
+import { subscribeChanges } from '../../liveEvents.js';
 import '../settings/hooks.css';
 
-const POLL_MS = 30000;
 const dismissed = new Set();
 
 function useProjectExtensions(projectDir, refresh) {
@@ -63,11 +65,12 @@ export function ProjectHooksBar({ projectDir }) {
   const [, setHidden] = useState(0);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (typeof document === 'undefined' || document.visibilityState !== 'hidden') setTick((n) => n + 1);
-    }, POLL_MS);
-    return () => clearInterval(timer);
-  }, []);
+    if (!projectDir) return undefined;
+    return subscribeChanges({
+      projectDir, project: ['hooks', 'extensions'], app: ['extensions'], runEnd: true,
+      onChange: () => setTick((n) => n + 1)
+    });
+  }, [projectDir]);
   useEffect(() => { setOpen(false); }, [projectDir]);
 
   const hooksPending = !!(state && state.hash && !state.trusted);

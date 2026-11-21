@@ -6,6 +6,7 @@
 
 import { signal } from '@preact/signals';
 import { shouldReloadOnControllerChange, isUpdateStillPending } from './sw-controller-reload.js';
+import { subscribeLiveEvents } from './liveEvents.js';
 export const updateAvailable = signal(false);
 let registration = null;
 let waitingWorker = null;
@@ -32,7 +33,6 @@ let pageVersionKnown = false;
 // or it activated before the tap) took control with a different build. There
 // is no waiting worker left to offer, so the banner's Reload is a plain reload.
 let pageStale = false;
-const UPDATE_CHECK_INTERVAL_MS = 60 * 1000;
 
 function isProduction() {
   try { return !!import.meta.env && import.meta.env.PROD === true; }
@@ -168,11 +168,11 @@ export function registerServiceWorker() {
         });
 
         // A standalone PWA can remain foregrounded for hours, so
-        // visibilitychange alone is insufficient. Poll only while visible;
-        // update() is a no-op when the no-cache worker bytes are unchanged.
-        setInterval(() => {
-          if (document.visibilityState === 'visible') checkForUpdate();
-        }, UPDATE_CHECK_INTERVAL_MS);
+        // visibilitychange alone is insufficient. A new build only ships with
+        // a server restart, which drops the app event stream: check each time
+        // it reconnects (docs/features/live-events.md). update() is a no-op
+        // when the no-cache worker bytes are unchanged.
+        subscribeLiveEvents({ onResync: checkForUpdate });
       })
       .catch(() => {
         // Registration is an enhancement. The live app remains usable when

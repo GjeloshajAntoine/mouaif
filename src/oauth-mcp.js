@@ -67,7 +67,22 @@ async function oauthFetch(input, init = {}) {
   finally { clearTimeout(timer); init.signal?.removeEventListener('abort', abort); }
 }
 
-function createManager({ storage = vault, resolveContext } = {}) {
+// A sign-in finished in another window, a token was saved or removed: the
+// settings page showing that server's status is told (an `app_changed`
+// notice; src/app-events.js) instead of asking every few seconds.
+function authChanged() {
+  require('./app-events.js').appChanged('mcp_auth');
+}
+function notifyingStorage(storage) {
+  return {
+    read: (key) => storage.read(key),
+    write(key, value) { const out = storage.write(key, value); authChanged(); return out; },
+    remove(key) { const out = storage.remove(key); authChanged(); return out; }
+  };
+}
+
+function createManager({ storage: rawStorage = vault, resolveContext } = {}) {
+  const storage = notifyingStorage(rawStorage);
   const pending = new Map();
   function readSecret(context) {
     const v = storage.read(secretKey(context)) || {};
@@ -264,6 +279,7 @@ function createManager({ storage = vault, resolveContext } = {}) {
     const flow = typeof state === 'string' && pending.get(state);
     if (!flow) throw error('EMCP_AUTH', 'Unknown, expired, or already used sign-in. Start again in Settings.');
     pending.delete(state); // one-shot, including provider denials and failed exchanges
+    authChanged();
     if (denied) throw error('EMCP_AUTH', 'Sign-in was declined. You can try again in Settings.');
     if (typeof code !== 'string' || !code || code.length > 8192) throw error('EBADINPUT', 'Missing or invalid authorization code.');
     const current = resolveContext(flow.context.projectDir, flow.context.entry.id);

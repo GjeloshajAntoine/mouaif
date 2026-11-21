@@ -141,4 +141,17 @@ function markSent(projectDir, chatId, sent) {
   }
 }
 
-module.exports = { MAX_PART, MAX_TOTAL, MAX_ENTRIES, TTL_MS, set, list, clear, snapshot, markSent, _reset: () => chats.clear() };
+// The chat's App context bar shows these entries: a write tells open pages.
+function notify(projectDir, chatId) {
+  require('./app-events.js').projectChanged(projectDir, 'app_context', chatId);
+}
+
+module.exports = {
+  MAX_PART, MAX_TOTAL, MAX_ENTRIES, TTL_MS,
+  set(source, params) { const out = set(source, params); notify(source.projectDir, source.chatId); return out; },
+  list,
+  clear(projectDir, chatId, key) { const out = clear(projectDir, chatId, key); if (out) notify(projectDir, chatId); return out; },
+  snapshot,
+  markSent(projectDir, chatId, sent) { markSent(projectDir, chatId, sent); if (Array.isArray(sent) && sent.length) notify(projectDir, chatId); },
+  _reset: () => chats.clear()
+};
