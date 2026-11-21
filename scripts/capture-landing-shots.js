@@ -83,14 +83,7 @@ const SHOTS = [
       const t = document.querySelector('.chat-view__transcript');
       if (t) t.scrollTop = 0;
     })()`,
-    waitFor: '[data-tools-card="1"]',
-    // The fixture's providers are local stubs with no account, so the chat
-    // head would show only Context and Total. Answer the credit lookup with a
-    // demo balance so the head carries all three pills, as it does on a real
-    // OpenRouter or DeepSeek connection.
-    mock: {
-      '/api/ai/provider-credit': { provider: 'demo', supported: true, label: 'Balance', remaining: 12.48 }
-    }
+    waitFor: '[data-tools-card="1"]'
   },
   {
     file: 'subagent-auth.png',
@@ -126,6 +119,13 @@ const SHOTS = [
   },
   {
     file: 'chat-view.png',
+    // The fixture's providers are local stubs with no account, so the chat
+    // head would show only Context and Total. Answer the credit lookup with a
+    // demo balance so the head carries all three pills, as it does on a real
+    // OpenRouter or DeepSeek connection.
+    mock: {
+      '/api/ai/provider-credit': { provider: 'demo', supported: true, label: 'Balance', remaining: 12.48 }
+    },
     // The chat shot is taken at the transcript tail, where the run ends. The
     // `.chat-view__transcript` container is where the messages are, so the
     // shot is a real deep link to the real chat, no scrolling trick.

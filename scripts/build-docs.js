@@ -1348,7 +1348,7 @@ const landingScreens = [
     title: 'Watch the whole run, and what it costs',
     text: 'Runs on the latest models, Claude Opus 5.5 here. Every read, search, edit and test is its own card with its result, and context use, cost per turn and the chat total stay pinned while you scroll.',
     src: 'features/images/landing/chat-view.png',
-    alt: 'A chat on Claude Opus 5.5 at 390 px: the Context and Total chips across the header, an assistant turn with its per-turn cost line, and the Read, Searched, Wrote and Ran tool cards above the composer.',
+    alt: 'A chat on Claude Opus 5.5 at 390 px: the Context, Total and Balance chips across the header, an assistant turn with its per-turn cost line, and the Read, Searched, Wrote and Ran tool cards above the composer.',
     caption: 'Chat — Claude Opus 5.5 fixing a bug end to end'
   },
   {
