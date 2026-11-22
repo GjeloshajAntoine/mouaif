@@ -724,6 +724,12 @@ async function main() {
       if (typeof shot.after === 'function') shot.after();
     }
     logs.push('wrote ' + path.relative(ROOT, file));
+    // The Project card page shows the same Chats tab frame.
+    if (shot.file === 'chats-list.png') {
+      const copy = path.join(ROOT, 'docs/features/images/project-card/chats-tab.png');
+      fs.copyFileSync(file, copy);
+      logs.push('wrote ' + path.relative(ROOT, copy));
+    }
     }
     console.log(logs.join('\n'));
   } finally {

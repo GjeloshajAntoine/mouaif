@@ -122,6 +122,18 @@ npm run docs:shots:draft-craft
 - `waitFor` is checked after each recipe, so a frame is never photographed before the sheet, marker row or editor has rendered.
 - `--keep` leaves the fixture in the temp dir for inspection, exactly like the landing script.
 
+The Inspector feature pages' screenshots (`docs/features/images/inspector/`) have their own script:
+
+```bash
+npm run docs:shots:inspector
+```
+
+[scripts/capture-inspector-shots.js](../../scripts/capture-inspector-shots.js) boots the same throwaway home and serves its own **Inspector value fixture** page: a 4 px spacing scale with `--space-*` tokens, a palette with one low-contrast ink, and cards with inline declarations. For each shot it opens a fresh fixture tab in its headless Chrome, connects the Inspector to it from the discovered-target list, and drives the real Styles panel: select by selector, open the card full screen, tap a property row, type a value, unfold a section. The frames are 360 × 740 CSS px, apart from the Styles section rail (390 × 844) and the JavaScript console (430 × 640). `--only a.png,b.png` re-shoots a subset.
+
+- `intent-360.png` is not re-shot: the Intent surface is switched off in the app (`INTENT_SURFACE` in `Inspector.jsx`), so there is no UI to capture until it comes back.
+- The scope-summary frame is taken before **Apply**: once an edit is applied, the open editor's field shows the pre-edit value again.
+- `project-card/chats-tab.png` is not shot separately: `npm run docs:shots` copies its `chats-list.png` there.
+
 
 ## At a glance
 
