@@ -212,9 +212,13 @@ export function AgentNetworkDock({ transcriptRef, onJumpToToolCard }) {
     if (!incoming.length || document.hidden) return;
     // Collapsed, the head's latest-message line is the animation.
     if (modeRef.current === 'collapsed') return;
+    // A pulse is dropped when its dot finishes; one whose end is not drawn
+    // never animates, so it would linger and keep its edge lit.
+    const drawable = incoming.filter((p) => net.nodes.has(p.from) && net.nodes.has(p.to));
+    if (!drawable.length) return;
     setPulses((list) => {
       const next = list.slice();
-      for (const p of incoming) next.push(Object.assign({ key: ++pulseSeq.current }, p));
+      for (const p of drawable) next.push(Object.assign({ key: ++pulseSeq.current }, p));
       return next.slice(-24);
     });
   }

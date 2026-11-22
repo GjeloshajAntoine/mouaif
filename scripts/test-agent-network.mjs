@@ -304,5 +304,63 @@ check('persisted messages keep their row time and do not count as live', () => {
   assert.equal(net.feed[0].live, false);
 });
 
+check('an agent seen before its launch sits under the agent that wrapped its frames', () => {
+  const net = createAgentNetwork();
+  // A page that joined mid-run: frames of grandchild g1, wrapped by c1, with
+  // neither launch seen yet.
+  ingestStreamEvent(net, 'c1', 'subagent_event', { parentCallId: 'g1', kind: 'message', data: { delta: 'hi' } });
+  assert.equal(net.nodes.get('c1').parentId, ROOT);
+  assert.equal(net.nodes.get('g1').parentId, 'c1');
+  // Its name arrives with its start frame.
+  ingestStreamEvent(net, 'c1', 'subagent_event', { parentCallId: 'g1', kind: 'start', data: { agent: 'digger' } });
+  assert.equal(net.nodes.get('g1').label, 'digger');
+  // A guessed parent gives way to the real launch.
+  ingestStreamEvent(net, 'x9', 'message', { delta: 'hi' });
+  assert.equal(net.nodes.get('x9').parentId, ROOT);
+  ingestStreamEvent(net, 'c1', 'tool_call', { id: 'x9', name: 'subagent', args: { task: 'later' } });
+  assert.equal(net.nodes.get('x9').parentId, 'c1');
+  // ...but never under its own descendant.
+  ingestStreamEvent(net, 'g1', 'tool_call', { id: 'c1', name: 'subagent', args: { task: 'loop' } });
+  assert.equal(net.nodes.get('c1').parentId, ROOT);
+  assert.equal(layoutNetwork(net).nodes.length, net.nodes.size);
+});
+
+check('a stand-in made from a message takes its launch time once the launch is paged in', () => {
+  const net = createAgentNetwork();
+  const x = { role: 'tool', phase: 'call', toolCallId: 'x', name: 'subagent', args: { task: 'X', agent: 'x' }, ts: '2026-01-01T00:00:05Z', seq: 10 };
+  const send = { role: 'tool', phase: 'call', toolCallId: 's1', name: 'subagent_send', args: { callId: 'old', message: 'hi' }, ts: '2026-01-01T00:00:09Z', seq: 11 };
+  ingestMessages(net, [x, send]);
+  ingestMessages(net, [{ role: 'tool', phase: 'call', toolCallId: 'old', name: 'subagent', args: { task: 'O', agent: 'old', background: true }, ts: '2026-01-01T00:00:01Z', seq: 2 }, x, send]);
+  const order = layoutNetwork(net, { vertical: true, width: 400 }).nodes.sort((a, b) => a.y - b.y).map((n) => n.id);
+  assert.deepEqual(order, [ROOT, 'old', 'x']);
+});
+
+check('a background run under a foreground one ends with the turn', () => {
+  const net = createAgentNetwork();
+  ingestStreamEvent(net, null, 'tool_call', { id: 'a', name: 'subagent', args: { task: 'A' } });
+  ingestStreamEvent(net, 'a', 'tool_call', { id: 'g', name: 'subagent', args: { task: 'G', background: true } });
+  settleRunning(net);
+  assert.equal(net.nodes.get('g').status, 'ended');
+  assert.equal(activeCount(net), 0);
+});
+
+check('a settled run ends the children it left running', () => {
+  const net = createAgentNetwork();
+  const chat = [{ role: 'assistant', tool_calls: [{ id: 'g', function: { name: 'subagent', arguments: JSON.stringify({ task: 'G', background: true }) } }] }];
+  ingestMessages(net, [
+    { role: 'user', seq: 1 },
+    { role: 'tool', phase: 'call', toolCallId: 'a', name: 'subagent', args: { task: 'A', background: true }, seq: 2 },
+    { role: 'tool', phase: 'result', toolCallId: 'a', name: 'subagent', ok: true, content: JSON.stringify({ text: 'ok', chat }), seq: 3 }
+  ]);
+  assert.equal(net.nodes.get('a').status, 'done');
+  assert.equal(net.nodes.get('g').status, 'ended');
+  assert.equal(activeCount(net), 0);
+  // Live: a status report settling a background parent ends its children too.
+  ingestStreamEvent(net, null, 'tool_call', { id: 'b', name: 'subagent', args: { task: 'B', background: true } });
+  ingestStreamEvent(net, 'b', 'tool_call', { id: 'bk', name: 'subagent', args: { task: 'kid' } });
+  ingestStreamEvent(net, null, 'tool_result', { id: 'st', name: 'subagent_status', ok: true, result: { runs: [{ callId: 'b', state: 'cancelled' }] } });
+  assert.equal(net.nodes.get('bk').status, 'ended');
+});
+
 console.log(passed + ' checks, ' + failed + ' failed');
 if (failed) process.exit(1);

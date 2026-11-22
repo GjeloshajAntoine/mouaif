@@ -103,11 +103,50 @@ function setStatus(net, node, status) {
   if (TERMINAL.has(node.status) && !TERMINAL.has(status)) return;
   node.status = status;
   net.version++;
+  endDescendants(net, node);
 }
 
+// Whether `ancestorId` is `startId` or one of its parents.
+function isAncestor(net, ancestorId, startId) {
+  let cur = startId;
+  for (let guard = 0; cur && guard < 64; guard++) {
+    if (cur === ancestorId) return true;
+    if (cur === ROOT) return false;
+    const node = net.nodes.get(cur);
+    cur = node ? node.parentId : null;
+  }
+  return false;
+}
+
+// A run's children live in its own scope, which closes when the run settles
+// (childScope.finish() in src/tools/subagent-orchestration.js): whatever it
+// left running, background children included, ended with it. Soft, like any
+// 'ended': a later report still overrides it.
+function endDescendants(net, node) {
+  if (!node || node.id === ROOT || !TERMINAL.has(node.status)) return;
+  for (const n of net.nodes.values()) {
+    if (n.ghost || (n.status !== 'running' && n.status !== 'waiting')) continue;
+    if (isAncestor(net, node.id, n.parentId)) setStatus(net, n, 'ended');
+  }
+}
+
+// A node can be created from a frame that only names it (its own output, a
+// message sent to it) before the frame that launched it, or without that
+// frame at all (a page that joined mid-run). Such a stand-in is marked
+// `stub`: its parent is a guess and its time is when it was first seen. The
+// real delegation, once it arrives, says who made it and when.
 function upsertNode(net, id, parentId, patch) {
   const key = String(id);
   let node = net.nodes.get(key);
+  const guess = !!(patch && patch.stub);
+  if (node && node.stub && !guess) {
+    const pid = String(parentId || ROOT);
+    // Never under itself or its own descendant.
+    if (pid !== node.parentId && !isAncestor(net, key, pid)) node.parentId = pid;
+    if (net.ingestAt) node.at = net.ingestAt;
+    delete node.stub;
+    net.version++;
+  }
   if (!node) {
     // A declared member taking over its placeholder keeps the placeholder's
     // slot, so starting a run never moves it to the end of its siblings.
@@ -119,11 +158,12 @@ function upsertNode(net, id, parentId, patch) {
       // sorts before newer runs.
       at: (ghost && ghost.at) || net.ingestAt || Date.now()
     };
+    if (guess) node.stub = true;
     net.nodes.set(key, node);
     net.version++;
   }
   for (const [k, v] of Object.entries(patch || {})) {
-    if (v == null || v === '' || node[k] === v) continue;
+    if (k === 'stub' || v == null || v === '' || node[k] === v) continue;
     node[k] = v;
     net.version++;
   }
@@ -196,7 +236,9 @@ export function noteToolCall(net, parentId, call, live) {
 
   if (name === 'subagent') {
     if (!id) return [];
-    const isNew = !net.nodes.has(id);
+    // A stand-in made from an earlier nested frame is new as a delegation.
+    const known = net.nodes.get(id);
+    const isNew = !known || !!known.stub;
     upsertNode(net, id, from, {
       label: labelFor(args),
       agent: args.agent,
@@ -218,7 +260,9 @@ export function noteToolCall(net, parentId, call, live) {
     pulse({ kind: 'delegate', from, to: id, text: clip(args.task, 60) });
   } else if (name === 'subagent_send') {
     const to = args.callId ? String(args.callId) : '';
-    if (to && !net.nodes.has(to)) upsertNode(net, to, from, { label: 'Subagent' });
+    // Only the local parent sends to a child, so `from` is a good guess, but
+    // its launch (paged in later) still sets when it was made.
+    if (to && !net.nodes.has(to)) upsertNode(net, to, from, { label: 'Subagent', stub: true });
     feed(id ? 'send:' + id : null, { kind: 'message', from, to: to || null, text: args.message });
     if (to) pulse({ kind: 'message', from, to, text: clip(args.message, 60) });
   } else if (name === 'subagent_stop') {
@@ -266,7 +310,7 @@ export function noteToolResult(net, parentId, res, live) {
       model: r.model && r.model.id ? r.model.id : undefined
     });
     if (r.backgroundPending || (r.background === true && r.state === 'running')) {
-      node.background = true;
+      if (!node.background) { node.background = true; net.version++; }
       setStatus(net, node, mapState(r.state) || 'running');
     } else {
       setStatus(net, node, failed ? (r.error && /ABORT|CANCEL/i.test(String(r.error.code || '')) ? 'cancelled' : 'failed') : 'done');
@@ -275,6 +319,9 @@ export function noteToolResult(net, parentId, res, live) {
       // The run's own exchanges happened before its answer: fold them in
       // first so the feed (and the head's latest message) stay in order.
       if (Array.isArray(r.chat)) ingestNestedChat(net, id, r.chat);
+      // Children its chat launched in the background and never polled are
+      // only known now; they ended with this run.
+      endDescendants(net, node);
       feed('result:' + id, { kind: failed ? 'error' : 'result', from: id, to: from, text: answer });
       pulse({ kind: failed ? 'error' : 'result', from: id, to: from, text: failed ? 'failed' : 'done' });
     }
@@ -495,34 +542,51 @@ export function latestTurnFailed(net) {
   return false;
 }
 
+// A parent that is not in the network counts as the main agent, as in the
+// layout (treeChildren).
 export function topLevelAncestor(net, node) {
   let cur = node;
   for (let guard = 0; cur && guard < 64; guard++) {
-    if (!cur.parentId || cur.parentId === ROOT) return cur;
+    if (!cur.parentId || cur.parentId === ROOT || !net.nodes.has(cur.parentId)) return cur;
     cur = net.nodes.get(cur.parentId);
   }
   return null;
 }
 
+// An agent named by a frame before its launch was seen: a stand-in under the
+// agent whose envelope carried the frame (see upsertNode).
+function noteAgent(net, id, outer) {
+  if (id === ROOT || net.nodes.has(id)) return;
+  upsertNode(net, id, outer && outer !== id ? outer : ROOT, { label: 'Subagent', stub: true });
+}
+
 // ingestStreamEvent(net, parentCallId, kind, data) -> pulse[]
 //
 // `parentCallId` is null for top-level frames (made by ROOT). Nested frames
-// arrive as `subagent_event` envelopes, one envelope per delegation level.
-export function ingestStreamEvent(net, parentCallId, kind, data) {
+// arrive as `subagent_event` envelopes, one envelope per delegation level;
+// `outer` (internal) is the agent whose envelope this frame came out of.
+export function ingestStreamEvent(net, parentCallId, kind, data, outer) {
   const owner = parentCallId ? String(parentCallId) : ROOT;
   const d = data && typeof data === 'object' ? data : {};
-  if (kind === 'subagent_event') return ingestStreamEvent(net, d.parentCallId || owner, d.kind, d.data);
+  if (kind === 'subagent_event') {
+    // An envelope is only ever wrapped by a run (src/ai-stream.js), so its
+    // parentCallId is an agent even when no frame of its own was seen.
+    noteAgent(net, owner, outer);
+    return ingestStreamEvent(net, d.parentCallId || owner, d.kind, d.data, owner);
+  }
   // Only an agent's own turn proves `owner` is an agent. Other nested frames
   // are keyed by a tool call: a subagent's shell / group_cli output carries
   // the command's call id as its parentCallId, so creating a node for it
   // added a phantom agent for every command (each approved one, typically).
   if (!AGENT_FRAMES.has(kind)) return [];
-  if (owner !== ROOT && !net.nodes.has(owner)) upsertNode(net, owner, ROOT, { label: 'Subagent' });
+  noteAgent(net, owner, outer);
   if (kind === 'tool_call') return noteToolCall(net, owner, d, true);
   if (kind === 'tool_result') return noteToolResult(net, owner, d, true);
   if (kind === 'start' && owner !== ROOT) {
     const node = net.nodes.get(owner);
-    upsertNode(net, owner, node.parentId, { agent: d.agent, model: d.model && d.model.id, label: node.label || clip(d.agent || 'Subagent', 32) });
+    // A stand-in learns its agent's name here; its launch may never come.
+    const label = node.stub && d.agent ? clip(d.agent, 32) : (node.label || clip(d.agent || 'Subagent', 32));
+    upsertNode(net, owner, node.parentId, { agent: d.agent, model: d.model && d.model.id, label, stub: node.stub });
     if (node.status === 'waiting') setStatus(net, node, 'running');
     return [];
   }
@@ -535,13 +599,15 @@ export function ingestStreamEvent(net, parentCallId, kind, data) {
   return [];
 }
 
-// outlivesTurn(net, node) — the node is a background run, or runs under
-// one. A chat's background runs keep going after their turn ends (the
-// chat's persistent scope, src/tools/subagent-orchestration.js), so only
-// their own result or status report settles them.
+// outlivesTurn(net, node) — the node's top-level run is a background run.
+// A chat's background runs keep going after their turn ends (the chat's
+// persistent scope, src/tools/subagent-orchestration.js), so only their own
+// result or status report settles them. A nested run lives in its parent
+// run's scope, so a background run under a foreground one does not: it
+// ends with the turn like its parent.
 function outlivesTurn(net, node) {
-  for (let n = node; n && n.id !== ROOT; n = net.nodes.get(n.parentId)) if (n.background && !n.turnLocal) return true;
-  return false;
+  const top = topLevelAncestor(net, node);
+  return !!(top && top.background && !top.turnLocal);
 }
 
 // settleRunning(net) — the parent turn ended: foreground delegations that
