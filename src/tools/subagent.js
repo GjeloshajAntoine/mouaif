@@ -36,9 +36,8 @@ function describe(maxDepth, { persistent = false } = {}) {
 
 const BASE_DESCRIPTION = describe(DEFAULT_LIMITS.maxDepth);
 
-const AGENT_DESCRIPTION = 'Optional: reuse a saved project agent (Settings → Project → Agents) with its own instructions, model and tool allowlist. Only for a listed saved agent: to make a subagent on the fly, omit `agent` and set `name` (and optionally `instructions` and `tools`) instead. Omitting both runs the project\'s default subagent.';
+const AGENT_DESCRIPTION = 'Optional: reuse a saved project agent (Settings → Project → Agents) with its own instructions, model and tool allowlist. Only for a listed saved agent: to make a subagent on the fly, omit `agent` and set `name` (and optionally `instructions`) instead. Omitting both runs the project\'s default subagent.';
 const NAME_DESCRIPTION = 'Optional display name for this subagent (for example be-manager or api-reviewer), shown on its card, in subagent_status and in the Agents graph. It only labels the run: it saves nothing and does not pick a saved agent. Up to 64 characters.';
-const TOOLS_DESCRIPTION = 'Optional: limit this subagent to these tools, by exact tool name (e.g. read_file) or MCP server slug (e.g. mcp__fs for all of that server\'s tools). It only narrows: the subagent never gets a tool you were not offered or that the saved or default agent excludes, and such entries come back in the result\'s ignoredTools. [] gives it no tools. Omit to keep every tool it is allowed.';
 const INSTRUCTIONS_DESCRIPTION = 'Optional instructions for a subagent made on the fly (its role or persona, e.g. "You are the backend managing agent…"). They replace the default subagent\'s instructions for this run only and are not saved. Not allowed with `agent`, which brings its own instructions.';
 
 const SPEC = {
@@ -57,7 +56,6 @@ const SPEC = {
         agent: { type: 'string', description: AGENT_DESCRIPTION },
         name: { type: 'string', maxLength: 64, description: NAME_DESCRIPTION },
         instructions: { type: 'string', description: INSTRUCTIONS_DESCRIPTION },
-        tools: { type: 'array', maxItems: 256, items: { type: 'string' }, description: TOOLS_DESCRIPTION },
         images: {
         type: 'array', maxItems: 8, items: { type: 'string' },
         description: 'Only these current-chat imageRef values from list_chat_attachments are passed to the subagent. Omit or [] sends no images. No base64 or file paths; max 8 images, 24 MiB encoded total.'

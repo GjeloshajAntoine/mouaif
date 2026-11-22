@@ -830,25 +830,18 @@ function agentLimits(projectDir, name) {
   } catch { return {}; }
 }
 
-// onTheFlyAgent(args) -> { name, instructions, tools } | { error }
+// onTheFlyAgent(args) -> { name, instructions } | { error }
 //
 // A subagent defined in the call itself rather than saved in Settings:
-// `name` labels the run (card, status rows, Agents graph), `instructions`
-// replace the default subagent's persona for this run, and `tools` narrows
-// its tool surface (null = no extra narrowing). None of it is stored.
+// `name` labels the run (card, status rows, Agents graph) and `instructions`
+// replace the default subagent's persona for this run. Neither is stored.
 // `instructions` with a saved `agent` is refused: the saved agent already
 // brings its persona, and silently dropping either one would run the wrong
-// role. `tools` is allowed with a saved agent, since it can only narrow.
+// role.
 const ON_THE_FLY_NAME_MAX = 64;
-const ON_THE_FLY_TOOLS_MAX = 256;
 function onTheFlyAgent(args) {
   const bad = (message) => ({ error: { code: 'EBADINPUT', message } });
-  const out = { name: '', instructions: '', tools: null };
-  if (args.tools !== undefined) {
-    if (!Array.isArray(args.tools) || args.tools.some((t) => typeof t !== 'string')) return bad('tools must be an array of tool names');
-    if (args.tools.length > ON_THE_FLY_TOOLS_MAX) return bad('tools must list at most ' + ON_THE_FLY_TOOLS_MAX + ' entries');
-    out.tools = [...new Set(args.tools.map((t) => t.trim()).filter(Boolean))];
-  }
+  const out = { name: '', instructions: '' };
   if (args.name !== undefined) {
     if (typeof args.name !== 'string') return bad('name must be a string');
     out.name = args.name.replace(/\s+/g, ' ').trim();
@@ -864,17 +857,6 @@ function onTheFlyAgent(args) {
     }
   }
   return out;
-}
-
-// toolAllowedBy(list, toolName) -> whether an allowlist admits a tool. An
-// entry is an exact tool name ("shell") or an MCP server slug ("mcp__fs"),
-// which admits every tool of that server ("mcp__fs__read_file", ...).
-function toolAllowedBy(list, toolName) {
-  for (const entry of list) {
-    if (entry === toolName) return true;
-    if (entry.startsWith('mcp__') && toolName.startsWith(entry + '__')) return true;
-  }
-  return false;
 }
 
 // subagentGrantScopes(opts) -> { scopes, subagent }
@@ -2805,16 +2787,20 @@ async function streamChatInScope(opts) {
       .map((spec) => spec && spec.function && spec.function.name)
       .filter(Boolean);
       // An agent's tool allowlist restricts the nested call's surface.
-      if (agentTools) nestedEnabled = nestedEnabled.filter((toolName) => toolAllowedBy(agentTools, toolName));
-      // The call's own `tools` can only narrow further: it is intersected
-      // with what the parent and the agent already allow, never added to
-      // them. Entries that match nothing left are reported on the result so
-      // the model learns the subagent did not get them.
-      let ignoredTools = [];
-      if (onTheFly.tools) {
-        nestedEnabled = nestedEnabled.filter((toolName) => toolAllowedBy(onTheFly.tools, toolName));
-        ignoredTools = onTheFly.tools.filter((entry) => !nestedEnabled.some((toolName) => toolAllowedBy([entry], toolName)));
-        if (ignoredTools.length) run.ignoredTools = ignoredTools;
+      // Agent tool entries can be exact tool names (e.g. "shell") or MCP
+      // server slugs (e.g. "mcp__fs") which should allow every tool from
+      // that server (mcp__fs__read_file, mcp__fs__write_file, ...).
+      if (agentTools) {
+        const allow = new Set(agentTools);
+        nestedEnabled = nestedEnabled.filter((toolName) => {
+          if (allow.has(toolName)) return true;
+          // Prefix match for MCP server slugs: "mcp__fs" allows
+          // "mcp__fs__read_file", "mcp__fs__write_file", etc.
+          for (const prefix of allow) {
+            if (prefix.startsWith('mcp__') && toolName.startsWith(prefix + '__')) return true;
+          }
+          return false;
+        });
       }
       if (!scope.accepts(run)) {
         const r = { error: { code: 'EABORTED', message: 'delegated run is no longer active' } };
@@ -3032,7 +3018,6 @@ promptSize: callOpts && callOpts.promptSize,
       // agent answered. Omitted entirely for a generic delegation.
       if (agentName) r.agent = agentName;
       if (onTheFly.name) r.name = onTheFly.name;
-      if (ignoredTools.length) r.ignoredTools = ignoredTools;
       // Carry the subagent's generated pictures on the result `content`, in
       // the same `{ type:'image', data, mimeType }` shape read_file's image
       // path and MCP image results emit, so

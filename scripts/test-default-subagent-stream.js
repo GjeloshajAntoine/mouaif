@@ -133,20 +133,6 @@ async function main() {
     assert.match(system(namedOnly[1]), /You are a focused subagent/);
     assert.equal(lastFrame.data.name, 'api-reviewer');
 
-    // `tools` only narrows: intersected with the default's allowlist, and
-    // entries outside it come back as ignoredTools on the result.
-    const narrowed = await run(
-      { defaultAgent: { tools: ['shell', 'read_file'] } },
-      { task: 'Review', name: 'reader', tools: ['read_file', 'write_file', 'nope'] });
-    assert.deepEqual(toolNames(narrowed[1]), ['read_file']);
-    const narrowedResult = JSON.parse(narrowed[2].messages.find((m) => m.role === 'tool').content);
-    assert.deepEqual(narrowedResult.ignoredTools, ['write_file', 'nope']);
-    assert.equal(narrowedResult.name, 'reader', 'the parent model sees the name it gave');
-    const unrestricted = await run({}, { task: 'Review', tools: ['shell'] });
-    assert.deepEqual(toolNames(unrestricted[1]), ['shell']);
-    const none = await run({}, { task: 'Review', tools: [] });
-    assert.deepEqual(toolNames(none[1]), []);
-
     // instructions with a saved agent are refused: no nested request is made.
     {
       const projectDir = path.join(tmp, 'project-' + count++);

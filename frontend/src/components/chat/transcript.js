@@ -2415,7 +2415,6 @@ function subagentRetryPrompt(error, args) {
   if (typeof args.agent === 'string' && args.agent.trim()) lines.push('', 'Use agent: ' + args.agent.trim());
   if (typeof args.name === 'string' && args.name.trim()) lines.push('', 'Name: ' + args.name.trim());
   if (typeof args.instructions === 'string' && args.instructions.trim()) lines.push('', 'Instructions:', args.instructions.trim());
-  if (Array.isArray(args.tools)) lines.push('', 'Tools: ' + (args.tools.length ? args.tools.join(', ') : 'none'));
   return lines.join('\n');
 }
 

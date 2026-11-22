@@ -75,16 +75,9 @@ A model that wants a named worker for one job (a group's `be-manager`, an `api-r
 
 - **`name`** (up to 64 characters) labels the run: the card's chip, the nested system row, `subagent_status` rows, approval cards and the Agents graph show it. It saves nothing and selects no agent.
 - **`instructions`** replace the **Default subagent**'s instructions for this run only. The default's model, thinking and tool allowlist still apply.
-- **`tools`** narrows the run's tools, with entries written like an agent's allowlist: exact tool names (`read_file`) or MCP server slugs (`mcp__fs`). It only narrows, by keeping the overlap with what the subagent would get anyway: the parent's offered tools, then the saved agent's or **Default subagent**'s allowlist. An entry that matches nothing left comes back in the result's `ignoredTools` (and in `subagent_status` rows for background runs), so the model knows the subagent did not get it. `[]` gives the run no tools. It is allowed with `agent` too, since it cannot widen anything.
 - `instructions` together with `agent` is refused with `EBADINPUT`, because a saved agent brings its own instructions.
 
-```json
-{ "task": "Map the HTTP routes.", "name": "be-api-worker", "tools": ["read_file", "search_files", "subagent_publish"] }
-```
-
-Tool authorization is unchanged: each call still passes the project's Off / Ask / Allow gate, and its approval card names the subagent.
-
-None of these fields is written to `.mouaif.json`. Before these fields existed, the only way to give a delegated run a role was to pick a saved agent, so parallel workers were all launched as one saved agent (with its persona and tool allowlist) and every card read the same. A `name` on a saved-agent run is still allowed: the card shows the name, and the saved agent's name stays in the chip's tooltip and the graph's detail line. Regression tests: [scripts/test-default-subagent-stream.js](../../scripts/test-default-subagent-stream.js), [scripts/test-agent-network.mjs](../../scripts/test-agent-network.mjs). Images are never inherited: the main model can explicitly pass an `images` array of current-chat `imageRef` values returned by `list_chat_attachments`. Omit it to send only task/context; see [Subagent image generation](./subagent-image-generation.md#send-only-selected-attachments).
+Neither field is written to `.mouaif.json`. Before these fields existed, the only way to give a delegated run a role was to pick a saved agent, so parallel workers were all launched as one saved agent (with its persona and tool allowlist) and every card read the same. A `name` on a saved-agent run is still allowed: the card shows the name, and the saved agent's name stays in the chip's tooltip and the graph's detail line. Regression tests: [scripts/test-default-subagent-stream.js](../../scripts/test-default-subagent-stream.js), [scripts/test-agent-network.mjs](../../scripts/test-agent-network.mjs). Images are never inherited: the main model can explicitly pass an `images` array of current-chat `imageRef` values returned by `list_chat_attachments`. Omit it to send only task/context; see [Subagent image generation](./subagent-image-generation.md#send-only-selected-attachments).
 
 ### Model defaults and one-run choices
 
