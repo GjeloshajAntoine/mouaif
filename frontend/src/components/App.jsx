@@ -130,6 +130,7 @@ const [View = ProjectsView, getProps] = ROUTES[view.name] || [];
 // reuse one component instance and leave stale selection/state behind.
 const viewKey = view.name + '|' +
 (view.projectDir || '') + '|' +
+(view.projectId || '') + '|' +
 (view.id || '') + '|' +
 (view.scope || '') + '|' +
 (view.page || '') + '|' +

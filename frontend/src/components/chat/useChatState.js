@@ -528,8 +528,7 @@ setCustomActions(next);
     try {
       const response = await fetchJson('/api/actions?projectDir=' + encodeURIComponent(projectDir));
 if (response.status === 200 && Array.isArray(response.body && response.body.actions)) {
-state.customActions = response.body.actions;
-setCustomActions(response.body.actions);
+state._setCustomActions(response.body.actions);
 }
 } catch { /* keep the last known action list */ }
   }, [projectDir]);
@@ -1129,7 +1128,7 @@ models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [
         skills.current = skillStateFromResponse(rSys.status === 200 ? rSys.body : {}, c);
         mcpServers.current = rMcp.status === 200 && Array.isArray(rMcp.body.servers) ? rMcp.body.servers : [];
         agents.current = rAgents.status === 200 && Array.isArray(rAgents.body.agents) ? rAgents.body.agents : [];
-setCustomActions(rActions.status === 200 && Array.isArray(rActions.body.actions) ? rActions.body.actions : []);
+state._setCustomActions(rActions.status === 200 && Array.isArray(rActions.body.actions) ? rActions.body.actions : []);
 
         if (authRes && authRes.status === 200) applyChatAuthResponse(authRes.body);
 
