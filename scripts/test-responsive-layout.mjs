@@ -195,7 +195,7 @@ try {
       assert.ok(sw.trackLeft >= 0 && sw.trackRight <= sw.viewport, 'the switch paints inside the viewport');
       }
       assert.ok(layout.overflow <= 1, `${name} fits horizontally at ${width}px / ${fontSize}px font`);
-      assert.ok(Math.abs(layout.shell.width - Math.min(width, 72 * fontSize)) < 1, 'shell grows with the viewport up to its ceiling');
+      assert.ok(Math.abs(layout.shell.width - width) < 1, 'shell follows the viewport width');
       assert.ok(Math.abs(layout.shell.left - (width - layout.shell.width) / 2) < 1, 'shell is centred');
       assert.ok(layout.main.bottom <= height, 'content stays inside the viewport');
       if (name === 'chat') {
@@ -447,7 +447,12 @@ try {
         await evaluate(`document.querySelector('.chat-view__scroll-nav').dataset.expanded = 'false'`);
         await settle();
         if (width >= 48 * fontSize) {
-        assert.ok(Math.abs(layout.row.left - layout.head.left) < 1, 'transcript stays centred even with a scrollbar');
+        // No reading-column cap: rows follow the window's width on a desktop
+        // too, inside the transcript (which keeps its scrollbar lane).
+        assert.ok(layout.row.left >= layout.transcript.left - 0.5 && layout.row.right <= layout.transcript.right + 0.5,
+          'transcript rows stay inside the transcript');
+        assert.ok(layout.row.width >= layout.transcript.width * 0.9,
+          `transcript rows follow the window width (row ${layout.row.width}px, transcript ${layout.transcript.width}px)`);
         // The rail is flush with the transcript's right edge (the chat's
         // right edge), over the scrollbar lane: it covers only a short stretch
         // of a thin bar, which is the deliberate trade for a rail that is not

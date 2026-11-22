@@ -12,11 +12,10 @@
      --flush mode) can scroll internally instead of growing the page. */
   width: 100%;
   height: 100%;
-  /* Grow with the window up to the frame ceiling (base.css) and centre
-     the frame inside it. A 1280px laptop now gets a 1152px app frame
-     with a 64px gutter instead of a 480px phone column — so the
-     `min-width: 720px` / `900px` branches the modals and the Inspector
-     already have finally get the width they were written for. */
+  /* Grow with the window (--shell-max in base.css is uncapped) and
+     centre the frame if a ceiling is set again. The frame is never a
+     480px phone column, so the `min-width: 720px` / `900px` branches the
+     modals and the Inspector have get the width they were written for. */
   max-width: var(--shell-max, 72rem);
   min-width: 0;
   margin: 0 auto;

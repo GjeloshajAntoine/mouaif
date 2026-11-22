@@ -70,19 +70,21 @@
      branches — which assume a wide viewport — while the frame they were
      laid out in stayed 480px, so the desktop UI was squeezed into a
      phone-width strip.
-     Three stops, so that "more room" never becomes a 160-character line:
-       --shell-max  ceiling for the frame. The header and the tab bar
-                    paint to its edges; the modal sheets (sheets.css,
-                    file-editor.css) size themselves separately.
+     Three measures, all uncapped so the app and the chat follow the
+     window's width on a desktop too (they used to stop at 1152 / 896 /
+     704 px and leave empty gutters):
+       --shell-max  the frame. The header and the tab bar paint to its
+                    edges; the modal sheets (sheets.css, file-editor.css)
+                    size themselves separately.
        --list-max   the content column of every non-chat view — lists,
-                    inset groups, view heads, hints and form rows —
-                    roughly twice a phone's width, then centred.
-       --read-max   long-form text (chat bubbles, transcript cards, the
-                    chat head, the composer) where line length matters
-                    more than width. */
-  --shell-max: 72rem;   /* 1152px */
-  --list-max:  56rem;   /*  896px */
-  --read-max:  44rem;   /*  704px */
+                    inset groups, view heads, hints and form rows.
+       --read-max   the chat column (bubbles, transcript cards, docks,
+                    the chat head, the composer). `100%` rather than
+                    `none` because chat-composer.css also uses it in a
+                    calc(). Set a length on any of them to cap it again. */
+  --shell-max: none;
+  --list-max:  none;
+  --read-max:  100%;
   /* Touch targets. --tap is the minimum row/button height — the
      mobile-first rule is ≥ 44px, and everything interactive that
      is not a glyph-only accessory keeps it. --tap-sm is the size

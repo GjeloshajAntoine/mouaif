@@ -7,10 +7,12 @@
 The three stops are custom properties in `frontend/src/base.css`:
 
 ```css
---shell-max: 72rem;   /* 1152px */
---list-max:  56rem;   /*  896px */
---read-max:  44rem;   /*  704px */
+--shell-max: none;
+--list-max:  none;
+--read-max:  100%;
 ```
+
+All three are uncapped so the frame, the list views and the chat follow the window on a desktop. They used to be `72rem` (1152 px), `56rem` (896 px) and `44rem` (704 px); a desktop then showed the chat and its docks (the Agents card among them) as a 704 px strip with empty gutters. `--read-max` is `100%` rather than `none` because `.webpreview-dock` in `chat-composer.css` uses it in `calc((100% - var(--read-max)) / 2 + 0.75rem)`. The consumers below still read the tokens, so a length on any of them caps that measure again.
 
 They are consumed in four places, all keyed off the frame rather than the viewport, so a phone is unaffected (every cap is inert below its own width):
 
