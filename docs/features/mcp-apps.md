@@ -14,7 +14,7 @@ MCP Apps are interactive HTML tool views inside the conversation, as described b
 
 ![Framed MCP App pinned at the bottom of a mobile chat transcript](./images/mcp-apps/inline-and-framed-390.png)
 
-Inside the chat the app sits flush: its tool card drops the usual padding, the frame carries no margin, and the header is a slim, transparent strip above the app rather than a second toolbar.
+Inside the chat the framed app keeps the tool card's usual `17px` left indent, like every other expanded tool card; the frame itself carries no margin, and the header is a slim, transparent strip above the app rather than a second toolbar.
 
 **Transparent inline apps.** An app can ask to blend into the conversation instead of sitting in a framed card: an on-the-fly app with `inline: true` on `create_mcp_app`, or a server app whose UI resource declares `_meta.ui.prefersBorder: false` (the spec's "no border and background" request). Such an app shows no tool-card header, frame border or title strip, and stays at its place in the chat instead of taking the bottom slot. Its fullscreen and Close glyphs float over the app's top-right corner, shown on hover or keyboard focus (always, faintly, on touch screens). If it fails or is closed, the normal header, reason, Retry and tool result come back. A later `create_mcp_app` call on the same `path` with `inline: false` puts the app back in its framed card at the bottom; leaving `inline` out keeps the current look.
 
