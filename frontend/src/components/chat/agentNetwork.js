@@ -663,24 +663,85 @@ export function byDelegation(a, b) {
   return a.order - b.order;
 }
 
-function treeChildren(net) {
-  const children = new Map();
+// A group's status, from its members': working while any is, failed when
+// any failed, otherwise done once all are.
+function groupStatus(members) {
+  const s = members.map((m) => m.status);
+  if (s.includes('running')) return 'running';
+  if (s.includes('waiting')) return 'waiting';
+  if (s.includes('failed')) return 'failed';
+  if (s.every((x) => x === 'planned')) return 'planned';
+  if (s.includes('planned')) return 'waiting';
+  if (s.every((x) => x === 'done')) return 'done';
+  return 'ended';
+}
+
+// Cooperative groups as a level of the tree: the members an agent launched
+// into a group sit under a box for that group, itself under that agent.
+// Without it every member of every group was a direct child of the main
+// agent, so a chat that organised its work in groups looked flat. The box
+// sits where its earliest member was delegated. Layout only: never in
+// `net.nodes`, never counted as an agent.
+export const GROUP_PREFIX = 'group:';
+
+function groupBoxes(net) {
+  const boxes = new Map();
   for (const node of net.nodes.values()) {
-    if (node.id === ROOT) continue;
+    if (node.id === ROOT || !node.groupId) continue;
+    const group = net.groups.get(node.groupId);
+    if (!group) continue;
     const pid = net.nodes.has(node.parentId) ? node.parentId : ROOT;
+    // Only members launched by the agent that owns the group.
+    if (pid !== (net.nodes.has(group.owner) ? group.owner : ROOT)) continue;
+    let box = boxes.get(group.id);
+    if (!box) {
+      box = { id: GROUP_PREFIX + group.id, parentId: pid, group: true, groupId: group.id, label: group.name || 'Group', objective: group.objective, members: [], order: node.order, at: node.at };
+      boxes.set(group.id, box);
+    }
+    box.members.push(node);
+    if (byDelegation(node, box) < 0) { box.order = node.order; box.at = node.at; }
+  }
+  for (const box of boxes.values()) box.status = groupStatus(box.members);
+  return boxes;
+}
+
+// treeChildren(net) -> { children, parentOf, boxes }
+function treeChildren(net) {
+  const boxes = groupBoxes(net);
+  const children = new Map();
+  const parentOf = new Map();
+  const add = (pid, node) => {
+    parentOf.set(node.id, pid);
     if (!children.has(pid)) children.set(pid, []);
     children.get(pid).push(node);
+  };
+  for (const box of boxes.values()) add(box.parentId, box);
+  for (const node of net.nodes.values()) {
+    if (node.id === ROOT) continue;
+    const box = node.groupId && boxes.get(node.groupId);
+    if (box && box.members.includes(node)) add(box.id, node);
+    else add(net.nodes.has(node.parentId) ? node.parentId : ROOT, node);
   }
   for (const list of children.values()) list.sort(byDelegation);
-  return children;
+  return { children, parentOf, boxes };
+}
+
+// The placed nodes, each with `treeParent`: the box (or agent) it hangs from.
+function placedNodes(net, tree, pos, at) {
+  const nodes = [];
+  for (const node of [...net.nodes.values(), ...tree.boxes.values()]) {
+    const p = pos.get(node.id);
+    if (!p) continue;
+    nodes.push(Object.assign({}, node, at(p), { treeParent: tree.parentOf.get(node.id) || null }));
+  }
+  return nodes;
 }
 
 function layoutEdges(net, nodes) {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const edges = [];
   for (const n of nodes) {
-    if (n.id === ROOT) continue;
-    const parent = byId.get(net.nodes.has(n.parentId) ? n.parentId : ROOT);
+    const parent = n.treeParent && byId.get(n.treeParent);
     if (parent) edges.push({ id: 'tree:' + n.id, kind: 'tree', from: parent.id, to: n.id });
   }
   for (const group of net.groups.values()) {
@@ -701,7 +762,8 @@ export function layoutNetwork(net, opts = {}) {
 }
 
 function layoutHorizontal(net, avail) {
-  const children = treeChildren(net);
+  const tree = treeChildren(net);
+  const { children } = tree;
   const pos = new Map();
   let slot = 0;
   let maxDepth = 0;
@@ -725,12 +787,7 @@ function layoutHorizontal(net, avail) {
   const span = maxX - minX;
   const fit = Math.floor(((Number(avail) || 0) - PAD * 2 - span * GAP_X) / (span + 1));
   const nodeW = Math.max(NODE_W, fit);
-  const nodes = [];
-  for (const node of net.nodes.values()) {
-    const p = pos.get(node.id);
-    if (!p) continue;
-    nodes.push(Object.assign({}, node, { x: (p.x - minX) * (nodeW + GAP_X) + PAD, y: p.y + PAD }));
-  }
+  const nodes = placedNodes(net, tree, pos, (p) => ({ x: (p.x - minX) * (nodeW + GAP_X) + PAD, y: p.y + PAD }));
   return {
     nodes,
     edges: layoutEdges(net, nodes),
@@ -742,7 +799,8 @@ function layoutHorizontal(net, avail) {
 }
 
 function layoutVertical(net, avail) {
-  const children = treeChildren(net);
+  const tree = treeChildren(net);
+  const { children } = tree;
   const pos = new Map();
   let row = 0;
   let maxDepth = 0;
@@ -754,12 +812,7 @@ function layoutVertical(net, avail) {
     for (const kid of children.get(node.id) || []) place(kid, depth + 1, seen);
   };
   place(net.nodes.get(ROOT), 0, new Set());
-  const nodes = [];
-  for (const node of net.nodes.values()) {
-    const p = pos.get(node.id);
-    if (!p) continue;
-    nodes.push(Object.assign({}, node, { x: PAD + p.depth * INDENT, y: PAD + p.row * (NODE_H + ROW_GAP) }));
-  }
+  const nodes = placedNodes(net, tree, pos, (p) => ({ x: PAD + p.depth * INDENT, y: PAD + p.row * (NODE_H + ROW_GAP) }));
   const edges = layoutEdges(net, nodes);
   const depRoom = edges.some((e) => e.kind === 'dep') ? DEP_ROOM : 0;
   const fit = Math.floor((Number(avail) || 0) - PAD * 2 - maxDepth * INDENT - depRoom);
@@ -772,6 +825,20 @@ function layoutVertical(net, avail) {
     nodeW,
     vertical: true
   };
+}
+
+// treeRoute(byId, a, b) -> [upper, (group box,) lower] | null
+//
+// The tree edges a message between two placed nodes travels: parent to
+// child directly, or an agent to a member of its group through the group's
+// box. Null when they are not joined that way (group handoffs).
+export function treeRoute(byId, a, b) {
+  const down = (up, low) => {
+    if (low.treeParent === up.id) return [up, low];
+    const mid = byId.get(low.treeParent);
+    return mid && mid.group && mid.treeParent === up.id ? [up, mid, low] : null;
+  };
+  return down(a, b) || down(b, a);
 }
 
 // edgePath(a, b, kind, layout) -> SVG path for an edge.

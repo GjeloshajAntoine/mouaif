@@ -19,10 +19,13 @@ When a chat delegates to subagents, an **Agents** row appears just above the com
 | Solid line down | Delegation: the upper agent started the lower one |
 | Dashed amber arrow | Group dependency: the target waits for the source |
 | Dashed box | A declared group member that has not started yet |
+| Grey box in italics | A cooperative group: its members sit under it, and it sits under the agent that created the group. It shows the group's status (running while a member is, failed when one failed) and its size; it is not an agent, so tapping it does nothing |
 | Spinning dashed ring | The agent is running (writing or thinking included) |
 | Dot travelling along an edge | A message: blue for assignments and messages, green for answers and reports, amber for handoffs and decisions, red for failures, conflicts and stops |
 
 Only real messages travel. An agent that is writing does not send dots to its parent, and edges stay still while agents run: the ring says the agent is working.
+
+- **Groups are a level of the tree.** A chat that splits its work into cooperative groups shows main agent → group → members, not every member side by side under the main agent. A message between the main agent and a member travels through the group's box. A member's own subagents stay under that member, and a run outside any group stays directly under the agent that started it.
 
 - **Boxes follow the room.** In both shapes the agent boxes widen to fill the width of the card or the full-screen stage, so a phone does not show small boxes in a wide frame and full screen does not scale a narrow tree up to 1.6×.
 - **Narrow screens get a vertical graph.** While the top-down tree fits the card (or the full screen), it is drawn as above. When it would be wider than the room it has (several agents side by side on a phone, or a big fan-out in the inline card), the graph switches to an indented outline: one agent per row in delegation order, each child indented under its parent, boxes widened to the available width. It only grows downwards and scrolls with the card body or the full-screen stage. Delegation lines drop from under the parent's status dot into each child; group dependencies arc on the right between the two rows. The layout follows the width live, so rotating a phone or resizing the window switches it.

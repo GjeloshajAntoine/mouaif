@@ -8,7 +8,9 @@
 //      pulses the dock animates: delegation down, messages to a child,
 //      answers back up. A child that only streams text sends no pulse.
 //   3. Cooperative groups show declared members before they launch, their
-//      dependency edges, and swap the placeholder for the real run.
+//      dependency edges, and swap the placeholder for the real run. The
+//      layout puts a group's members under a box for the group (one level
+//      of the tree), and a message to a member travels through that box.
 //   4. Status only moves forward, except the soft "ended" a finished turn
 //      gives a foreground delegation that never reported back (background
 //      runs outlive their turn).
@@ -25,6 +27,7 @@ const {
   ingestMessages,
   ingestStreamEvent,
   layoutNetwork,
+  treeRoute,
   agentCount,
   activeCount,
   settleRunning,
@@ -181,9 +184,40 @@ check('groups show planned members, dependency edges, and swap placeholders for 
   const layout = layoutNetwork(net);
   const dep = layout.edges.find((e) => e.kind === 'dep');
   assert.deepEqual(dep && [dep.from, dep.to], ['k1', 'r1']);
-  assert.equal(layout.nodes.length, 3);
+  assert.equal(layout.nodes.length, 4, 'main agent, the group box and two members');
   for (const n of layout.nodes) assert.ok(Number.isFinite(n.x) && Number.isFinite(n.y), n.id);
   assert.ok(layout.width > 0 && layout.height > 0);
+});
+
+check('group members sit under a box for their group, which is not an agent', () => {
+  const net = createAgentNetwork();
+  const members = [{ memberId: 'w1', role: 'work' }, { memberId: 'w2', role: 'work' }, { memberId: 'boss', role: 'merge', dependsOn: ['w1', 'w2'] }];
+  ingestStreamEvent(net, null, 'tool_call', { id: 'gc', name: 'subagent_group_create', args: { name: 'backend', objective: 'map it', members } });
+  ingestStreamEvent(net, null, 'tool_result', { id: 'gc', name: 'subagent_group_create', ok: true, result: { groupId: 'g1', name: 'backend', members } });
+  ingestStreamEvent(net, null, 'tool_call', { id: 'solo', name: 'subagent', args: { task: 'alone' } });
+  for (const m of ['w1', 'w2', 'boss']) ingestStreamEvent(net, null, 'tool_call', { id: m, name: 'subagent', args: { task: m, groupId: 'g1', memberId: m, background: true } });
+  ingestStreamEvent(net, 'w1', 'tool_call', { id: 'w1kid', name: 'subagent', args: { task: 'deeper' } });
+  assert.equal(agentCount(net), 5, 'the box is not counted');
+  const tall = layoutNetwork(net, { vertical: true, width: 400 });
+  const at = (id) => tall.nodes.find((n) => n.id === id);
+  const box = at('group:g1');
+  assert.ok(box && box.group && box.label === 'backend');
+  assert.equal(box.treeParent, ROOT);
+  for (const m of ['w1', 'w2', 'boss']) assert.equal(at(m).treeParent, 'group:g1', m);
+  assert.equal(at('solo').treeParent, ROOT, 'a run outside the group stays under its parent');
+  assert.equal(at('w1kid').treeParent, 'w1', 'a member\'s own child stays under the member');
+  assert.ok(at('w1').x > box.x && box.x > at(ROOT).x, 'one more indent level');
+  const order = [...tall.nodes].sort((x, y) => x.y - y.y).map((n) => n.id);
+  assert.deepEqual(order, [ROOT, 'group:g1', 'w1', 'w1kid', 'w2', 'boss', 'solo'], 'the box sits where its group was first delegated');
+  assert.equal(box.status, 'running');
+  assert.deepEqual(tall.edges.filter((e) => e.kind === 'tree' && e.to === 'w1').map((e) => e.from), ['group:g1']);
+  const byId = new Map(tall.nodes.map((n) => [n.id, n]));
+  assert.deepEqual(treeRoute(byId, at('boss'), at(ROOT)).map((n) => n.id), [ROOT, 'group:g1', 'boss'], 'a message to a member goes through its box');
+  assert.deepEqual(treeRoute(byId, at('w1'), at('w1kid')).map((n) => n.id), ['w1', 'w1kid']);
+  assert.equal(treeRoute(byId, at('w1'), at('boss')), null, 'a handoff between members is not a tree route');
+  const wide = layoutNetwork(net);
+  const w = (id) => wide.nodes.find((n) => n.id === id);
+  assert.ok(w(ROOT).y < w('group:g1').y && w('group:g1').y < w('w1').y);
 });
 
 check('layout centers parents over their children and keeps rows by depth', () => {

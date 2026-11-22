@@ -23,7 +23,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { useModal } from '../../hooks/useModal.js';
 import { getAgentNetwork, subscribeAgentNetwork } from './agentNetworkState.js';
-import { ROOT, NODE_H, layoutNetwork, edgePath, agentCount, activeCount, latestTurnFailed, topLevelAncestor, byDelegation } from './agentNetwork.js';
+import { ROOT, NODE_H, layoutNetwork, edgePath, treeRoute, agentCount, activeCount, latestTurnFailed, topLevelAncestor, byDelegation } from './agentNetwork.js';
 
 const PULSE_MS = 950;
 const FEED_SHOWN = 40;
@@ -281,9 +281,14 @@ export function AgentNetworkDock({ transcriptRef, onJumpToToolCard }) {
   const busyEdges = new Set();
   const sending = new Set();
   const receiving = new Set();
+  const lightEdge = (x, y) => { busyEdges.add(x + '>' + y); busyEdges.add(y + '>' + x); };
   for (const p of pulses) {
-    busyEdges.add(p.from + '>' + p.to);
-    busyEdges.add(p.to + '>' + p.from);
+    const a = byId.get(p.from);
+    const b = byId.get(p.to);
+    // A message to a group member lights both edges through the group's box.
+    const route = a && b ? treeRoute(byId, a, b) : null;
+    if (route) for (let i = 1; i < route.length; i++) lightEdge(route[i - 1].id, route[i].id);
+    else lightEdge(p.from, p.to);
     sending.add(p.from);
     receiving.add(p.to);
   }
@@ -339,7 +344,9 @@ export function AgentNetworkDock({ transcriptRef, onJumpToToolCard }) {
   // Characters that fit a box's label and status line.
   const labelMax = Math.max(15, Math.floor((nodeW - 32) / 7));
   const subMax = Math.max(19, Math.floor((nodeW - 30) / 5.6));
-  const treeParent = (n) => (n.id === ROOT ? null : (net.nodes.has(n.parentId) ? n.parentId : ROOT));
+  // The main agent and group boxes are not agents of their own to select.
+  const isFixed = (n) => n.id === ROOT || !!n.group;
+  const groupSub = (n) => [STATUS_TEXT[n.status] || n.status, 'group of ' + n.members.length].filter(Boolean).join(' · ');
 
   const graph = (full) => h('div', { class: 'agent-net__graph' + (vertical ? ' agent-net__graph--vertical' : ''), ref: graphRef },
     h('svg', {
@@ -376,6 +383,7 @@ export function AgentNetworkDock({ transcriptRef, onJumpToToolCard }) {
         key: n.id,
         class: 'agent-net__node agent-net__node--' + n.status
           + (n.id === ROOT ? ' agent-net__node--root' : '')
+          + (n.group ? ' agent-net__node--group' : '')
           + (n.ghost ? ' agent-net__node--ghost' : '')
           + (sending.has(n.id) ? ' is-sending' : '')
           + (receiving.has(n.id) ? ' is-receiving' : '')
@@ -384,31 +392,38 @@ export function AgentNetworkDock({ transcriptRef, onJumpToToolCard }) {
         // A CSS transform, so boxes glide to their new place when an agent
         // joins and the layout shifts.
         style: { transform: 'translate(' + n.x + 'px, ' + n.y + 'px)' },
-        tabIndex: n.id === ROOT ? -1 : 0,
-        role: n.id === ROOT ? null : 'button',
-        'aria-pressed': n.id === ROOT ? null : String(selected === n.id),
-        'aria-label': n.id === ROOT ? 'Main agent' : nodeLabel(n.id) + ', ' + (STATUS_TEXT[n.status] || n.status),
-        onClick: () => n.id !== ROOT && toggleSelect(n.id),
+        tabIndex: isFixed(n) ? -1 : 0,
+        role: isFixed(n) ? null : 'button',
+        'aria-pressed': isFixed(n) ? null : String(selected === n.id),
+        'aria-label': n.id === ROOT ? 'Main agent'
+          : n.group ? 'Group ' + n.label + ', ' + groupSub(n)
+          : nodeLabel(n.id) + ', ' + (STATUS_TEXT[n.status] || n.status),
+        onClick: () => !isFixed(n) && toggleSelect(n.id),
         onKeyDown: (ev) => {
-          if (n.id !== ROOT && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); toggleSelect(n.id); }
+          if (!isFixed(n) && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); toggleSelect(n.id); }
         }
       },
-        h('title', null, n.task ? short(n.task, 300) : nodeLabel(n.id)),
+        h('title', null, n.group ? (n.objective ? short(n.objective, 300) : n.label) : n.task ? short(n.task, 300) : nodeLabel(n.id)),
         h('rect', { class: 'agent-net__ring', x: -3, y: -3, width: nodeW + 6, height: NODE_H + 6, rx: 12 }),
         h('rect', { class: 'agent-net__box', width: nodeW, height: NODE_H, rx: 9 }),
         h('circle', { class: 'agent-net__status', cx: 13, cy: NODE_H / 2, r: 4 }),
-        h('text', { class: 'agent-net__label', x: 24, y: 18 }, short(nodeLabel(n.id), labelMax)),
+        h('text', { class: 'agent-net__label', x: 24, y: 18 }, short(n.group ? n.label : nodeLabel(n.id), labelMax)),
         h('text', { class: 'agent-net__sub', x: 24, y: 33 },
-          n.id === ROOT ? 'this chat' : short([STATUS_TEXT[n.status] || n.status, (n.memberId || n.name) && n.agent ? n.agent : (n.background ? 'background' : '')].filter(Boolean).join(' · '), subMax))
+          n.id === ROOT ? 'this chat' : n.group ? short(groupSub(n), subMax) : short([STATUS_TEXT[n.status] || n.status, (n.memberId || n.name) && n.agent ? n.agent : (n.background ? 'background' : '')].filter(Boolean).join(' · '), subMax))
       )),
       pulses.map((p) => {
         const a = byId.get(p.from);
         const b = byId.get(p.to);
         if (!a || !b) return null;
-        // Parent and child share a tree edge; anyone else (group members
-        // handing off) travels a dependency-style arc between them.
-        const kind = treeParent(b) === a.id || treeParent(a) === b.id ? 'tree'
-          : vertical ? 'dep' : (a.y === b.y ? 'dep' : 'tree');
+        // Parent and child share a tree edge (through the group's box for a
+        // group member); anyone else (group members handing off) travels a
+        // dependency-style arc between them.
+        const route = treeRoute(byId, a, b);
+        if (route) {
+          const d = route.slice(1).map((n, i) => edgePath(route[i], n, 'tree', layout)).join(' ');
+          return h(PulseDot, { key: p.key, pulse: p, d, reverse: route[0].id !== a.id, onDone: () => dropPulse(p.key) });
+        }
+        const kind = vertical ? 'dep' : (a.y === b.y ? 'dep' : 'tree');
         const reverse = a.y > b.y || (a.y === b.y && a.x > b.x);
         const top = reverse ? b : a;
         const bottom = reverse ? a : b;
