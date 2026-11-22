@@ -137,6 +137,33 @@ export function thinkingCustomOpen(refs) {
   return !!(refs && refs._thinkingCustomOpen);
 }
 
+// effectiveThinkingLevel(state, refs) -> string
+//
+// The level the next send uses, derived (never stored): an open custom
+// entry sends what is typed in it; otherwise the chat record's level.
+// The chat record is the only stored copy, so a background re-sync or a
+// late PATCH acknowledgement can never make the send path disagree with
+// the dropdown.
+export function effectiveThinkingLevel(state, refs) {
+  if (thinkingCustomOpen(refs)) {
+    const input = refs.thinkingLevelCustom && refs.thinkingLevelCustom.current;
+    return input ? String(input.value || '').trim() : '';
+  }
+  return (state && state.chat && state.chat.thinkingLevel) || '';
+}
+
+// saveRunSettings(state, patch, updateChat)
+//
+// The one writer for the chat's run settings (thinking level, max output
+// tokens): patch `state.chat` first — the dropdown, the picker field and
+// the send path all read it — then persist. The PATCH acknowledgement
+// carries the same value back, so there is no second copy to reconcile.
+export function saveRunSettings(state, patch, updateChat) {
+  if (!state || !state.chat) return undefined;
+  state.chat = Object.assign({}, state.chat, patch);
+  return updateChat(patch);
+}
+
 // syncThinkingSelect(refs, state)
 //
 // Rebuild the thinking <select> options from the active model's
@@ -169,7 +196,6 @@ export function syncThinkingSelect(refs, state) {
   const sel = refs.thinkingLevel && refs.thinkingLevel.current;
   if (!sel) return;
   const tlVal = (state.chat && state.chat.thinkingLevel) || '';
-  state.thinkingLevel = tlVal;
 
   const opts = thinkingOptionsFor(thinkingDescriptorFor(state));
   // Rebuild options in place. The select is a plain DOM node managed

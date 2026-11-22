@@ -8,7 +8,7 @@
 import { h } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { useChatState } from './useChatState.js';
-import { setThinkingCustomOpen, commitThinkingCustom, thinkingCustomOpen, syncThinkingSelect } from './thinking.js';
+import { setThinkingCustomOpen, commitThinkingCustom, thinkingCustomOpen, syncThinkingSelect, saveRunSettings } from './thinking.js';
 import {
   mountAtMention,
   refreshAtMentionItems,
@@ -607,14 +607,8 @@ setPreviewPromptOpen(false);
             'aria-label': 'Max output tokens',
             onBlur: (e) => {
               const v = e.currentTarget.value.trim();
-              if (v && s.state.chat) {
-                s.state.maxOutputTokens = v;
-                if (v !== (s.state.chat.maxOutputTokens || '')) {
-                  s.updateChat({ maxOutputTokens: v });
-                }
-              } else if (!v && s.state.chat && s.state.chat.maxOutputTokens) {
-                s.state.maxOutputTokens = '';
-                s.updateChat({ maxOutputTokens: '' });
+              if (s.state.chat && v !== (s.state.chat.maxOutputTokens || '')) {
+                saveRunSettings(s.state, { maxOutputTokens: v }, s.updateChat);
               }
             },
             onKeydown: (e) => {
@@ -630,14 +624,11 @@ setPreviewPromptOpen(false);
         'data-allow-custom': '1',
         onChange: (e) => {
           const v = e.currentTarget.value;
-          s.state.thinkingLevel = v;
           // Reveal / hide the free-form input. The open flag lives in
           // the refs bag so a background re-sync (live model catalog)
           // can see an entry in progress and leave the field alone.
           setThinkingCustomOpen(s.refs, v === '__custom__');
-          if (v !== '__custom__' && s.state.chat) {
-            s.updateChat({ thinkingLevel: v });
-          }
+          if (v !== '__custom__') saveRunSettings(s.state, { thinkingLevel: v }, s.updateChat);
         }
       }),
       h('input', {
@@ -651,7 +642,6 @@ setPreviewPromptOpen(false);
         // A saved custom value remains visible after commit. Editing it
         // starts a new draft, which must survive refresh and save on blur.
         s.refs._thinkingCustomOpen = true;
-        s.state.thinkingLevel = '__custom__';
         },
         onBlur: (e) => {
           // A blur is not a dismissal: tapping the composer, the
@@ -664,10 +654,7 @@ setPreviewPromptOpen(false);
           if (!thinkingCustomOpen(s.refs)) return;
           if (!v) return;   // nothing typed yet: stay open, on 'Custom…'
           commitThinkingCustom(s.refs);
-          if (s.state.chat) {
-            s.state.thinkingLevel = v;
-            s.updateChat({ thinkingLevel: v });
-          }
+          saveRunSettings(s.state, { thinkingLevel: v }, s.updateChat);
           // Safe now: the field only hides once it no longer holds an
           // uncommitted entry. A known level closes it and shows its
           // label; a free-form number keeps it open.
@@ -681,10 +668,7 @@ setPreviewPromptOpen(false);
             const v = e.currentTarget.value.trim();
             if (thinkingCustomOpen(s.refs)) {
               commitThinkingCustom(s.refs);
-              if (s.state.chat) {
-                s.state.thinkingLevel = v;
-                s.updateChat({ thinkingLevel: v });
-              }
+              saveRunSettings(s.state, { thinkingLevel: v }, s.updateChat);
               syncThinkingSelect(s.refs, s.state);
             }
             e.currentTarget.blur();

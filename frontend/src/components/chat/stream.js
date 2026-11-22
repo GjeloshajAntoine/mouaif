@@ -38,6 +38,7 @@ import { authorizationCard, askUserCard, removePendingAuthorizationCards } from 
 import { normalizeToolName, parseAtInvocation, findCustomActionInvocation, buildDirectMcpCall, parseDirectRestartInvocation, parseToolArgs } from './tools.js';
 import { saveComposerDraftNow } from './composer.js';
 import { subscribeLive, closeLive } from './live.js';
+import { effectiveThinkingLevel } from './thinking.js';
 import { mergeServerRows, nextServerMessageIndex, tailSyncDomAction, newClientId, heldSeqs } from './msgMerge.js';
 import { toPublicImageAttachments } from './annotation.js';
 import { promptHookContextElement } from './hookNotes.js';
@@ -1087,15 +1088,10 @@ if (state._updateSetupVisibility) state._updateSetupVisibility();
   // replaces the heuristic on the final tick.
   const counter = createCounter();
 
-  // Read the effective thinking level: if the dropdown is set to
-  // __custom__, use the custom input value instead of the sentinel.
-  const effectiveThinkingLevel = (() => {
-    const tl = state.thinkingLevel || '';
-    if (tl === '__custom__') {
-      return (refs.thinkingLevelCustom && refs.thinkingLevelCustom.current && refs.thinkingLevelCustom.current.value.trim()) || '';
-    }
-    return tl;
-  })();
+  // Run settings are read from the chat record (the only stored copy);
+  // an open custom thinking entry sends what is typed in it.
+  const thinkingLevel = effectiveThinkingLevel(state, refs);
+  const maxOutputTokens = (state.chat && state.chat.maxOutputTokens) || '';
 
   let resp;
   // Abortable so leaving the chat (or unmounting) stops this reader; see
@@ -1107,7 +1103,7 @@ resp = await fetch('/api/chats/' + encodeURIComponent(chatId) + '/messages/strea
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
 signal: streamAbort.signal,
-body: JSON.stringify({ projectDir, modelId, providerId, content: text, attachments: atts, clientId: userClientId, thinkingLevel: effectiveThinkingLevel, maxOutputTokens: state.maxOutputTokens || '', ...(retry ? { retry: true } : {}) })
+body: JSON.stringify({ projectDir, modelId, providerId, content: text, attachments: atts, clientId: userClientId, thinkingLevel, maxOutputTokens, ...(retry ? { retry: true } : {}) })
 });
 } catch (err) {
     // Leaving the chat aborts the fetch. That is not a network failure, so

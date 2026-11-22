@@ -71,7 +71,7 @@ const stateWith = (thinkingLevel) => ({
   const thinking = await import(path.join('..', 'frontend', 'src', 'components', 'chat', 'thinking.js'));
   const {
     syncThinkingSelect, setThinkingCustomOpen, commitThinkingCustom,
-    thinkingCustomOpen, thinkingOptionsFor
+    thinkingCustomOpen, thinkingOptionsFor, effectiveThinkingLevel, saveRunSettings
   } = thinking;
 
   const opts = thinkingOptionsFor(DESCRIPTOR);
@@ -109,7 +109,6 @@ const stateWith = (thinkingLevel) => ({
     const state = stateWith('');
     syncThinkingSelect(refs, state);
 
-    state.thinkingLevel = '__custom__';
     setThinkingCustomOpen(refs, true);
     syncThinkingSelect(refs, state);              // background catalog lands
     check('the input is STILL visible after a re-sync', refs._custom.hidden === false);
@@ -122,7 +121,6 @@ const stateWith = (thinkingLevel) => ({
   {
     const refs = refsFor();
     const state = stateWith('');
-    state.thinkingLevel = '__custom__';
     setThinkingCustomOpen(refs, true);
 
     refs._custom.value = '4096';
@@ -162,16 +160,55 @@ const stateWith = (thinkingLevel) => ({
     const handler = source.match(/'aria-label': 'Custom thinking level',\s*onInput: \(\) => \{([\s\S]*?)\n        \},/);
     assert.ok(handler, 'custom field has an input handler');
     const s = { refs: refsFor(), state: stateWith('4096') };
+    s.refs._custom.value = '8192';
     vm.runInNewContext(handler[1], { s });
     check('editing a saved field starts a new custom draft', thinkingCustomOpen(s.refs));
-    check('sending an edited field reads its draft', s.state.thinkingLevel === '__custom__');
+    check('sending an edited field reads its draft', effectiveThinkingLevel(s.state, s.refs) === '8192');
+  }
+
+  // ---- one stored copy: the send path never disagrees with the UI ----
+  // The send used to read a second copy (`state.thinkingLevel`) that every
+  // syncThinkingSelect() overwrote from `state.chat`, which only changed on
+  // the PATCH acknowledgement. Committing a custom budget (the blur that a
+  // tap on Send fires first) re-synced before the ack and sent the OLD level.
+  {
+    const refs = refsFor();
+    const state = stateWith('low');
+    syncThinkingSelect(refs, state);
+    setThinkingCustomOpen(refs, true);
+    refs._custom.value = '4096';
+    syncThinkingSelect(refs, state);              // a catalog refresh mid-draft
+    check('a re-sync mid-draft keeps sending the typed draft',
+      effectiveThinkingLevel(state, refs) === '4096');
+
+    const writes = [];
+    commitThinkingCustom(refs);
+    saveRunSettings(state, { thinkingLevel: '4096' }, (patch) => { writes.push(patch); return new Promise(() => {}); });
+    syncThinkingSelect(refs, state);              // the blur's sync, ack still pending
+    check('a committed level is sent before the PATCH is acknowledged',
+      effectiveThinkingLevel(state, refs) === '4096', effectiveThinkingLevel(state, refs));
+    check('the dropdown shows the committed level before the ack',
+      refs._sel.value === '__custom__' && refs._custom.value === '4096' && !refs._custom.hidden);
+    check('the commit persists exactly once', writes.length === 1 && writes[0].thinkingLevel === '4096');
+
+    saveRunSettings(state, { thinkingLevel: 'high' }, () => new Promise(() => {}));
+    syncThinkingSelect(refs, state);              // live catalog lands before the ack
+    check('a preset pick survives a catalog re-sync before the ack',
+      refs._sel.value === 'high' && effectiveThinkingLevel(state, refs) === 'high');
+  }
+
+  // ---- saveRunSettings writes nothing without a chat record ---------
+  {
+    let called = 0;
+    const state = { chat: null };
+    saveRunSettings(state, { maxOutputTokens: '100' }, () => { called++; });
+    check('no chat record: no optimistic write, no PATCH', state.chat === null && called === 0);
   }
 
   // ---- a committed KNOWN level closes the field --------------------
   {
     const refs = refsFor();
     const state = stateWith('');
-    state.thinkingLevel = '__custom__';
     setThinkingCustomOpen(refs, true);
 
     refs._custom.value = 'xhigh';

@@ -72,7 +72,9 @@ import { saveChatToolAuthorization, saveChatMcpAuthorization } from '../settings
   *   await to detect a chat switch.
   * @property {Message[]} messages  Current session's rows. Replace, never
   *   mutate in place (frozen in dev builds).
-  * @property {Object|null} chat  The chat record.
+  * @property {Object|null} chat  The chat record. The only stored copy of
+  *   the run settings (thinkingLevel, maxOutputTokens): write them with
+  *   saveRunSettings (thinking.js), read them from here.
   * @property {Array<Object>} providers
   * @property {Array<Object>} models
   * @property {Object<string, Array<Object>>} liveByProvider
@@ -99,8 +101,6 @@ import { saveChatToolAuthorization, saveChatMcpAuthorization } from '../settings
   * @property {Object} toolAuth
   * @property {{mode: string, allowlist: string[], servers: Object,
   *   tools: Object}} mcpAuth
-  * @property {string} thinkingLevel
-  * @property {string} maxOutputTokens
   * @property {boolean} enterForNewline
   * @property {boolean} autoRetry
   * @property {Array<Object>} imageAttachments
@@ -339,11 +339,6 @@ const mcpServers = useRef([]);
   // the tools card; writes go through state._saveMcpAuth.
   // { mode, allowlist, servers: { <slug>: { mode, allowlist? } }, tools: { <composed>: { mode } } }
   const mcpAuth = useRef({ mode: 'ask', allowlist: [], servers: {}, tools: {} });
-  // Track the current thinking level (survives re-renders, unlike
-  // a plain state property that resets on every render cycle).
-  const thinkingLevelRef = useRef('');
-  // Track the current per-chat max output tokens (empty = provider default).
-  const maxOutputTokensRef = useRef('');
 // Composer keyboard default (app-level Chat defaults). When true, Enter
 // inserts a newline; Ctrl/Cmd+Enter sends. Ref-backed so the hot-path
 // key handler reads the live value without re-rendering.
@@ -467,10 +462,6 @@ const kickSync = useRef(null);
       set toolAuth(v) { toolAuth.current = v instanceof Object && !Array.isArray(v) ? v : {}; },
       get mcpAuth() { return mcpAuth.current; },
       set mcpAuth(v) { mcpAuth.current = (v instanceof Object && !Array.isArray(v)) ? v : { mode: 'ask', allowlist: [], servers: {}, tools: {} }; },
-      get thinkingLevel() { return thinkingLevelRef.current; },
-      set thinkingLevel(v) { thinkingLevelRef.current = v; },
-      get maxOutputTokens() { return maxOutputTokensRef.current; },
-      set maxOutputTokens(v) { maxOutputTokensRef.current = v; },
 get enterForNewline() { return enterForNewlineRef.current; },
 set enterForNewline(v) { enterForNewlineRef.current = !!v; },
 get autoRetry() { return autoRetryRef.current; },
@@ -1152,8 +1143,6 @@ setCustomActions(rActions.status === 200 && Array.isArray(rActions.body.actions)
 if (Array.isArray(c.draftAttachments) && c.draftAttachments.length) {
   setImageAttachments(c.draftAttachments);
 }
-        state.thinkingLevel = c.thinkingLevel || '';
-        state.maxOutputTokens = c.maxOutputTokens || '';
         // A custom entry belongs to the chat it was typed in: clear it
         // before the sync below, or the dropdown would reopen the
         // free-form field for a chat whose value is a plain preset.
@@ -1727,7 +1716,7 @@ updateChat: updateChatBound,
       // Seed the max-output-tokens input from the chat record when the
       // freshly populated sheet opens (the field lives in the children slot).
       if (refs.maxOutputTokens && refs.maxOutputTokens.current) {
-        refs.maxOutputTokens.current.value = (state.chat && state.chat.maxOutputTokens) || state.maxOutputTokens || '';
+        refs.maxOutputTokens.current.value = (state.chat && state.chat.maxOutputTokens) || '';
       }
     },
     onRefreshAllProviders: () => refreshAllProviders(state, refs),

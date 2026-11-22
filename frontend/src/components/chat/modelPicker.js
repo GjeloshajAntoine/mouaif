@@ -724,7 +724,7 @@ export async function openModelPicker(state, refs) {
   trig.setAttribute('aria-expanded', 'true');
   // Seed the max-output-tokens input from the chat's current value.
   if (refs.maxOutputTokens && refs.maxOutputTokens.current) {
-    refs.maxOutputTokens.current.value = (state.chat && state.chat.maxOutputTokens) || state.maxOutputTokens || '';
+    refs.maxOutputTokens.current.value = (state.chat && state.chat.maxOutputTokens) || '';
   }
   // Render immediately so opening the picker never waits on the network.
   // Refresh the recent section when the server-backed list arrives, unless
