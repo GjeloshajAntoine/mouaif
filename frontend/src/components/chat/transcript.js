@@ -1668,7 +1668,15 @@ export function handleSubagentStreamEvent(ev, data, refs) {
     if (settled != null) setSubagentCardCost(card, settled);
   }
   if (ev.eventName === 'usage_update') {
-    setSubagentCardCost(card, subagentCostFromResult(data));
+    // A frame may carry only the context size (an unpriced round); keep the
+    // cost already drawn rather than clearing it.
+    if (data && data.totalCost != null) setSubagentCardCost(card, subagentCostFromResult(data));
+    // Running "model · context N": the round's context size, merged into what
+    // the card already shows (a frame may carry no model of its own). Never on
+    // a settled card, whose line comes from the final result.
+    if (data && data.usage && !card.classList.contains('tool-card--result')) {
+    setSubagentCardMeta(card, { model: data.model, usage: data.usage });
+    }
     return true;
   }
   if (ev.eventName === 'start') {
@@ -2285,25 +2293,67 @@ export function rememberSubagentCardCost(card) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-// setSubagentCardMeta(card, result)
+// setSubagentCardMeta(card, result[, opts])
 //
 // Show "model · context N" on an expanded subagent card, right under its
-// head line (above the nested chat). Display
-// only: everything comes from the result being rendered, nothing is kept on
-// the card. `usage.promptTokens` is the last round's prompt, i.e. the run's
-// final context size.
-export function setSubagentCardMeta(card, r) {
-  const old = card.querySelector('.tool-card__subagent-meta');
-  if (old) old.remove();
-  const modelId = r && r.model && typeof r.model.id === 'string' ? r.model.id : '';
-  const ctx = Number(r && r.usage && r.usage.promptTokens);
+// head line (above the nested chat). Display only.
+//
+// The drawn values are kept on the card (`_subagentMeta`), so a call merges
+// into what is already there: a round's `usage_update` carries the context
+// size and often no model, and still keeps the model the `start` frame named.
+// The line is then rewritten in place — a stream of rounds must not rebuild
+// it once per frame. `usage.promptTokens` is the last round's prompt, i.e. the
+// run's final context size.
+//
+// `opts.reset` starts from scratch, for the settle path: the final result is
+// the whole truth, so a value the run reported on the way must not outlive it.
+export function setSubagentCardMeta(card, r, opts) {
+  if (!card) return;
+  const prev = (!opts || !opts.reset) && card._subagentMeta ? card._subagentMeta : {};
+  const modelId = r && r.model && typeof r.model.id === 'string' && r.model.id
+    ? r.model.id
+    : (prev.modelId || '');
+  const reported = Number(r && r.usage && r.usage.promptTokens);
+  const ctx = reported > 0 ? reported : (prev.ctx || 0);
+  card._subagentMeta = modelId || ctx > 0 ? { modelId, ctx } : null;
+  drawSubagentCardMeta(card, card._subagentMeta);
+}
+
+// restoreSubagentCardMeta(card, meta)
+//
+// Re-apply the line a transcript rebuild would otherwise lose (`_subagentMeta`
+// is not part of the rebuilt card). It merges like any other call: a rebuilt
+// card already got its model back from the replayed `start` frame, and only
+// the context size is left to restore.
+export function restoreSubagentCardMeta(card, meta) {
+  if (!card || !meta) return;
+  setSubagentCardMeta(card, {
+    model: meta.modelId ? { id: meta.modelId } : null,
+    usage: meta.ctx > 0 ? { promptTokens: meta.ctx } : null
+  });
+}
+
+// drawSubagentCardMeta(card, state) -> rewrites the line from `state`, or
+// removes it when the state is empty.
+function drawSubagentCardMeta(card, state) {
+  const modelId = state ? state.modelId : '';
+  const ctx = state ? state.ctx : 0;
   const parts = [];
   if (modelId) parts.push(modelId);
   if (ctx > 0) parts.push('context ' + formatTokens(ctx));
-  if (!parts.length) return;
-  const el = document.createElement('div');
+  let el = card.querySelector('.tool-card__subagent-meta');
+  if (!parts.length) {
+    if (el) el.remove();
+    return;
+  }
+  const text = parts.join(' · ');
+  if (el) {
+    if (el.textContent !== text) el.textContent = text;
+    return;
+  }
+  el = document.createElement('div');
   el.className = 'tool-card__subagent-meta';
-  el.textContent = parts.join(' · ');
+  el.textContent = text;
   // Right under the head line, above the nested chat. `insertBefore` rather
   // than `after`/`prepend` so a minimal DOM stub can render the card too.
   const head = card.querySelector('.tool-card__head');
@@ -2380,7 +2430,8 @@ export function renderSubagentChat(card, toolResult) {
   // render's caller replaced the head.
   const settledCost = subagentCostFromResult(r);
   setSubagentCardCost(card, settledCost != null ? settledCost : carriedCost);
-  setSubagentCardMeta(card, r);
+  // The final result is the whole truth for this line (see setSubagentCardMeta).
+  setSubagentCardMeta(card, r, { reset: true });
   const chat = r && Array.isArray(r.chat) ? r.chat : null;
   // A failed run says why, after whatever it got through. Aborts are the
   // user's own stop and need no message.
@@ -2722,7 +2773,7 @@ export function updateProgressCard(refs, data) {
 // every card the user expanded whenever a new element is added to
 // the transcript (e.g. the reconcile pass after a tool completes).
 function snapshotExpandedState(root) {
-  const state = { toolIds: new Set(), collapsedToolIds: new Set(), builtToolIds: new Set(), progressIds: new Set(), details: [], subagentCosts: new Map(), subagentStarts: new Map() };
+  const state = { toolIds: new Set(), collapsedToolIds: new Set(), builtToolIds: new Set(), progressIds: new Set(), details: [], subagentCosts: new Map(), subagentStarts: new Map(), subagentMetas: new Map() };
   if (!root) return state;
   // Windowed rows (windowing.js) get their subtree back before it is read.
   for (const child of Array.from(root.children || [])) if (child._wake) child._wake();
@@ -2733,6 +2784,9 @@ function snapshotExpandedState(root) {
     }
     if (card.classList.contains('tool-card--subagent') && Number.isFinite(card._subagentCost)) {
     state.subagentCosts.set(card.dataset.toolId, card._subagentCost);
+    }
+    if (card.classList.contains('tool-card--subagent') && card._subagentMeta) {
+    state.subagentMetas.set(card.dataset.toolId, card._subagentMeta);
     }
     if (card.classList.contains('is-expanded')) state.toolIds.add(card.dataset.toolId);
     // Cards the user explicitly collapsed carry _userCollapsed; preserve
@@ -3242,6 +3296,9 @@ function restoreExpandedState(exp, root) {
     }
     if (exp.subagentCosts && exp.subagentCosts.has(card.dataset.toolId) && !Number.isFinite(card._subagentCost)) {
     setSubagentCardCost(card, exp.subagentCosts.get(card.dataset.toolId));
+    }
+    if (exp.subagentMetas && exp.subagentMetas.has(card.dataset.toolId)) {
+    restoreSubagentCardMeta(card, exp.subagentMetas.get(card.dataset.toolId));
     }
     if (exp.toolIds.has(card.dataset.toolId)) {
       card.classList.add('is-expanded');

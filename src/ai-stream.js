@@ -2716,13 +2716,19 @@ async function streamChatInScope(opts) {
         modelId: nestedModelRef ? nestedModelRef.id : undefined,
         callId: (callOpts && callOpts.callId) || undefined
         });
-        // Absolute, replay-safe card cost for returning tabs. The ordinary
-        // usage_update above remains the chat-total billing delta.
-        if (costSoFar != null && typeof onEvent === 'function') {
+        // Absolute, replay-safe card context size for returning tabs: the
+        // card's "model · context N" line follows the run instead of appearing
+        // only when it settles. Only what is new goes on the frame — the model
+        // is already the run's `start` frame, and the card merges the two. The
+        // ordinary usage_update above remains the chat-total billing delta.
+        if ((costSoFar != null || mirror.lastPromptTokens > 0) && typeof onEvent === 'function') {
+        const cardUsage = {};
+        if (costSoFar != null) cardUsage.totalCost = forwarded.cost;
+        if (mirror.lastPromptTokens > 0) cardUsage.usage = { promptTokens: mirror.lastPromptTokens };
         onEvent('subagent_event', {
         parentCallId: (callOpts && callOpts.callId) || null,
         kind: 'usage_update',
-        data: { totalCost: forwarded.cost }
+        data: cardUsage
         });
         }
       }

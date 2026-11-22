@@ -179,6 +179,7 @@ function loadTranscript(globals) {
     // The real formatter's shape, not a stub: the assertions read the text on
     // the label, and a stub would pass whatever the renderer happened to write.
     formatCost: (n) => '$' + Number(n).toFixed(4),
+    formatTokens: (n) => (n < 1000 ? String(Math.round(n)) : (n / 1000).toFixed(n < 10000 ? 1 : 0) + 'K'),
     renderMarkdown: (s) => String(s || ''),
     coerceToolResult: (raw) => {
       if (typeof raw !== 'string') return raw;
@@ -389,6 +390,47 @@ function main() {
     mod.setSubagentCardCost(restored, 0.025);
     mod.restoreExpandedState(snapshot, rebuilt.transcript.current);
     check('a fresh settled cost wins over the old live snapshot', restored._subagentCost === 0.025);
+  }
+
+  {
+    // A running card shows "model · context N" before the run settles: the
+    // model from the start frame, the context from each round's frame.
+    const refs = makeRefs();
+    mod.appendToolCallCard({ id: 'live-meta', name: 'subagent', args: { task: 'Review' } }, refs);
+    const card = refs.transcript.current.querySelector('.tool-card--subagent');
+    const meta = () => card.querySelector('.tool-card__subagent-meta');
+    mod.handleSubagentStreamEvent({ eventName: 'start' },
+      { parentCallId: 'live-meta', chat: [{ role: 'system', content: 'P' }], model: { id: 'gpt-5-codex' } }, refs);
+    check('the start frame shows the running model', meta() && meta().textContent === 'gpt-5-codex', meta() && meta().textContent);
+    mod.handleSubagentStreamEvent({ eventName: 'usage_update' },
+      { parentCallId: 'live-meta', totalCost: 0.01, usage: { promptTokens: 8400 } }, refs);
+    check('a round frame adds the running context', meta() && meta().textContent === 'gpt-5-codex · context 8.4K', meta() && meta().textContent);
+    mod.handleSubagentStreamEvent({ eventName: 'usage_update' },
+      { parentCallId: 'live-meta', usage: { promptTokens: 20000 } }, refs);
+    check('a frame without a price keeps the drawn cost', card._subagentCost === 0.01, String(card._subagentCost));
+    check('the context follows the latest round', meta() && meta().textContent === 'gpt-5-codex · context 20K', meta() && meta().textContent);
+    // One line, rewritten in place: a frame that names no model must not drop
+    // the one the start frame gave, and must not stack a second line.
+    check('the rounds keep a single meta line',
+      card.querySelectorAll('.tool-card__subagent-meta').length === 1,
+      String(card.querySelectorAll('.tool-card__subagent-meta').length));
+    check('the drawn values are kept on the card, not re-derived',
+      card._subagentMeta && card._subagentMeta.modelId === 'gpt-5-codex' && card._subagentMeta.ctx === 20000,
+      JSON.stringify(card._subagentMeta));
+    // A running card comes back from a transcript rebuild still showing them.
+    const snapshot = mod.snapshotExpandedState(refs.transcript.current);
+    const rebuilt = makeRefs();
+    mod.appendToolCallCard({ id: 'live-meta', name: 'subagent', args: { task: 'Review' } }, rebuilt);
+    mod.restoreExpandedState(snapshot, rebuilt.transcript.current);
+    const restoredMeta = rebuilt.transcript.current.querySelector('.tool-card__subagent-meta');
+    check('a transcript rebuild retains the running context',
+      !!restoredMeta && restoredMeta.textContent === 'gpt-5-codex · context 20K',
+      restoredMeta && restoredMeta.textContent);
+    // The settled result starts from scratch: a context the run reported on
+    // the way must not outlive the final figure.
+    mod.renderSubagentChat(card, { name: 'subagent', result: { ok: true, text: 'done', model: { id: 'gpt-5-codex' } } });
+    check('the settle redraws the line from the final result alone',
+      meta() && meta().textContent === 'gpt-5-codex', meta() && meta().textContent);
   }
 
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');

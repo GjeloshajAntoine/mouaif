@@ -58,7 +58,11 @@ The background call card stays running until its **single final result** arrives
 
 ### Card model and context line
 
-An expanded subagent card shows a muted line right under its head line, above the nested chat, `model · context N` (e.g. `gpt-5 · context 14.8K`): which model the delegated run used and how large its context grew by the final round. It is display only, drawn from the result being rendered (`model.id` and the last round's `usage.promptTokens`); nothing is stored on the card. The card head separately shows the running delegated cost.
+An expanded subagent card shows a muted line right under its head line, above the nested chat, `model · context N` (e.g. `gpt-5 · context 8.4K`): which model the delegated run used and how large its context is. The card head separately shows the running delegated cost.
+
+- **While the run is going**, the model appears with the run's `start` frame, and the context follows each finished round: the nested `usage_update` frame carries that round's `usage.promptTokens` next to the running `totalCost`, and only what is new, so no model id is repeated per round. A frame without a price leaves the drawn cost alone.
+- **The line is drawn once and rewritten in place.** The values the card is showing live on the card (`_subagentMeta`), so a frame that carries only a context size keeps the model the `start` frame named, and a stream of rounds updates the existing line's text instead of removing and re-creating it per frame. A transcript rebuild re-applies the recorded values, so a running card comes back with them.
+- **Once it settles**, the line is redrawn from the final result alone (`model.id` and the last round's `usage.promptTokens`), the same as a card rebuilt from a saved chat: a value the run reported on the way does not outlive the final figure.
 
 ## Retry behavior
 
