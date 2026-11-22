@@ -137,4 +137,10 @@
     min-width: 0;
     margin: 0;
   }
+  /* Lift the miniature's thumbnail cap (chat-composer.css, min(24dvh, 11rem))
+     so the side card shows the whole page instead of a 176px strip cropped
+     from its top. --side-preview-w is sized so a 9:16 page fits this. */
+  body:has(.webpreview-dock):has(:is(.afp__overlay, .cli__overlay, .gm__overlay, .mcp-err__overlay, .mcps__overlay, .fe__overlay, .artifacts__overlay, .capture__overlay, .ext-sheet__overlay)) :is(.webpreview-dock__image, .webpreview-dock__live) {
+    max-height: calc(100dvh - 4rem);
+  }
 }
