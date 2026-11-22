@@ -132,6 +132,8 @@ async function main() {
     const namedOnly = await run({}, { task: 'Review', name: 'api-reviewer' });
     assert.match(system(namedOnly[1]), /You are a focused subagent/);
     assert.equal(lastFrame.data.name, 'api-reviewer');
+    const namedResult = JSON.parse(namedOnly[2].messages.find((m) => m.role === 'tool').content);
+    assert.equal(namedResult.name, 'api-reviewer', 'the parent model sees the name it gave');
 
     // instructions with a saved agent are refused: no nested request is made.
     {
