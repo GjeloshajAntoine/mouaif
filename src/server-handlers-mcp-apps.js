@@ -294,7 +294,7 @@ function createMcpAppsHost(lifecycle = {}) {
         sandbox.bind(ticket.token, () => { validate(mount); });
         return await sendMount(req, res, { enabled: true, id, url: ticket.url, origin: ticket.origin,
         title: mount.title, html, csp: policy.csp, permissions: {},
-        arguments: {}, result: created, revision });
+        arguments: {}, result: created, revision, inline: created.inline === true });
         }
         let parsedTool = mcp.parseServerSlugAndToolName(call.name);
         if (!parsedTool) throw err('EBADINPUT', 'Not an MCP tool call');
@@ -329,7 +329,9 @@ function createMcpAppsHost(lifecycle = {}) {
         sandbox.bind(ticket.token, () => { validate(mount); });
         return await sendMount(req, res, { enabled: true, id, url: ticket.url, origin: ticket.origin,
           title: mount.title, html: resource.text, csp: policy.csp, permissions: {},
-          arguments: call.args || {}, result: toolResult });
+          arguments: call.args || {}, result: toolResult,
+          // The spec's "no border + background" request: show it inline.
+          inline: resource._meta?.ui?.prefersBorder === false });
       }
       const match = parsed.pathname.match(/^\/api\/mcp\/apps\/([A-Za-z0-9_-]+)(?:\/(call|status|cancel|message|host|context))?$/);
       if (!match) return sendJSON(res, 404, { error: 'Not found' });

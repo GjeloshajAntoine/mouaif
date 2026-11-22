@@ -151,7 +151,8 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
         await fetch('/api/mcp/apps/' + id, { method: 'DELETE', body: '{}' }); return;
       }
       setMount(response.body);
-      mountStateChange.current?.(true);
+      // `inline`: the app asked to sit transparent in its chat slot.
+      mountStateChange.current?.(true, { inline: response.body.inline === true });
     }).catch(error => {
       if (active) {
         setFailed(true);
@@ -224,7 +225,11 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
       const pending = consumePendingAgentMessages(projectDir, chatId, mount.title);
       for (const item of pending) void session.current?.sendAgentMessage(item).catch(() => {});
     },
-    onSize: value => { if (active) setHeight(boundedHeight(value, window.innerHeight)); },
+    onSize: value => {
+      if (!active) return;
+      const inline = !!frame.current?.closest('.tool-card--mcp-app-inline');
+      setHeight(boundedHeight(value, window.innerHeight, inline ? 24 : 176));
+    },
       onMode: value => { if (active) setMode(value); }, onClose: fail,
       onMessage: async (params, signal) => {
         const response = await post('/message', params, AbortSignal.any([signal, ctl.signal]));
@@ -334,7 +339,8 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
   return h('dialog', {
     ref: sheetRef,
     open: isFullscreen ? undefined : true,
-    class: 'mcp-app' + (isFullscreen ? ' mcp-app--fullscreen' : ''),
+    // `is-failed` brings back a transparent inline app's chrome (mcp-app.css).
+    class: 'mcp-app' + (isFullscreen ? ' mcp-app--fullscreen' : '') + (failed ? ' is-failed' : ''),
     role: isFullscreen ? 'dialog' : 'region',
     'aria-modal': isFullscreen ? 'true' : undefined,
     'aria-label': resolvedTitle || 'MCP App',

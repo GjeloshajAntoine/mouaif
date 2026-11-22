@@ -18,3 +18,22 @@
 /* In the chat view the app sits flush: no card padding around it, no margin. */
 .chat-view__transcript > .tool-card--mcp-app { padding: 0; }
 .tool-card--mcp-app .mcp-app { margin: 0; }
+
+/* Transparent inline app (`inline` on create_mcp_app, or a server resource's
+   `prefersBorder: false`): no tool head, no frame border, and the title strip
+   becomes two small glyphs over the app's top-right corner, shown on hover or
+   focus (always, faintly, on touch). A failed or closed app gets its chrome
+   back so its reason, Retry and the ordinary result are visible. */
+.tool-card--mcp-app-inline:has(> .tool-card__body .mcp-app:not(.is-failed)) > .tool-card__head,
+.tool-card--mcp-app-inline:has(> .tool-card__body .mcp-app:not(.is-failed)) > .tool-card__body > :not(.mcp-app-slot) { display: none; }
+.tool-card--mcp-app-inline:has(> .tool-card__body .mcp-app:not(.is-failed)) > .tool-card__body { padding: 0; }
+.tool-card--mcp-app-inline .mcp-app:not(.is-failed):not(.mcp-app--fullscreen) { position: relative; border: 0; border-radius: 0; }
+.tool-card--mcp-app-inline .mcp-app:not(.is-failed):not(.mcp-app--fullscreen) > .mcp-app__header {
+  position: absolute; top: 4px; right: 4px; min-height: 0; padding: 2px; gap: 2px; border: 0; border-radius: var(--r-sm, 6px);
+  background: color-mix(in srgb, var(--bg, #fff) 85%, transparent); opacity: 0; transition: opacity .15s;
+}
+.tool-card--mcp-app-inline .mcp-app:not(.is-failed):not(.mcp-app--fullscreen) > .mcp-app__header > .mcp-app__title { display: none; }
+.tool-card--mcp-app-inline .mcp-app:not(.is-failed):not(.mcp-app--fullscreen):is(:hover, :focus-within) > .mcp-app__header { opacity: 1; }
+@media (hover: none) {
+  .tool-card--mcp-app-inline .mcp-app:not(.is-failed):not(.mcp-app--fullscreen) > .mcp-app__header { opacity: .7; }
+}

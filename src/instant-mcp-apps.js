@@ -162,6 +162,12 @@ function createApp(projectDir, request, context = {}) {
     throw err('EBADINPUT', 'relink goes with path alone: it changes which artifact an existing app reads');
   }
   if (body.relink !== undefined && !chatId) throw err('EBADINPUT', 'relink belongs to a chat');
+  // `inline`: show the app transparent and in its place in the chat (no
+  // border, header or bottom pin). It only describes how a shown app looks.
+  if (body.inline !== undefined && typeof body.inline !== 'boolean') throw err('EBADINPUT', 'inline must be true or false');
+  if (body.inline !== undefined && (body.request !== undefined || body.message !== undefined)) {
+    throw err('EBADINPUT', 'inline goes with an app being shown, not with request or message');
+  }
   const name = body.name === undefined ? 'On-the-fly app' : body.name;
   if (typeof name !== 'string' || !name.trim() || name.trim().length > 100) throw err('EBADINPUT', 'App name must be 1–100 characters');
   const title = name.trim();
@@ -228,7 +234,7 @@ function createApp(projectDir, request, context = {}) {
       fs.writeFileSync(path.join(root, filename), body.source, { flag: 'wx', mode: 0o600 });
     }
   }
-  return { name: title, path: filename, ...(updated ? { updated: true } : {}), ...(relinked ? { relinked } : {}), ...(links && links.length ? { links } : {}) };
+  return { name: title, path: filename, ...(typeof body.inline === 'boolean' ? { inline: body.inline } : {}), ...(updated ? { updated: true } : {}), ...(relinked ? { relinked } : {}), ...(links && links.length ? { links } : {}) };
 }
 
 module.exports = { APP_DIR, MAX_SOURCE_BYTES, projectRoot, sourceKind, renderHtml, readSource, readAppSource, newSourcePath, developmentDraft, createApp };

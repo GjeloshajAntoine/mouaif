@@ -19,8 +19,9 @@ export function originTransport(target, origin) {
   };
 }
 
-export function boundedHeight(height, viewport) {
-  return Number.isFinite(height) ? Math.max(176, Math.min(height, viewport * 0.7)) : 288;
+// `min` is lower for a transparent inline app, which may be a single row.
+export function boundedHeight(height, viewport, min = 176) {
+  return Number.isFinite(height) ? Math.max(min, Math.min(height, viewport * 0.7)) : 288;
 }
 
 export function containerDimensionsFor(iframe, mode = 'inline') {

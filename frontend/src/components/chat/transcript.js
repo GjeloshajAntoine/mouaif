@@ -1874,6 +1874,9 @@ const rawR = coerceToolResult(toolResult && toolResult.result, normalizeToolName
   const isMcpAppPathResult = normalizeToolName(toolResult && toolResult.name) === 'create_mcp_app' && !!toolResult.ok && !!(rawR && rawR.path && !rawR.chatId);
   const existingMcpAppCard = isMcpAppPathResult ? findExistingMcpAppCard(refs, rawR, card) : null;
   const isMcpAppCreate = isMcpAppPathResult && !existingMcpAppCard;
+  // An update can switch the shown app between framed and inline; replays too,
+  // so a reopened chat shows the look the last call chose.
+  if (existingMcpAppCard && typeof rawR.inline === 'boolean') setMcpAppInline(refs, existingMcpAppCard, rawR.inline);
   if (existingMcpAppCard && !toolResult.replay && refs.mcpAppContext) {
     const dedupeKey = id ? String(id) : '';
     if (!dedupeKey || !_reloadedAppUpdateIds.has(dedupeKey)) {
@@ -2027,6 +2030,7 @@ if (!card) {
     } else if ((toolResult.name?.startsWith('mcp__') || isMcpAppCreate) && id && refs.mcpAppContext) {
     const context = refs.mcpAppContext;
     const app = document.createElement('div');
+    app.className = 'mcp-app-slot';
     body.prepend(app);
     if (isMcpAppCreate) {
     if (card.dataset) {
@@ -2034,6 +2038,7 @@ if (!card) {
       if (rawR && rawR.name) card.dataset.mcpAppName = String(rawR.name);
     }
     card.classList.add('tool-card--mcp-app');
+    if (rawR && rawR.inline === true) setMcpAppInline(refs, card, true);
     // Rows painted above an anchor arrive out of order (the backfill walks
     // backwards, a page forwards), so the pass settles the bottom slot once
     // its rows are in place; see pinLatestAppAfterOlderRows.
@@ -2042,12 +2047,14 @@ if (!card) {
     mountMcpApp(app, { ...context, callId: id,
     appPath: rawR && rawR.path,
     appTitle: rawR && rawR.name,
-    onMountStateChange: (enabled) => {
+    onMountStateChange: (enabled, info) => {
     // A created app was pinned (or deliberately not) when its card was built;
     // a late mount must not steal the bottom from a newer app.
     if (isMcpAppCreate) return;
     if (!enabled) { unpinMcpAppCard(card, refs.transcript.current); return; }
     card.classList.add('tool-card--mcp-app');
+    // A server app whose resource has `prefersBorder: false` sits inline.
+    if (info && info.inline) { setMcpAppInline(refs, card, true); return; }
     // Opening an app older than the pinned one runs it where it is in the chat.
     if (!isOlderThanPinnedApp(refs, card)) pinMcpAppCardToBottom(refs, card);
     },
@@ -3706,7 +3713,7 @@ function pinLatestAppAfterOlderRows(refs) {
   let latest = null;
   for (const child of el.children) {
     if (isMcpAppCard(child)) return;
-    if (child.dataset && child.dataset.mcpAppPath) latest = child;
+    if (child.dataset && child.dataset.mcpAppPath && !isInlineMcpApp(child)) latest = child;
   }
   if (latest) pinMcpAppCardToBottom(refs, latest);
 }
@@ -3720,6 +3727,12 @@ function pinLatestAppAfterOlderRows(refs) {
 function pinMcpAppCardToBottom(refs, card) {
   if (!card) return;
   const el = refs && refs.transcript && refs.transcript.current;
+  if (isInlineMcpApp(card)) {
+    // An inline app keeps its place in the chat; it never takes the bottom slot.
+    if (card.classList) card.classList.add('tool-card--mcp-app');
+    if (isMcpAppCard(card) && el) unpinMcpAppCard(card, el);
+    return;
+  }
   if (el && card.parentNode === el && !isMcpAppCard(card)) recordMcpAppSlot(card);
   if (card.dataset) card.dataset.mcpAppCard = '1';
   if (card.classList) card.classList.add('tool-card--mcp-app');
@@ -3739,6 +3752,28 @@ function pinMcpAppCardToBottom(refs, card) {
   if (needsMove) {
     moveTranscriptNode(el, card, firstOverlayCard(el));
     afterTranscriptAppend(refs, false);
+  }
+}
+
+// isInlineMcpApp(card) -> bool
+function isInlineMcpApp(card) {
+  return !!(card && card.dataset && card.dataset.mcpAppInline === '1');
+}
+
+// setMcpAppInline(refs, card, on)
+//
+// Show an MCP App card transparent and inline (docs/features/mcp-apps.md): no
+// tool head, frame border or title strip, and it stays at its place in the chat
+// instead of the bottom slot. Turning it off makes it the pinned app again.
+function setMcpAppInline(refs, card, on) {
+  if (!card || !card.dataset || isInlineMcpApp(card) === !!on) return;
+  if (on) card.dataset.mcpAppInline = '1';
+  else delete card.dataset.mcpAppInline;
+  card.classList.toggle('tool-card--mcp-app-inline', !!on);
+  if (on) {
+    if (isMcpAppCard(card)) unpinMcpAppCard(card, refs.transcript.current);
+  } else if (card.classList.contains('tool-card--mcp-app') && !isOlderThanPinnedApp(refs, card)) {
+    pinMcpAppCardToBottom(refs, card);
   }
 }
 

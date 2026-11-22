@@ -17,6 +17,8 @@ Ask the assistant to create or update an interactive app. The native **`create_m
 - `message`: pushes a message from the agent to the mounted app view in the current chat using the official `AppBridge` `sendToolInput` / `sendToolResult` notifications (`ui/notifications/tool-input` and `ui/notifications/tool-result`).
 - `request`: prepares a separate development chat with an unsent draft. This mode does not generate source, register a server, start an AI response, or spend credits.
 
+`inline` (`true`/`false`) goes with any mode that shows an app. `true` shows it transparent and inline: no card header, border or title strip, at its place in the chat rather than pinned to the bottom (see [MCP Apps](./mcp-apps.md)). Give such a page a transparent background so the chat shows through. `false` restores the framed, bottom-pinned card; leaving it out keeps the app's current look.
+
 `name` is optional. File creation, import, and in-place source updates always require an explicit approval, even when the family or tool is **Allow**. A `relink` follows the tool's ordinary permission, because it can only change which artifact the app reads. **Off** hides and blocks it. Denying approval writes no file. No tool permissions or project MCP servers are changed.
 
 ```json

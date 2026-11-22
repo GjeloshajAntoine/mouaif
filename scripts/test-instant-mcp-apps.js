@@ -98,6 +98,12 @@ async function post(route, body, headers = {}) {
     assert.equal((await post('request', { request: '' })).status, 400);
     assert.equal((await post('request', { request: 'x'.repeat(16001) })).status, 400);
     assert.equal((await post('import', { path: 'counter.html', name: 'x'.repeat(101) })).status, 400);
+    // `inline` is echoed only when given, and only for an app being shown.
+    assert.equal(apps.createApp(projectDir, { path: 'counter.html', inline: true }).inline, true);
+    assert.equal(apps.createApp(projectDir, { path: 'counter.html', inline: false }).inline, false);
+    assert.equal('inline' in apps.createApp(projectDir, { path: 'counter.html' }), false);
+    assert.throws(() => apps.createApp(projectDir, { path: 'counter.html', inline: 'yes' }), /inline must be true or false/);
+    assert.throws(() => apps.createApp(projectDir, { message: 'hi', inline: true }), /inline goes with an app being shown/);
     for (const headers of [{ Origin: 'null' }, { Origin: 'https://evil.example' }, { 'Sec-Fetch-Site': 'cross-site' }]) {
       assert.equal((await post('import', { path: 'counter.html' }, headers)).status, 403);
     }
