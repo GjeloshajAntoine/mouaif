@@ -375,6 +375,7 @@ class Scope {
       groupId: row.groupId || null, memberId: row.memberId || null, workspace: row.workspace,
       startedAt: row.startedAt, elapsedMs: (row.finishedAt || Date.now()) - row.startedAt,
       lastLine: row.lines.at(-1)?.text || '', published: row.published.slice(),
+      ...(row.ignoredTools ? { ignoredTools: row.ignoredTools.slice() } : {}),
       ...(row.exec ? { ok: row.exec.ok, text: String(row.exec.result?.text || '').slice(0, 16384), error: row.exec.result?.error } : {}),
       ...(row.exec?.subagentEnd?.context ? { hookContext: row.exec.subagentEnd.context } : {}) };
   }

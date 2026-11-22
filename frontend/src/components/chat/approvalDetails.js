@@ -99,6 +99,7 @@ export function approvalText(request) {
     if (meta) lines.push(meta);
     // On-the-fly instructions are the run's persona: show them before it starts.
     if (typeof args.instructions === 'string' && args.instructions.trim()) lines.push('Instructions: ' + args.instructions.trim());
+    if (Array.isArray(args.tools)) lines.push('Tools: ' + (args.tools.length ? args.tools.join(', ') : 'none'));
     lines.push(args.task || request.summary || '');
   } else if (tool === 'subagent_group_create') {
     lines.push((args.name ? args.name + ' — ' : '') + (args.objective || ''));
