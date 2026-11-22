@@ -71,6 +71,18 @@ check('persisted rows build the delegation tree, nested runs included', () => {
   assert.ok(kinds.includes('result:c1>root'), kinds);
 });
 
+check('an on-the-fly name labels the node over the saved agent it runs as', () => {
+  const net = createAgentNetwork();
+  ingestMessages(net, [
+    { role: 'user', content: 'Analyze' },
+    { role: 'tool', phase: 'call', toolCallId: 'n1', name: 'subagent', args: { task: 'Synthesize', name: 'be-manager', agent: 'Search' } },
+    { role: 'tool', phase: 'call', toolCallId: 'n2', name: 'subagent', args: { task: 'Review', name: 'api-reviewer' } }
+  ]);
+  assert.equal(net.nodes.get('n1').label, 'be-manager');
+  assert.equal(net.nodes.get('n1').agent, 'Search');
+  assert.equal(net.nodes.get('n2').label, 'api-reviewer');
+});
+
 check('re-ingesting the same rows changes nothing', () => {
   const net = createAgentNetwork();
   ingestMessages(net, history);

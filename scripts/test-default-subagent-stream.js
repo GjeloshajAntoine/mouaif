@@ -46,6 +46,7 @@ async function main() {
   let currentResponse;
   let initialFrame;
   let replayFrame;
+  let lastFrame;
   const server = http.createServer((req, res) => {
     let raw = '';
     req.on('data', (chunk) => { raw += chunk; });
@@ -84,12 +85,13 @@ async function main() {
   };
   const toolNames = (req) => (req.tools || []).map((s) => s.function.name);
   try {
-    async function run(projectPatch) {
+    async function run(projectPatch, args = delegate.args) {
       const projectDir = path.join(tmp, 'project-' + count++);
       fs.mkdirSync(projectDir, { recursive: true });
       settings.setProject(projectDir, Object.assign({ models: [{ id: 'mock', provider: 'openai-compatible' }], tools: { subagent: { mode: 'allow' }, shell: { mode: 'allow' } } }, projectPatch));
       const chat = chats.createChat(projectDir, {});
-      seen = []; steps = [delegate, null, null];
+      seen = []; steps = [{ name: 'subagent', args }, null, null];
+      initialFrame = null;
       const out = response();
       currentResponse = out;
       out.runKey = require('../src/server-shared.js').runningKey(projectDir, chat.id);
@@ -99,6 +101,7 @@ async function main() {
       assert.ok(initialFrame, 'prompt must arrive before the first nested upstream request completes');
       assert.equal(system({ messages: initialFrame.data.chat }), system(seen[1]), 'live prompt matches dispatched instructions');
       assert.equal(initialFrame.data.chat[1].content, 'Review');
+      lastFrame = initialFrame;
       assert.equal(initialFrame.data.model.id, 'mock');
       assert.equal(replayFrame, true, 'a returning tab receives the initial prompt');
       return seen.slice();
@@ -111,7 +114,42 @@ async function main() {
     assert.equal(system(custom[1]), 'DEFAULT_PERSONA');
     assert.deepEqual(toolNames(custom[1]), ['shell']);
     assert.ok(toolNames(custom[0]).length > 1, 'parent keeps its full tool surface');
-    console.log('default subagent stream: built-in fallback and project default config passed');
+
+    // A subagent made on the fly: its instructions replace the default
+    // persona for this run (the default's tool allowlist still applies),
+    // and its name rides the start frame. Nothing is saved to settings.
+    const onTheFly = await run(
+      { defaultAgent: { content: 'DEFAULT_PERSONA', tools: ['shell'] } },
+      { task: 'Review', name: '  be-manager ', instructions: 'ON_THE_FLY_PERSONA' });
+    assert.equal(system(onTheFly[1]), 'ON_THE_FLY_PERSONA');
+    assert.deepEqual(toolNames(onTheFly[1]), ['shell']);
+    assert.equal(lastFrame.data.name, 'be-manager');
+    assert.equal(lastFrame.data.agent, undefined);
+    const stored = settings.getProject(path.join(tmp, 'project-' + (count - 1)));
+    assert.equal(stored.agents, undefined, 'an on-the-fly subagent is not saved as an agent');
+
+    // A name alone keeps the default persona.
+    const namedOnly = await run({}, { task: 'Review', name: 'api-reviewer' });
+    assert.match(system(namedOnly[1]), /You are a focused subagent/);
+    assert.equal(lastFrame.data.name, 'api-reviewer');
+
+    // instructions with a saved agent are refused: no nested request is made.
+    {
+      const projectDir = path.join(tmp, 'project-' + count++);
+      fs.mkdirSync(projectDir, { recursive: true });
+      settings.setProject(projectDir, { models: [{ id: 'mock', provider: 'openai-compatible' }], tools: { subagent: { mode: 'allow' } }, agents: [{ name: 'Search', content: 'SEARCH_PERSONA' }] });
+      const chat = chats.createChat(projectDir, {});
+      seen = []; steps = [{ name: 'subagent', args: { task: 'Review', agent: 'Search', instructions: 'OTHER' } }, null];
+      const out = response();
+      currentResponse = out;
+      out.runKey = require('../src/server-shared.js').runningKey(projectDir, chat.id);
+      await handleChatStream(request({ projectDir, modelId: 'mock', content: 'Go' }), out, chat.id, null);
+      assert.equal(seen.length, 2, 'the parent continues without a nested request');
+      const toolMsg = seen[1].messages.find((m) => m.role === 'tool');
+      assert.match(String(toolMsg && toolMsg.content), /EBADINPUT/);
+      assert.match(String(toolMsg.content), /saved agent \\"Search\\" already has its own/);
+    }
+    console.log('default subagent stream: built-in fallback, project default config and on-the-fly subagents passed');
   } finally {
     await new Promise((resolve) => server.close(resolve));
     settings.close();

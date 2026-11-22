@@ -864,7 +864,7 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
     // A subagent's request names the subagent; its card's grant covers only
     // that subagent (and the subagents it starts), see recordDecision.
     const sub = request.subagent && typeof request.subagent === 'object' ? request.subagent : null;
-    const subLabel = sub ? (sub.agent || 'subagent') : (request.parentTool === 'subagent' ? 'subagent' : '');
+    const subLabel = sub ? (sub.name || sub.agent || 'subagent') : (request.parentTool === 'subagent' ? 'subagent' : '');
     meta.textContent = subLabel ? subLabel + ' · ' + (request.tool || '') : (request.tool || '');
     const title = document.createElement('div');
     title.className = 'tool-card__role';

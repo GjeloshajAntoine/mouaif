@@ -1179,13 +1179,17 @@ function buildToolCardHead(toolName, args, pillClass, pillText, resultSummary, t
   // so without this a `@reviewer` dispatch and a generic delegation read
   // identically as "Subagent". Own element (not folded into the name) so it
   // can be styled as a chip and left out of the tap target's label.
+  // An on-the-fly subagent's `name` wins over the saved agent it may run as,
+  // so parallel workers on one saved agent stay distinguishable.
   if (isSubagentTool(toolName)) {
-    const agentName = toolArgs && typeof toolArgs === 'object' ? toolArgs.agent : null;
-    if (String(agentName == null ? '' : agentName).trim()) {
+    const a = toolArgs && typeof toolArgs === 'object' ? toolArgs : {};
+    const savedAgent = typeof a.agent === 'string' ? a.agent.trim() : '';
+    const runName = typeof a.name === 'string' ? a.name.trim() : '';
+    if (runName || savedAgent) {
       const agent = document.createElement('span');
       agent.className = 'tool-card__agent';
-      agent.textContent = String(agentName).trim();
-      agent.title = 'Agent';
+      agent.textContent = runName || savedAgent;
+      agent.title = savedAgent ? 'Saved agent: ' + savedAgent : 'Subagent';
       head.appendChild(chev);
       head.appendChild(name);
       head.appendChild(agent);
@@ -2409,6 +2413,8 @@ function subagentRetryPrompt(error, args) {
   const lines = ['The subagent call failed' + (error && error.message ? ' (' + error.message + ')' : '') + '. Run it again with the subagent tool, using the same task:', '', args.task.trim()];
   if (typeof args.context === 'string' && args.context.trim()) lines.push('', 'Context:', args.context.trim());
   if (typeof args.agent === 'string' && args.agent.trim()) lines.push('', 'Use agent: ' + args.agent.trim());
+  if (typeof args.name === 'string' && args.name.trim()) lines.push('', 'Name: ' + args.name.trim());
+  if (typeof args.instructions === 'string' && args.instructions.trim()) lines.push('', 'Instructions:', args.instructions.trim());
   return lines.join('\n');
 }
 
@@ -2539,7 +2545,7 @@ export function renderSubagentChat(card, toolResult) {
     // Nested prompts start expanded: inside a subagent card the prompt is
     // the delegated run's instructions, and the card is only on screen
     // because the user opened the delegation to read it.
-    const sysRow = buildSystemPromptRow(text, 'tool-card__subagent-msg', agentLabel(r && r.agent), true);
+    const sysRow = buildSystemPromptRow(text, 'tool-card__subagent-msg', agentLabel(r && (r.name || r.agent)), true);
       const sysCalls = Array.isArray(m.tool_calls) ? m.tool_calls : [];
       appendCallRows(sysRow, sysCalls);
       wrap.appendChild(sysRow);

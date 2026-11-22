@@ -57,6 +57,7 @@ function short(text, max) {
 }
 
 function baseLabel(node) {
+  if (node.name) return node.name;
   return node.memberId && node.agent && node.memberId !== node.agent ? node.memberId : (node.label || 'Subagent');
 }
 
@@ -398,7 +399,7 @@ export function AgentNetworkDock({ transcriptRef, onJumpToToolCard }) {
         h('circle', { class: 'agent-net__status', cx: 13, cy: NODE_H / 2, r: 4 }),
         h('text', { class: 'agent-net__label', x: 24, y: 18 }, short(nodeLabel(n.id), labelMax)),
         h('text', { class: 'agent-net__sub', x: 24, y: 33 },
-          n.id === ROOT ? 'this chat' : short([STATUS_TEXT[n.status] || n.status, n.memberId && n.agent ? n.agent : (n.background ? 'background' : '')].filter(Boolean).join(' · '), subMax))
+          n.id === ROOT ? 'this chat' : short([STATUS_TEXT[n.status] || n.status, (n.memberId || n.name) && n.agent ? n.agent : (n.background ? 'background' : '')].filter(Boolean).join(' · '), subMax))
       )),
       pulses.map((p) => {
         const a = byId.get(p.from);

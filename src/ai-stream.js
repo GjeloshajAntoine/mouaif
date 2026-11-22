@@ -830,6 +830,35 @@ function agentLimits(projectDir, name) {
   } catch { return {}; }
 }
 
+// onTheFlyAgent(args) -> { name, instructions } | { error }
+//
+// A subagent defined in the call itself rather than saved in Settings:
+// `name` labels the run (card, status rows, Agents graph) and `instructions`
+// replace the default subagent's persona for this run. Neither is stored.
+// `instructions` with a saved `agent` is refused: the saved agent already
+// brings its persona, and silently dropping either one would run the wrong
+// role.
+const ON_THE_FLY_NAME_MAX = 64;
+function onTheFlyAgent(args) {
+  const bad = (message) => ({ error: { code: 'EBADINPUT', message } });
+  const out = { name: '', instructions: '' };
+  if (args.name !== undefined) {
+    if (typeof args.name !== 'string') return bad('name must be a string');
+    out.name = args.name.replace(/\s+/g, ' ').trim();
+    if (out.name.length > ON_THE_FLY_NAME_MAX) return bad('name must be at most ' + ON_THE_FLY_NAME_MAX + ' characters');
+  }
+  if (args.instructions !== undefined) {
+    if (typeof args.instructions !== 'string') return bad('instructions must be a string');
+    out.instructions = args.instructions.trim();
+    const max = require('./agents.js').MAX_BYTES;
+    if (Buffer.byteLength(out.instructions, 'utf8') > max) return bad('instructions must be at most ' + max + ' bytes');
+    if (out.instructions && typeof args.agent === 'string' && args.agent.trim()) {
+      return bad('instructions are for a subagent made on the fly; the saved agent "' + args.agent.trim() + '" already has its own. Omit agent, or omit instructions.');
+    }
+  }
+  return out;
+}
+
 // subagentGrantScopes(opts) -> { scopes, subagent }
 //
 // For a call made inside a subagent: the author ids of its run and every
@@ -851,7 +880,7 @@ function subagentGrantScopes(opts) {
   for (; run; run = run.scope && run.scope.owner) if (run.author) scopes.push(run.author);
   return {
     scopes,
-    subagent: own ? { callId: own.callId, agent: own.agent || null, depth: own.depth || 1 } : undefined
+    subagent: own ? { callId: own.callId, agent: own.agent || null, name: own.name || null, depth: own.depth || 1 } : undefined
   };
 }
 
@@ -2418,6 +2447,14 @@ async function streamChatInScope(opts) {
     const result = { error: { code: 'EBADINPUT', message: 'task is required; group members must use background:true' } };
     return { ok: false, result, content: JSON.stringify(result) };
     }
+    // `name` and `instructions` define a subagent on the fly: a label and a
+    // persona for this run only. Without them a model wanting a named worker
+    // reached for a saved agent from Settings and ran with its persona.
+    const onTheFly = onTheFlyAgent(args);
+    if (onTheFly.error) {
+      const result = { error: onTheFly.error };
+      return { ok: false, result, content: JSON.stringify(result) };
+    }
     const id = callOpts.callId || require('node:crypto').randomUUID();
     let row;
     try {
@@ -2428,7 +2465,7 @@ async function streamChatInScope(opts) {
     // call card settles on the next reconcile instead of staying on
     // "running" forever.
     if (args.background) onEvent('tool_result', { id, name: 'subagent', ok: exec.ok, result: exec.result, hooks: exec.subagentEnd ? hooksMeta(exec.subagentEnd.notes, exec.subagentEnd.context || '') : undefined });
-    }, { groupId: args.groupId, memberId: args.memberId, workspace: workingDir, agentLimits: agentLimits(opts.projectDir, args.agent), onEnd: (ended, exec, state) => {
+    }, { name: onTheFly.name, groupId: args.groupId, memberId: args.memberId, workspace: workingDir, agentLimits: agentLimits(opts.projectDir, args.agent), onEnd: (ended, exec, state) => {
       const hookCtx = hookContextFor(callOpts);
       // subagent.end fires at every depth: its payload carries `depth`.
       hookCtx.nested = false;
@@ -2545,7 +2582,7 @@ async function streamChatInScope(opts) {
         // (a block array with `cache_control` is rejected by strict ones),
         // and the Anthropic and OpenRouter-Claude builders add the system
         // cache breakpoint themselves.
-        nestedMessages.push({ role: 'system', content: agent.isDefault ? agent.effectiveContent : agent.content });
+        nestedMessages.push({ role: 'system', content: onTheFly.instructions || (agent.isDefault ? agent.effectiveContent : agent.content) });
         agentTools = Array.isArray(agent.tools) && agent.tools.length ? agent.tools : null;
         // Per-agent thinking level (optional). Applies only when no
         // explicit per-run override was chosen on the approval card.
@@ -2553,7 +2590,7 @@ async function streamChatInScope(opts) {
           nestedThinkingLevel = agent.thinkingLevel;
         }
       } else {
-        nestedMessages.push({ role: 'system', content: require('./agents.js').DEFAULT_CONTENT });
+        nestedMessages.push({ role: 'system', content: onTheFly.instructions || require('./agents.js').DEFAULT_CONTENT });
       }
       // Hydrate only the winning identity. Project records contribute safe
       // selection metadata, never the URL/credential of the app connection.
@@ -2776,7 +2813,7 @@ async function streamChatInScope(opts) {
       onEvent('subagent_event', {
       parentCallId: (callOpts && callOpts.callId) || null,
       kind: 'start',
-      data: { chat: nestedMessages, agent: agentName || undefined, model: nestedModelRef }
+      data: { chat: nestedMessages, agent: agentName || undefined, name: onTheFly.name || undefined, model: nestedModelRef }
       });
       }
       // Local tools use a per-run folder; every chat-scoped subsystem keeps
@@ -2980,6 +3017,7 @@ promptSize: callOpts && callOpts.promptSize,
       // it has to ride the result payload or the chat card cannot say which
       // agent answered. Omitted entirely for a generic delegation.
       if (agentName) r.agent = agentName;
+      if (onTheFly.name) r.name = onTheFly.name;
       // Carry the subagent's generated pictures on the result `content`, in
       // the same `{ type:'image', data, mimeType }` shape read_file's image
       // path and MCP image results emit, so

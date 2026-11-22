@@ -77,7 +77,7 @@ async function main() {
   assert.equal(subagentTool.buildSpec([]), subagentTool.SPEC, 'default depth, no agents: the shared spec');
   const shallow = subagentTool.buildSpec(['Reviewer'], { maxDepth: 1 });
   assert.equal(shallow.function.description, subagentTool.describe(1));
-  assert.match(shallow.function.parameters.properties.agent.description, /Available agents: Reviewer\./);
+  assert.match(shallow.function.parameters.properties.agent.description, /Available saved agents: Reviewer\./);
   assert.match(subagentTool.SPEC.function.description, /up to 3 levels deep in total/, 'SPEC is never mutated');
 
   settings.setApp({ providers: [

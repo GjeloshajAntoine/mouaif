@@ -217,7 +217,7 @@ function errorText(err) {
 function labelFor(args, result) {
   const a = args || {};
   const r = result || {};
-  return clip(a.agent || r.agent || a.memberId || r.memberId || 'Subagent', 32);
+  return clip(a.name || r.name || a.agent || r.agent || a.memberId || r.memberId || 'Subagent', 32);
 }
 
 // noteToolCall(net, parentId, call, live) -> pulse[]
@@ -242,6 +242,7 @@ export function noteToolCall(net, parentId, call, live) {
     upsertNode(net, id, from, {
       label: labelFor(args),
       agent: args.agent,
+      name: args.name,
       memberId: args.memberId,
       groupId: args.groupId,
       task: whole(args.task),
@@ -305,6 +306,7 @@ export function noteToolResult(net, parentId, res, live) {
     const node = upsertNode(net, id, from, {
       label: labelFor(args, r),
       agent: r.agent || args.agent,
+      name: r.name || args.name,
       memberId: r.memberId || args.memberId,
       groupId: r.groupId || args.groupId,
       model: r.model && r.model.id ? r.model.id : undefined
@@ -585,8 +587,9 @@ export function ingestStreamEvent(net, parentCallId, kind, data, outer) {
   if (kind === 'start' && owner !== ROOT) {
     const node = net.nodes.get(owner);
     // A stand-in learns its agent's name here; its launch may never come.
-    const label = node.stub && d.agent ? clip(d.agent, 32) : (node.label || clip(d.agent || 'Subagent', 32));
-    upsertNode(net, owner, node.parentId, { agent: d.agent, model: d.model && d.model.id, label, stub: node.stub });
+    const own = d.name || d.agent;
+    const label = node.stub && own ? clip(own, 32) : (node.label || clip(own || 'Subagent', 32));
+    upsertNode(net, owner, node.parentId, { agent: d.agent, name: d.name, model: d.model && d.model.id, label, stub: node.stub });
     if (node.status === 'waiting') setStatus(net, node, 'running');
     return [];
   }

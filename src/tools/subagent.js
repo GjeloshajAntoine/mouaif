@@ -36,7 +36,9 @@ function describe(maxDepth, { persistent = false } = {}) {
 
 const BASE_DESCRIPTION = describe(DEFAULT_LIMITS.maxDepth);
 
-const AGENT_DESCRIPTION = 'Optional project agent name (from Settings → Project → Agents) to use for this delegation. Omit it to use the project\'s default subagent.';
+const AGENT_DESCRIPTION = 'Optional: reuse a saved project agent (Settings → Project → Agents) with its own instructions, model and tool allowlist. Only for a listed saved agent: to make a subagent on the fly, omit `agent` and set `name` (and optionally `instructions`) instead. Omitting both runs the project\'s default subagent.';
+const NAME_DESCRIPTION = 'Optional display name for this subagent (for example be-manager or api-reviewer), shown on its card, in subagent_status and in the Agents graph. It only labels the run: it saves nothing and does not pick a saved agent. Up to 64 characters.';
+const INSTRUCTIONS_DESCRIPTION = 'Optional instructions for a subagent made on the fly (its role or persona, e.g. "You are the backend managing agent…"). They replace the default subagent\'s instructions for this run only and are not saved. Not allowed with `agent`, which brings its own instructions.';
 
 const SPEC = {
   type: 'function',
@@ -52,6 +54,8 @@ const SPEC = {
         memberId: { type: 'string', description: 'Which declared member of the group this subagent is (needs groupId and background: true). It starts only after the members it dependsOn have succeeded.' },
         context: { type: 'string', description: 'Optional relevant context to include with the task.' },
         agent: { type: 'string', description: AGENT_DESCRIPTION },
+        name: { type: 'string', maxLength: 64, description: NAME_DESCRIPTION },
+        instructions: { type: 'string', description: INSTRUCTIONS_DESCRIPTION },
         images: {
         type: 'array', maxItems: 8, items: { type: 'string' },
         description: 'Only these current-chat imageRef values from list_chat_attachments are passed to the subagent. Omit or [] sends no images. No base64 or file paths; max 8 images, 24 MiB encoded total.'
@@ -79,7 +83,7 @@ function buildSpec(agentNames, { maxDepth, persistent } = {}) {
   spec.function.description = description;
   if (names.length) {
     spec.function.parameters.properties.agent.description =
-      AGENT_DESCRIPTION + ' Available agents: ' + names.join(', ') + '.';
+      AGENT_DESCRIPTION + ' Available saved agents: ' + names.join(', ') + '.';
   }
   return spec;
 }

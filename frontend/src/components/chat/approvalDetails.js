@@ -95,8 +95,10 @@ export function approvalText(request) {
   } else if (tool === 'change_working_folder') {
     lines.push('Chat: ' + (args.chatId || details.targetChat?.id || 'current') + ' → ' + (details.workingDirectory || request.projectDir || '.') + ' (' + (args.directory || '.') + ')');
   } else if (tool === 'subagent') {
-    const meta = [args.agent ? '@' + args.agent : '', args.memberId ? 'member: ' + args.memberId : '', args.groupId ? shortGroupId(args.groupId) : '', args.background ? 'background' : ''].filter(Boolean).join(' · ');
+    const meta = [args.name ? String(args.name) : '', args.agent ? '@' + args.agent : '', args.memberId ? 'member: ' + args.memberId : '', args.groupId ? shortGroupId(args.groupId) : '', args.background ? 'background' : ''].filter(Boolean).join(' · ');
     if (meta) lines.push(meta);
+    // On-the-fly instructions are the run's persona: show them before it starts.
+    if (typeof args.instructions === 'string' && args.instructions.trim()) lines.push('Instructions: ' + args.instructions.trim());
     lines.push(args.task || request.summary || '');
   } else if (tool === 'subagent_group_create') {
     lines.push((args.name ? args.name + ' — ' : '') + (args.objective || ''));

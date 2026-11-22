@@ -213,7 +213,7 @@ class Scope {
     if (this.root.allRuns.has(id)) throw error('EBADINPUT', 'duplicate rooted callId');
     if (this.runs.has(id)) throw error('EBADINPUT', 'duplicate delegation callId');
     const pair = this.groups.validateLaunch(meta);
-    const row = { callId: id, author: randomUUID().replace(/-/g, '').slice(0, 12), agent: agent || null, state: 'running', startedAt: Date.now(),
+    const row = { callId: id, author: randomUUID().replace(/-/g, '').slice(0, 12), agent: agent || null, name: meta.name || null, state: 'running', startedAt: Date.now(),
     controller: new AbortController(), lines: [], cursor: 0, evictedCursor: 0, inbox: [], receipts: [], published: [], workspace: meta.workspace || this.projectDir };
       row.depth = depth; row.parentCallId = this.owner?.callId || null;
       const parentExplicit = this.owner ? this.owner.explicitCap : null;
@@ -370,7 +370,7 @@ class Scope {
     return row.groupId && this.groups.member(row.groupId, row.memberId).member.state === 'blocked' ? 'blocked' : row.state;
   }
   status(row) {
-    return { callId: row.callId, agent: row.agent, modelId: row.modelId || null, state: this.effectiveState(row),
+    return { callId: row.callId, agent: row.agent, name: row.name, modelId: row.modelId || null, state: this.effectiveState(row),
       rootId: row.rootId, parentCallId: row.parentCallId, depth: row.depth,
       groupId: row.groupId || null, memberId: row.memberId || null, workspace: row.workspace,
       startedAt: row.startedAt, elapsedMs: (row.finishedAt || Date.now()) - row.startedAt,

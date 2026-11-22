@@ -63,7 +63,21 @@ The native `subagent` tool accepts an optional `agent` argument matched against 
 { "task": "Review the staged changes for regressions.", "agent": "reviewer" }
 ```
 
-The `agent` parameter's description is built per request and enumerates the current agent names, so the model sees exactly what it can call. Images are never inherited: the main model can explicitly pass an `images` array of current-chat `imageRef` values returned by `list_chat_attachments`. Omit it to send only task/context; see [Subagent image generation](./subagent-image-generation.md#send-only-selected-attachments).
+The `agent` parameter's description is built per request and enumerates the current agent names, so the model sees exactly what it can call. `agent` only reuses a saved agent; it is not how a subagent is named.
+
+### Subagents made on the fly
+
+A model that wants a named worker for one job (a group's `be-manager`, an `api-reviewer`) does not need a saved agent. It omits `agent` and passes `name`, and optionally `instructions`:
+
+```json
+{ "task": "Read the three worker handoffs and write one report.", "name": "be-manager", "instructions": "You are the backend managing agent. Merge your workers' findings." }
+```
+
+- **`name`** (up to 64 characters) labels the run: the card's chip, the nested system row, `subagent_status` rows, approval cards and the Agents graph show it. It saves nothing and selects no agent.
+- **`instructions`** replace the **Default subagent**'s instructions for this run only. The default's model, thinking and tool allowlist still apply.
+- `instructions` together with `agent` is refused with `EBADINPUT`, because a saved agent brings its own instructions.
+
+Neither field is written to `.mouaif.json`. Before these fields existed, the only way to give a delegated run a role was to pick a saved agent, so parallel workers were all launched as one saved agent (with its persona and tool allowlist) and every card read the same. A `name` on a saved-agent run is still allowed: the card shows the name, and the saved agent's name stays in the chip's tooltip and the graph's detail line. Regression tests: [scripts/test-default-subagent-stream.js](../../scripts/test-default-subagent-stream.js), [scripts/test-agent-network.mjs](../../scripts/test-agent-network.mjs). Images are never inherited: the main model can explicitly pass an `images` array of current-chat `imageRef` values returned by `list_chat_attachments`. Omit it to send only task/context; see [Subagent image generation](./subagent-image-generation.md#send-only-selected-attachments).
 
 ### Model defaults and one-run choices
 
