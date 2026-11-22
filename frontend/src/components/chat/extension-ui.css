@@ -21,6 +21,11 @@
   box-sizing: border-box;
 }
 .ext-dock__frame .mcp-app { margin: 0; border: 0; }
+/* The bar has one Open/Close button: keep it on the title's row at its own
+   width, instead of the run dock's narrow-screen wrap to a full-width row. */
+.run-dock.ext-dock__bar { flex-wrap: nowrap; }
+.run-dock.ext-dock__bar .run-dock__text { flex: 1 1 auto; }
+.run-dock.ext-dock__bar .run-dock__btn { flex: 0 0 auto; }
 .ext-dock__ext { color: var(--muted); font-weight: 400; }
 .ext-dock__badge {
   flex: 0 0 auto;
