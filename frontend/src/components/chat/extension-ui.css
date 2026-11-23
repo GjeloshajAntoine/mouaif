@@ -115,13 +115,16 @@
   min-width: 12rem;
   max-width: min(20rem, calc(100vw - 32px));
   margin-top: 4px;
-  padding: 4px;
+  padding: 5px;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border);
+  gap: 2px;
+  border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
-  background: var(--surface);
-  box-shadow: var(--shadow-md);
+  background: color-mix(in srgb, var(--surface-3) 96%, var(--surface));
+  -webkit-backdrop-filter: saturate(160%) blur(18px);
+  backdrop-filter: saturate(160%) blur(18px);
+  box-shadow: var(--shadow-lg);
 }
 .ext-menu__item {
   display: flex;

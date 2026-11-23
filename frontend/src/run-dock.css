@@ -19,6 +19,7 @@
   border: 1px solid color-mix(in srgb, var(--run-color) 40%, var(--border));
   border-radius: var(--r-md);
   background: color-mix(in srgb, var(--run-color) 7%, var(--surface));
+  box-shadow: var(--shadow-sm);
 }
 .run-dock--paused { --run-color: var(--warning); }
 .run-dock--stalled { --run-color: var(--danger); }
@@ -94,6 +95,7 @@
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 .run-list__item {
   display: flex;

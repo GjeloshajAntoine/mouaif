@@ -10,7 +10,9 @@
   right: 4px;
   max-height: min(240px, 40dvh);
   overflow-y: auto;
-  background: var(--surface-2);
+  background: color-mix(in srgb, var(--surface-3) 96%, var(--surface));
+  -webkit-backdrop-filter: saturate(160%) blur(18px);
+  backdrop-filter: saturate(160%) blur(18px);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-md) var(--r-md) 0 0;
   box-shadow: var(--shadow-lg);

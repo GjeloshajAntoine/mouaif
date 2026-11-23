@@ -10,9 +10,10 @@
 .settings-themes__notice {
   margin: 0 10px 12px;
   padding: 10px 12px;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--surface);
+  box-shadow: var(--shadow-sm);
   color: var(--fg-soft);
   font-size: 0.86rem;
   line-height: 1.4;
@@ -55,8 +56,9 @@
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
-  border-radius: var(--r-lg);
+  border-radius: var(--r-md);
   background: var(--surface);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
   transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }

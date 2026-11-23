@@ -18,6 +18,7 @@
   border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
   border-radius: var(--r-md);
   background: var(--surface);
+  box-shadow: var(--shadow-sm);
   color: var(--fg-soft);
   font-size: 0.86rem;
 }
@@ -65,8 +66,9 @@
 .hook-card {
   box-sizing: border-box;
   border: 1px solid var(--border);
-  border-radius: var(--r-lg);
+  border-radius: var(--r-md);
   background: var(--surface);
+  box-shadow: var(--shadow-sm);
   padding: 10px 12px;
   min-width: 0;
 }
