@@ -36,6 +36,8 @@ import { AppContextBar } from './AppContextBar.jsx';
 import { subscribeChanges } from '../../liveEvents.js';
 import { PreviewUrlPrompt } from './PreviewUrlPrompt.jsx';
 import { authorizationCard } from './cards.js';
+import { useLazySheet } from '../../hooks/useLazySheet.js';
+import { LazySheetError } from './LazySheetError.jsx';
 import { requestWebpreview, setStatus } from '../../api.js';
 import { formatCost } from '../../usage.js';
 import { subscribe as subscribeWebPreview, clearActive as clearWebPreview, getActivePayload, publish as publishWebPreview, requestReload as reloadWebPreview, readAutoRefresh, writeAutoRefresh } from './webpreviewState.js';
@@ -84,7 +86,11 @@ onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat, runCustomAction, refre
 // covers every attributed run, so the accumulator starts from zero again
 // instead of adding the earlier runs a second time.
 const dictationCostRef = useRef(null);
-const [FileEditor, setFileEditor] = useState(null);
+// The file editor is a lazily loaded chunk too, on the same rule as the other
+// sheets (hooks/useLazySheet.js): a rejected import is a state the sheet
+// renders, not a sheet that never appears.
+const fileEditor = useLazySheet('FileEditorView', () => import('../FileEditor.jsx'));
+const FileEditor = fileEditor.View;
 const [fileEditorInitialPath, setFileEditorInitialPath] = useState('');
 const [atMentionItems, setAtMentionItems] = useState(() => getAtMentionItems());
 const [screenCaptureOpen, setScreenCaptureOpen] = useState(false);
@@ -153,8 +159,15 @@ useEffect(() => {
   window.addEventListener(COMPOSER_INSERT, onInsert);
   return () => window.removeEventListener(COMPOSER_INSERT, onInsert);
 }, [projectDir, chatId]);
-const ScreenCapturePanel = useLazyView(screenCaptureOpen, () => import('./ScreenCapturePanel.jsx'), 'ScreenCapturePanel');
-const ArtifactsModal = useLazyView(artifactsTarget !== null, () => import('./ArtifactsModal.jsx'), 'ArtifactsModal');
+// The capture panel, the artifacts sheet, the web-preview viewer and the image
+// annotator only open on a tap, so each loads on first use instead of riding
+// the chat view's entry bundle. They go through hooks/useLazySheet.js so a
+// rejected chunk fetch is rendered as a retryable error rather than leaving an
+// open sheet with nothing in it.
+const screenCapture = useLazySheet('ScreenCapturePanel', () => import('./ScreenCapturePanel.jsx'));
+const artifacts = useLazySheet('ArtifactsModal', () => import('./ArtifactsModal.jsx'));
+const ScreenCapturePanel = screenCapture.View;
+const ArtifactsModal = artifacts.View;
 useEffect(() => { setArtifactsTarget(null); }, [projectDir, chatId]);
 // Whatever changed an artifact, the @ list and the chips follow.
 useEffect(() => {
@@ -458,19 +471,17 @@ async function onPreviewPrompt(text) {
 
   // The web-preview viewer and the image annotator only open on a tap, so
   // they load on first use instead of riding the chat view's entry bundle.
-  const WebpreviewModal = useLazyView(webPreviewOpen && !!webPreviewPayload, () => import('./WebpreviewModal.jsx'), 'WebpreviewModal');
-  const DraftCraftAnnotator = useLazyView(!!annotateTarget, () => import('../inspector/DraftCraftAnnotator.jsx'), 'DraftCraftAnnotator');
+  // Both go through hooks/useLazySheet.js: a rejected chunk fetch is a status
+  // the viewer renders, not a tap that silently does nothing.
+  const webpreview = useLazySheet('WebpreviewModal', () => import('./WebpreviewModal.jsx'));
+  const annotator = useLazySheet('DraftCraftAnnotator', () => import('../inspector/DraftCraftAnnotator.jsx'));
+  const WebpreviewModal = webpreview.View;
+  const DraftCraftAnnotator = annotator.View;
+  useEffect(() => { if (webPreviewOpen && webPreviewPayload) webpreview.load(); }, [webPreviewOpen, webPreviewPayload]);
+  useEffect(() => { if (annotateTarget) annotator.load(); }, [annotateTarget]);
 
-  useEffect(() => {
-    if (!fileEditorOpen || FileEditor) return;
-    let cancelled = false;
-    import('../FileEditor.jsx').then((mod) => {
-      if (!cancelled) setFileEditor(() => mod.FileEditorView);
-    }).catch(() => {
-      if (!cancelled) setFileEditor(null);
-    });
-    return () => { cancelled = true; };
-  }, [fileEditorOpen, FileEditor]);
+  // The file editor opens on a tap, so its chunk is fetched then.
+  useEffect(() => { if (fileEditorOpen) fileEditor.load(); }, [fileEditorOpen]);
 
 // Subscribe to captures published by the imperative tool renderer. A new
 // capture replaces the dock image but never opens the full viewer without a
@@ -845,10 +856,10 @@ h('div', { class: 'chat-view__composer-tool' },
 h(FileToolbar, {
 projectDir,
 orb: fileOrb,
-onOpenFileEditor: () => { setFileEditorInitialPath(''); setFileEditorOpen(true); },
+onOpenFileEditor: () => { setFileEditorInitialPath(''); fileEditor.load(); setFileEditorOpen(true); },
 onOpenPreview: () => setPreviewPromptOpen(true),
-onOpenScreenCapture: () => setScreenCaptureOpen(true),
-onOpenArtifacts: chatId ? () => setArtifactsTarget('') : null,
+onOpenScreenCapture: () => { screenCapture.load(); setScreenCaptureOpen(true); },
+onOpenArtifacts: chatId ? () => { artifacts.load(); setArtifactsTarget(''); } : null,
 customActions,
 extensionSheets,
 onOpenExtensionSheet: setOpenSheet,
@@ -898,7 +909,7 @@ onRefreshCustomActions: refreshCustomActions
             ),
 imageAttachments.length ? h('div', { class: 'chat-view__image-preview' },
 imageAttachments.map((a, idx) => h('div', { key: idx, class: 'chat-view__image-chip' },
-h('button', { class: 'chat-view__image-chipimg', type: 'button', onClick: () => setAnnotateTarget({ index: idx, attachment: a }), 'aria-label': 'Annotate image ' + (a.name || (idx + 1)), title: 'Annotate image' },
+h('button', { class: 'chat-view__image-chipimg', type: 'button', onClick: () => { annotator.load(); setAnnotateTarget({ index: idx, attachment: a }); }, 'aria-label': 'Annotate image ' + (a.name || (idx + 1)), title: 'Annotate image' },
 h('img', { src: a.dataUrl, alt: a.name || 'attached image' })
 ),
 h('button', { class: 'chat-view__image-chipremove', type: 'button', onClick: () => onRemoveImage(idx), title: 'Remove image', 'aria-label': 'Remove image ' + (a.name || (idx + 1)) },
@@ -952,37 +963,53 @@ openSheet && chatId
 ? h(ExtensionSheet, { projectDir, chatId, surface: openSheet, onClose: () => setOpenSheet(null),
   onAuthorize: (request, signal) => authorizationCard({ ...request, signal }, projectDir, chatId, refs) })
 : null,
-artifactsTarget !== null && ArtifactsModal
-? h(ArtifactsModal, {
-  projectDir, chatId, initialName: artifactsTarget, onClose: () => setArtifactsTarget(null),
-  onOpenInEditor: link => { setArtifactsTarget(null); setFileEditorInitialPath(link); setFileEditorOpen(true); }
-})
+artifactsTarget !== null
+? (artifacts.status === 'error'
+  ? h(LazySheetError, { inline: true, label: 'the artifacts sheet', error: artifacts.error, onClose: () => setArtifactsTarget(null) })
+  : ArtifactsModal
+    ? h(ArtifactsModal, {
+      projectDir, chatId, initialName: artifactsTarget, onClose: () => setArtifactsTarget(null),
+      onOpenInEditor: link => { setArtifactsTarget(null); setFileEditorInitialPath(link); setFileEditorOpen(true); }
+    })
+    : null)
 : null,
-screenCaptureOpen && ScreenCapturePanel
-? h(ScreenCapturePanel, { onClose: () => setScreenCaptureOpen(false), onAttach: onCapturedImages, availableSlots: Math.max(0, 8 - imageAttachments.length) })
+screenCaptureOpen
+? (screenCapture.status === 'error'
+  ? h(LazySheetError, { inline: true, label: 'screen capture', error: screenCapture.error, onClose: () => setScreenCaptureOpen(false) })
+  : ScreenCapturePanel
+    ? h(ScreenCapturePanel, { onClose: () => setScreenCaptureOpen(false), onAttach: onCapturedImages, availableSlots: Math.max(0, 8 - imageAttachments.length) })
+    : null)
 : null,
-fileEditorOpen && FileEditor
-? h(FileEditor, {
-  projectDir, chatId, initialPath: fileEditorInitialPath, onDraftCraftAdded,
-  onClose: () => { setFileEditorOpen(false); setFileEditorInitialPath(''); },
-  onManageArtifact: name => { setFileEditorOpen(false); setFileEditorInitialPath(''); setArtifactsTarget(name); }
-})
+fileEditorOpen
+? (fileEditor.status === 'error'
+  ? h(LazySheetError, { inline: true, label: 'the file editor', error: fileEditor.error, onClose: () => { setFileEditorOpen(false); setFileEditorInitialPath(''); } })
+  : FileEditor
+    ? h(FileEditor, {
+      projectDir, chatId, initialPath: fileEditorInitialPath, onDraftCraftAdded,
+      onClose: () => { setFileEditorOpen(false); setFileEditorInitialPath(''); },
+      onManageArtifact: name => { setFileEditorOpen(false); setFileEditorInitialPath(''); setArtifactsTarget(name); }
+    })
+    : null)
 : null,
-webPreviewOpen && webPreviewPayload && WebpreviewModal
-? h(WebpreviewModal, {
-preview: webPreviewPayload,
-onClose: () => setWebPreviewOpen(false),
-working: runningVisible,
-onPrompt: onPreviewPrompt,
-autoRefresh: webPreviewAuto,
-onAutoRefreshChange: (on) => { setWebPreviewAuto(on); writeAutoRefresh(on); },
-onRecapture: (viewport) => recaptureWebPreview(webPreviewPayload, viewport, {
-projectDir,
-chatId,
-refs,
-onAuthorizationRequired: () => setWebPreviewOpen(false)
-})
-})
+webPreviewOpen && webPreviewPayload
+? (webpreview.status === 'error'
+  ? h(LazySheetError, { inline: true, label: 'the web preview', error: webpreview.error, onClose: () => setWebPreviewOpen(false) })
+  : WebpreviewModal
+    ? h(WebpreviewModal, {
+      preview: webPreviewPayload,
+      onClose: () => setWebPreviewOpen(false),
+      working: runningVisible,
+      onPrompt: onPreviewPrompt,
+      autoRefresh: webPreviewAuto,
+      onAutoRefreshChange: (on) => { setWebPreviewAuto(on); writeAutoRefresh(on); },
+      onRecapture: (viewport) => recaptureWebPreview(webPreviewPayload, viewport, {
+        projectDir,
+        chatId,
+        refs,
+        onAuthorizationRequired: () => setWebPreviewOpen(false)
+      })
+    })
+    : null)
 : null,
 previewPromptOpen
 ? h(PreviewUrlPrompt, {
@@ -990,30 +1017,22 @@ onSubmit: (url) => runPreviewFromPrompt(url, { projectDir, chatId, refs, onPromp
 onClose: () => setPreviewPromptOpen(false)
 })
 : null,
-annotateTarget && DraftCraftAnnotator
-? h(DraftCraftAnnotator, {
-image: annotateTarget.attachment,
-originalDataUrl: originalImageDataUrl(annotateTarget.attachment),
-sourceLabel: 'Attached image',
-actionLabel: 'Use annotated image',
-onReset: onAnnotatorReset,
-onAnnotated,
-onClose: () => setAnnotateTarget(null)
-})
+annotateTarget
+? (annotator.status === 'error'
+  ? h(LazySheetError, { inline: true, label: 'the image editor', error: annotator.error, onClose: () => setAnnotateTarget(null) })
+  : DraftCraftAnnotator
+    ? h(DraftCraftAnnotator, {
+      image: annotateTarget.attachment,
+      originalDataUrl: originalImageDataUrl(annotateTarget.attachment),
+      sourceLabel: 'Attached image',
+      actionLabel: 'Use annotated image',
+      onReset: onAnnotatorReset,
+      onAnnotated,
+      onClose: () => setAnnotateTarget(null)
+    })
+    : null)
 : null
 );
-}
-// useLazyView — resolve a named export from a dynamic import the first time
-// `wanted` turns true, then keep it. Returns null until the chunk has loaded.
-function useLazyView(wanted, loader, name) {
-  const [View, setView] = useState(null);
-  useEffect(() => {
-    if (!wanted || View) return undefined;
-    let cancelled = false;
-    loader().then((mod) => { if (!cancelled) setView(() => mod[name]); }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [wanted, View]);
-  return View;
 }
 // recaptureWebPreview — user-initiated re-capture of the web preview at a
 // chosen resolution. Uses the direct /api/tools/webpreview endpoint (NOT a

@@ -125,6 +125,14 @@ Copy the link into your phone's browser and sign in; npm polls for the approval 
 
 You can also run multiple commands in one session — the shell keeps its state (working directory, environment, variables) between lines.
 
+## When the sheet cannot load
+
+The CLI sheet is a separate code chunk, downloaded the first time you open it. If
+that download fails — the usual cause is mouaif having been rebuilt while this
+page was open, so the chunk name the page holds no longer exists — the sheet now
+shows an error card with **Reload the app** instead of silently opening nothing.
+See [lazy sheet loading failures](lazy-sheet-loading.md).
+
 ## Tests
 
 ```bash

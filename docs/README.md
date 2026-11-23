@@ -108,6 +108,7 @@ One page per feature: what it does and how to use it.
 - [File toolbar](features/file-toolbar.md) — the composer menu for Files, Preview, Screen capture, Git and CLI.
 - [Files modal](features/files-modal-text-and-images.md) — edit any text file and preview images.
 - [CLI modal](features/cli-modal.md) — a terminal inside the chat that can answer interactive prompts.
+- [Lazy sheet loading failures](features/lazy-sheet-loading.md) — a sheet whose code cannot be downloaded now says so, with the one action that recovers it.
 - [Background terminal](features/background-terminal.md) — the CLI shell keeps running after you close the sheet; reopen to replay its output.
 
 ### Tools and approvals

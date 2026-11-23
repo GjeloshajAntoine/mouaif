@@ -16,6 +16,8 @@ import { h } from 'preact';
 import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
 import { useClickOutside } from '../../hooks/useClickOutside.js';
+import { useLazySheet } from '../../hooks/useLazySheet.js';
+import { LazySheetError } from './LazySheetError.jsx';
 import { formatCount } from './gitCount.js';
 import { orbCountFont } from './fileOrb.js';
 // The folder silhouette, as one path. Orb mode draws it twice — the same
@@ -102,30 +104,14 @@ const [menuOpen, setMenuOpen] = useState(false);
   // chat view lazy-loads the file editor: the modal chunks are fetched
   // only when the user actually opens them, keeping them out of the
   // main entry bundle.
-  const [GitModal, setGitModal] = useState(null);
-  const [CliModal, setCliModal] = useState(null);
-
-  useEffect(() => {
-    if (!gitOpen || GitModal) return;
-    let cancelled = false;
-    import('./GitModal.jsx').then((mod) => {
-      if (!cancelled) setGitModal(() => mod.GitModal);
-    }).catch(() => {
-      if (!cancelled) setGitModal(null);
-    });
-    return () => { cancelled = true; };
-  }, [gitOpen, GitModal]);
-
-  useEffect(() => {
-    if (!cliOpen || CliModal) return;
-    let cancelled = false;
-    import('./CliModal.jsx').then((mod) => {
-      if (!cancelled) setCliModal(() => mod.CliModal);
-    }).catch(() => {
-      if (!cancelled) setCliModal(null);
-    });
-    return () => { cancelled = true; };
-  }, [cliOpen, CliModal]);
+  //
+  // The fetch can fail — the page can be holding an entry bundle from before
+  // a rebuild, whose chunk names the server no longer serves — so this uses
+  // the shared rule in hooks/useLazySheet.js: a failure is a status the sheet
+  // renders, and the next tap on the same menu entry tries again, instead of
+  // silently doing nothing for the rest of the session.
+  const git = useLazySheet('GitModal', () => import('./GitModal.jsx'));
+  const cli = useLazySheet('CliModal', () => import('./CliModal.jsx'));
 
       const refreshGitStats = useCallback(async () => {
     try {
@@ -175,6 +161,10 @@ if (nextOpen && onRefreshCustomActions) onRefreshCustomActions();
 
   function handleGit() {
     setMenuOpen(false);
+    // Ask for the chunk on the tap that opens the sheet, so a second tap after
+    // a failed load is a real retry (useLazySheet.load is a no-op while the
+    // fetch is in flight or once it has succeeded).
+    git.load();
     setGitOpen(true);
   }
 
@@ -185,6 +175,7 @@ if (nextOpen && onRefreshCustomActions) onRefreshCustomActions();
 
   function handleCli() {
     setMenuOpen(false);
+    cli.load();
     setCliOpen(true);
   }
 
@@ -463,7 +454,15 @@ cliRunning ? h('span', {
 }) : null
 )
 ),
-gitOpen && GitModal ? h(GitModal, { projectDir, onClose: handleGitClose }) : null,
-    cliOpen && CliModal ? h(CliModal, { projectDir, onClose: handleCliClose }) : null
+gitOpen
+? (git.status === 'error'
+? h(LazySheetError, { label: 'the Git sheet', error: git.error, onClose: handleGitClose })
+: git.View ? h(git.View, { projectDir, onClose: handleGitClose }) : null)
+: null,
+  cliOpen
+? (cli.status === 'error'
+? h(LazySheetError, { label: 'the CLI sheet', error: cli.error, onClose: handleCliClose })
+: cli.View ? h(cli.View, { projectDir, onClose: handleCliClose }) : null)
+: null
   );
 }

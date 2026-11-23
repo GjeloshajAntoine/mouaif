@@ -144,3 +144,111 @@
     max-height: calc(100dvh - 4rem);
   }
 }
+
+/* A sheet whose *code* could not be fetched (frontend/src/hooks/useLazySheet.js
+   and components/chat/LazySheetError.jsx). The failure has to occupy the same
+   place the sheet would have: `.sheet-err__overlay` / `.sheet-err__sheet` copy
+   the shared overlay + card idiom above verbatim (it cannot be added to the
+   selector lists, which are fixed per modal, and the component that failed is
+   exactly what would have supplied a modal-specific class), and `.lazy-err` is
+   the body inside it.
+
+   `--inline` is the same body used *inside* a sheet that is already open (the
+   file editor, artifacts, screen capture, the web-preview viewer, the image
+   annotator): it fills that sheet's body instead of opening a second overlay
+   over it. */
+.sheet-err__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--sheet-z, 60);
+  background: var(--sheet-backdrop, rgba(0, 0, 0, 0.55));
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
+  animation: mouaif-overlay-fade-in 120ms ease-out;
+}
+.sheet-err__sheet {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--fg);
+  border: 0;
+  border-radius: 0;
+}
+@media (min-width: 720px) {
+  .sheet-err__overlay {
+    padding: var(--sheet-desktop-pad, 32px);
+    align-items: center;
+    justify-content: center;
+  }
+  .sheet-err__sheet {
+    flex: 0 1 520px;
+    max-width: 520px;
+    width: 100%;
+    height: min(70vh, 560px);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+.lazy-err {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1.5rem 1.25rem;
+  background: var(--surface);
+  color: var(--fg);
+  text-align: center;
+  overflow-y: auto;
+}
+/* Inside a sheet that is already open: the sheet owns the padding and the
+   safe-area insets, so the block only fills what is left of its body. */
+.lazy-err--inline {
+  padding: 1rem;
+  background: transparent;
+}
+.lazy-err__icon {
+  font-size: 1.6rem;
+  line-height: 1;
+  color: var(--warning, var(--danger));
+}
+.lazy-err__text {
+  margin: 0;
+  max-width: 34rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--fg);
+}
+.lazy-err__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 22rem;
+  margin-top: 0.25rem;
+}
+/* Full-width, ≥44 px tall: these three are the only way out of a sheet that
+   cannot load, and they must work with a thumb at 360 px. */
+.lazy-err__btn {
+  width: 100%;
+  min-height: var(--tap, 44px);
+  font-size: 0.85rem;
+}
+/* From a tablet up the three actions fit on one row; the sheet is centred as a
+   card there, so the column would waste the width it has. */
+@media (min-width: 720px) {
+  .lazy-err__actions {
+    flex-direction: row;
+    max-width: 30rem;
+  }
+  .lazy-err__btn { width: auto; flex: 1 1 auto; }
+}

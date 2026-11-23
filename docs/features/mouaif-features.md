@@ -107,6 +107,7 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [File toolbar](file-toolbar.md) — the composer menu for Files, Git, and the CLI.
 - [Files modal](files-modal-text-and-images.md) — edit any text file and preview images.
 - [CLI modal](cli-modal.md) — a terminal inside the chat that can answer interactive prompts.
+- [Lazy sheet loading failures](lazy-sheet-loading.md) — a sheet whose code cannot be downloaded now says so, with the one action that recovers it.
 - [Background terminal](background-terminal.md) — the CLI shell keeps running after you close the sheet; reopen to replay its output.
 
 ## Tools and approvals
