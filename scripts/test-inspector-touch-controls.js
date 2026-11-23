@@ -481,6 +481,22 @@ check('re-reading the same element does not move the panel',
 /revealedRef\.current === objectId\) return;/.test(panelSource));
 check('a cleared panel forgets what it had revealed',
 /revealedRef\.current = ''; return;/.test(panelSource));
+// …except a hop made in the panel's own Element tree. The tree sits in the
+// scroll flow ~460 px down a 360 px phone, so revealing pulled the row the user
+// had just tapped out from under the finger on every sibling step.
+check('a hop from the in-panel Element tree keeps the panel where it is',
+/onSelect: \(levels, index\) => selectRelative\(levels, index, true\)/.test(panelSource)
+&& /if \(keepScroll\) keepScrollFor\.current = m\.objectId;/.test(panelSource)
+&& /if \(keepScrollFor\.current === objectId\) return;/.test(panelSource));
+// The snapshot's `null` (unmount) must not be the cleanup of the publishing
+// effect: that ran before every re-publish and reset the Inspector's reveal mark,
+// so a read starting or an editor opening scrolled the page to the card again.
+check('the published selection is cleared on unmount only, not before each re-publish',
+!/return \(\) => \{ if \(props\.onSelectionChange\) props\.onSelectionChange\(null\); \};/.test(panelSource)
+&& /useEffect\(\(\) => \(\) => \{ if \(onSelectionChangeRef\.current\) onSelectionChangeRef\.current\(null\); \}, \[\]\);/.test(panelSource));
+check('…and the Inspector does not scroll the page to the Styles card for it either',
+/inPanelHop: !!\(model && model\.objectId && keepScrollFor\.current === model\.objectId\)/.test(panelSource)
+&& /if \(!info\.inPanelHop\) revealPanelCard\('styles', 'top'\);/.test(read('frontend/src/components/Inspector.jsx')));
 // The error line is what a *failed* hop reports through, and a failed hop is
 // exactly the case where the user is scrolled deep in the panel — so it lives
 // with the element it is about, inside the sticky block.

@@ -1250,12 +1250,26 @@ if (reveal) reveal();
 // new element with its own preview and chip row 2 193 px above the viewport.
 // Only a *new* element reveals: re-reading the same one (a write, a Refresh, the
 // live preview loop) must leave the user where they were reading.
+//
+// A hop made in this panel's own Element tree does not reveal either. The tree
+// moved out of the sticky block into the scroll flow, so the row the user taps is
+// already on screen, ~460 px down on a 360 px phone: jumping to the top pulled
+// the tree out from under the finger on every sibling step, and walking
+// `div#c0 … div#c7` meant scrolling back down after each tap. `keepScrollFor`
+// holds the objectId such a hop landed on (set before the model is adopted, so
+// a failed hop never sets it and the next pick still reveals). It is kept, not
+// consumed: the published snapshot carries it as `inPanelHop` so the Inspector
+// skips its own page-level reveal of this card too (see onSelectionChange in
+// Inspector.jsx) — every pick resolves a fresh objectId, so a stale mark can
+// never match a later selection.
 const revealedRef = useRef('');
+const keepScrollFor = useRef('');
 useEffect(() => {
 const objectId = (model && model.objectId) || '';
 if (!objectId) { revealedRef.current = ''; return; }
 if (revealedRef.current === objectId) return;
 revealedRef.current = objectId;
+if (keepScrollFor.current === objectId) return;
 const panel = panelRef.current;
 if (panel) panel.scrollTop = 0;
 }, [crumbsKey]);
@@ -1509,34 +1523,40 @@ Promise.resolve(props.readElementTree(objectId))
 // like a fresh pick: same code path as tapping the live preview, which
 // keeps the breadcrumb, the pinned preview, the changed-set reset, and the
 // highlight all in sync for free.
-function selectAncestor(levels) {
+//
+// `keepScroll` is set by the panel's own Element tree only (see keepScrollFor):
+// the hop keeps the panel where it is instead of revealing the new element.
+function selectAncestor(levels, keepScroll) {
 const objectId = modelRef.current && modelRef.current.objectId;
 if (!objectId || !props.selectAncestorNode) return Promise.resolve(false);
 return loadModel(() => props.selectAncestorNode(objectId, levels).then((m) => {
 if (!m) throw new Error('Nothing above this element.');
+if (keepScroll) keepScrollFor.current = m.objectId;
 return m;
 }));
 }
 // selectRelative — the tree navigator's hop: up `levels` parents, then into
 // child `index` (null = stay on the ancestor). See selectRelativeNode.
-function selectRelative(levels, index) {
+function selectRelative(levels, index, keepScroll) {
 const objectId = modelRef.current && modelRef.current.objectId;
 if (!objectId) return Promise.resolve(false);
 if (!props.selectRelativeNode) {
-if (index == null && levels > 0) return selectAncestor(levels);
-if (levels === 0 && index != null) return selectChild(index);
+if (index == null && levels > 0) return selectAncestor(levels, keepScroll);
+if (levels === 0 && index != null) return selectChild(index, keepScroll);
 return Promise.resolve(false);
 }
 return loadModel(() => props.selectRelativeNode(objectId, levels, index).then((m) => {
 if (!m) throw new Error('That element is no longer on the page.');
+if (keepScroll) keepScrollFor.current = m.objectId;
 return m;
 }));
 }
-function selectChild(index) {
+function selectChild(index, keepScroll) {
 const objectId = modelRef.current && modelRef.current.objectId;
 if (!objectId || !props.selectChildNode) return Promise.resolve(false);
 return loadModel(() => props.selectChildNode(objectId, index).then((m) => {
 if (!m) throw new Error('That child is no longer on the page.');
+if (keepScroll) keepScrollFor.current = m.objectId;
 return m;
 }));
 }
@@ -1554,6 +1574,11 @@ setChanged([]);
 if (props.onSelectionReset) props.onSelectionReset();
 // An open edit/add sheet names a property of the *old* element; left open after
 // a tree hop it would write the old value onto the new one.
+// Its saved reading position belongs to the old element's list too: closing
+// it here must not restore that offset (a tree hop would jump to wherever the
+// old editor was opened instead of staying on the tree).
+editScroll.current = null;
+editorOrigin.current = null;
 setEdit(null);
 setAddOpen(false);
 setTouchGroup('');
@@ -1682,6 +1707,9 @@ props.onSelectionChange({
 label: model ? elementLabel(model.node) : '',
 size: boxSummary(model && model.box),
 objectId: (model && model.objectId) || '',
+// inPanelHop — this element was reached from the panel's own Element tree, so
+// the card is already where the user is looking: nothing should scroll to it.
+inPanelHop: !!(model && model.objectId && keepScrollFor.current === model.objectId),
 declared: (model && model.inlineProps) || [],
 rules: rules || null,
 tree: tree || null,
@@ -1694,13 +1722,21 @@ editing: edit ? edit.prop : '',
 // read it would duplicate is already running.
 busy: !!loading
 });
+}, [model, rules, tree, changed, receipt, edit, loading]);
 // Clear the published snapshot on unmount. The Inspector keeps its own copy so
 // the target bar and the receipt survive this panel being switched off — which
 // is the point of the store — but it must stop reading a live snapshot that no
 // longer has a panel behind it, or the bar would describe an element the panel
 // is no longer tracking.
-return () => { if (props.onSelectionChange) props.onSelectionChange(null); };
-}, [model, rules, tree, changed, receipt, edit, loading]);
+//
+// Unmount only, in its own effect. As the cleanup of the publishing effect above
+// it ran before *every* re-publish (a read starting, rules or the tree arriving,
+// an editor opening), and each `null` reset the Inspector's "already revealed"
+// mark — so the next snapshot of the same element counted as a new selection and
+// scrolled the page back to this card's top on almost any tap inside it.
+const onSelectionChangeRef = useRef(props.onSelectionChange);
+onSelectionChangeRef.current = props.onSelectionChange;
+useEffect(() => () => { if (onSelectionChangeRef.current) onSelectionChangeRef.current(null); }, []);
 // Expose the panel's own actions to the TargetBar above it, so the bar's
 // header buttons and breadcrumb are shortcuts into this panel rather than a
 // second implementation. The selection stays owned here (with the highlight,
@@ -2380,7 +2416,7 @@ onEditRow: (row) => openEditor({ prop: row.prop, value: row.to })
 (tree && ((tree.ancestors && tree.ancestors.length) || (tree.children && tree.children.length)))
 ? h('div', { class: 'inspector__styles-section' },
 h('h3', { class: 'inspector__styles-h' }, 'Element tree'),
-h(TreeNavigator, { tree, onSelect: selectRelative })
+h(TreeNavigator, { tree, onSelect: (levels, index) => selectRelative(levels, index, true) })
 )
 : null,
 // Touch-first control surface. Everything below this section can write any

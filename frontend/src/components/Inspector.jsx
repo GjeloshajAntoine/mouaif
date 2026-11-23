@@ -2126,13 +2126,15 @@ readSiblingValues: handlers ? handlers.readSiblingValues : null,
     // without it the Styles panel is exactly what it was before. A *new*
     // element also reveals the Styles card: a selection made from the Preview
     // panel (a pick, or the selector field) answers in a card that can be a
-    // screen away (see revealPanelCard).
+    // screen away (see revealPanelCard). Not for a hop in the panel's own
+    // Element tree (`inPanelHop`): the user is already looking at the card, and
+    // aligning its top scrolled the page up from under the tree on every tap.
     onSelectionChange: (info) => {
     setStylesSelection(info);
     const objectId = (info && info.objectId) || '';
     if (objectId && objectId !== revealedSelectionRef.current) {
       revealedSelectionRef.current = objectId;
-      revealPanelCard('styles', 'top');
+      if (!info.inPanelHop) revealPanelCard('styles', 'top');
     }
     if (!objectId) revealedSelectionRef.current = '';
     },
