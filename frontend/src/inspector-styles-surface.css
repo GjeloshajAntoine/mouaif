@@ -1,31 +1,12 @@
-/* Styles only: soft mineral greys with a restrained lavender-grey accent.
-   Keep the rest of the Inspector in its existing theme. Layout heights and
-   measured sticky offsets still belong to inspector-styles / fullscreen. */
+/* The Styles card's own surface: layout, type scale and the card treatment of
+   its rows. Colours come from the app theme like every other panel (it used to
+   carry a scoped light palette, which made it the one light card in a dark
+   Inspector and ignored custom themes). Layout heights and measured sticky
+   offsets still belong to inspector-styles / fullscreen. */
 .inspector__panel[data-panel="styles"],
 .inspector__styles {
-  color-scheme: light;
-  --bg: #f3f3f1;
-  --surface: #ffffff;
-  --surface-2: #f3f3f1;
-  --surface-3: #e9e9e6;
-  --fg: #252729;
-  --fg-soft: #484b50;
-  --muted: #575b60;
-  --muted-2: #575b60;
-  --border: #d5d6d3;
-  --border-strong: #7b7d79;
-  --accent: #54516d;
-  --accent-hi: #54516d;
-  --accent-hi-2: #54516d;
-  --accent-soft: #eeecf3;
-  --accent-press: #454259;
-  --on-accent: #ffffff;
-  --success: #296143;
-  --success-soft: #e6f0e9;
-  --warning: #79500c;
-  --warning-soft: #f6eedf;
-  --danger: #a33344;
-  --danger-soft: #f8e9ec;
+  /* Captions are readable text, never the dimmer tertiary grey. */
+  --muted-2: var(--muted);
   --tap: 2.75rem;
   color: var(--fg);
   background: var(--surface-2);
@@ -75,7 +56,7 @@
 .inspector__styles .inspector__styles-elem-size { font-size: 0.7rem; }
 /* Four equal destinations fit on a phone without a stranded last chip. The grid
    is the base rule now (inspector-styles.css); only the pill styling differs
-   here, because the light surface wants a quieter unselected chip. */
+   here, because this card wants a quieter unselected chip. */
 .inspector__styles .inspector__styles-jump-chip {
   min-width: 0;
   padding: 0 0.375rem;
@@ -92,7 +73,7 @@
   border-color: var(--accent);
 }
 .inspector__styles .inspector__styles-jump-chip .inspector__styles-jump-count {
-  color: var(--muted);
+  color: var(--fg-soft);
   background: var(--surface-3);
 }
 .inspector__styles .inspector__styles-jump-chip.is-on .inspector__styles-jump-count {

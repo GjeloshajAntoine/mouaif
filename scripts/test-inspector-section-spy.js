@@ -117,6 +117,8 @@ const fs = require('node:fs');
 const panelSource = fs.readFileSync(path.join(__dirname, '../frontend/src/components/inspector/StylesPanel.jsx'), 'utf8');
 const stylesCss = fs.readFileSync(path.join(__dirname, '../frontend/src/inspector-styles.css'), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '');
+const surfaceCss = fs.readFileSync(path.join(__dirname, '../frontend/src/inspector-styles-surface.css'), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '');
 
 check('the rail renders its chips from the shared list',
   /SECTIONS\.map\(\(s\) =>/.test(panelSource)
@@ -142,25 +144,31 @@ check('the rail wraps instead of clipping enlarged text',
   /grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(4\.5rem,\s*1fr\)\)/.test(stylesCss),
   'a fixed four-column grid ellipsized "Computed" at a 20 px root font');
 
-// The active chip inverts to the light theme's accent, and its count inverts
-// again inside it. Both pairs are read at a glance on a phone, so they have to
-// clear AA on the surfaces the chip actually uses.
+// The active chip inverts to the theme's accent, and its count inverts again
+// inside it. Both pairs are read at a glance on a phone, so they have to clear
+// AA on the surfaces the chip actually uses. The Styles card follows the app
+// theme, so the colours are the default theme's tokens from base.css.
 const { contrast } = require('../frontend/src/components/inspector/contrast.js');
-const LIGHT = {
-  accent: '#54516d', 'on-accent': '#ffffff', surface: '#ffffff',
-  'surface-2': '#f3f3f1', 'surface-3': '#e9e9e6', muted: '#575b60', 'fg-soft': '#484b50'
-};check('the active chip label clears AA on the accent fill',
-  contrast(LIGHT['on-accent'], LIGHT.accent).ratio >= 4.5,
-  contrast(LIGHT['on-accent'], LIGHT.accent).ratio.toFixed(2));
+const baseCss = fs.readFileSync(path.join(__dirname, '../frontend/src/base.css'), 'utf8');
+const token = (name) => {
+  const m = baseCss.match(new RegExp('--' + name + ':\\s*(#[0-9a-fA-F]{6})'));
+  if (!m) throw new Error('base.css has no solid --' + name);
+  return m[1];
+};
+const THEME = {};
+for (const name of ['accent', 'on-accent', 'surface', 'surface-2', 'surface-3', 'muted', 'fg-soft']) THEME[name] = token(name);check('the active chip label clears AA on the accent fill',
+  contrast(THEME['on-accent'], THEME.accent).ratio >= 4.5,
+  contrast(THEME['on-accent'], THEME.accent).ratio.toFixed(2));
 check('the count clears AA inside the active chip',
-  contrast(LIGHT.accent, LIGHT['on-accent']).ratio >= 4.5,
-  contrast(LIGHT.accent, LIGHT['on-accent']).ratio.toFixed(2));
+  contrast(THEME.accent, THEME['on-accent']).ratio >= 4.5,
+  contrast(THEME.accent, THEME['on-accent']).ratio.toFixed(2));
 check('an unselected chip label clears AA on the card surface',
-  contrast(LIGHT['fg-soft'], LIGHT['surface-2']).ratio >= 4.5,
-  contrast(LIGHT['fg-soft'], LIGHT['surface-2']).ratio.toFixed(2));
+  contrast(THEME['fg-soft'], THEME['surface-2']).ratio >= 4.5,
+  contrast(THEME['fg-soft'], THEME['surface-2']).ratio.toFixed(2));
 check('an unselected count clears AA on its own pill',
-  contrast(LIGHT.muted, LIGHT['surface-3']).ratio >= 4.5,
-  contrast(LIGHT.muted, LIGHT['surface-3']).ratio.toFixed(2));
+  /\.inspector__styles-jump-chip \.inspector__styles-jump-count \{\s*color: var\(--fg-soft\)/.test(surfaceCss)
+  && contrast(THEME['fg-soft'], THEME['surface-3']).ratio >= 4.5,
+  contrast(THEME['fg-soft'], THEME['surface-3']).ratio.toFixed(2));
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 assert.equal(failed, 0, failed + ' sectionSpy assertion(s) failed');

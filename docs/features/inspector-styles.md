@@ -6,7 +6,7 @@ The **Styles** panel adds tap-to-select element inspection and touch-friendly CS
 
 ## Usage
 
-The Styles card uses a soft light-grey surface, white property cards, charcoal text, and a muted lavender-grey accent. This local theme includes the inline value editor; the rest of the Inspector keeps its existing appearance. Property names sit above values so long CSS declarations remain readable on a phone, and the four section buttons share the row equally.
+The Styles card follows the app theme like the other Inspector panels: its sections and property rows are cards on the theme's surfaces, and the inline value editor uses the same colours with stronger control borders. Property names sit above values so long CSS declarations remain readable on a phone, and the four section buttons share the row equally.
 
 ![The Styles panel's section rail on a 390 px phone, with Declared lit and each chip carrying its entry count](./images/inspector/styles-rail-390.png)
 
