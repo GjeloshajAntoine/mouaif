@@ -184,10 +184,12 @@
   left: 0;
   z-index: 20;
   min-width: 148px;
-  background: var(--surface-3);
+  background: color-mix(in srgb, var(--surface-3) 88%, transparent);
+  -webkit-backdrop-filter: saturate(160%) blur(18px);
+  backdrop-filter: saturate(160%) blur(18px);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-lg);
   padding: 4px;
   display: flex;
   flex-direction: column;

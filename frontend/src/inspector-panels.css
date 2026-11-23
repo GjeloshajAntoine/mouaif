@@ -173,6 +173,7 @@ margin-right: 8px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
   padding: 8px;
   text-align: center;
 }

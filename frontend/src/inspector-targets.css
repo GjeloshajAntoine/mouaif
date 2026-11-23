@@ -22,6 +22,7 @@ padding: 0;
 background: var(--surface);
 border: 1px solid var(--border);
 border-radius: var(--r-md);
+box-shadow: var(--shadow-sm);
 /* `overflow: hidden` is intentionally NOT set here so the per-row
 overflow popup (`.inspector__row-menu-pop`, position: absolute)
 can drop below the row it belongs to without being clipped by
