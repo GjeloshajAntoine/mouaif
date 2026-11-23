@@ -9,6 +9,34 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-11-23
+
+### Added
+
+- **A redesigned UI built on one token set** — hierarchy, surfaces, sheet borders, card elevation, frosted popovers, compact navigation and the chat styling all follow `--` design tokens, so the Inspector and every settings page inherit the app theme instead of a hard-coded palette. See [design tokens](docs/features/design-tokens.md).
+- **The app follows the window width on desktop** — the shell, list views and the chat column no longer stop at 1152 / 896 / 704 px; wide windows fill the room, and docks such as the Agents card stretch with the layout. A phone is unchanged. See [responsive layout](docs/features/responsive-layout.md).
+- **Notice-driven views instead of polling** — the hooks bar, extension docks, app context bar, the chat's hooks / webhook / run docks, the @ list, the share sheets, MCP sign-in and MCP App status, and the update check now refetch when a `project_changed` / `app_changed` notice arrives, when a turn ends, or when the page comes back. A page following a running chat also receives the turn's live subagent cost, so the chat Total keeps moving without a reload. See [live events](docs/features/live-events.md).
+- **Off-screen transcript rows leave the DOM** — rows more than two viewports away have their contents moved into a detached fragment at their measured height, so a long chat keeps its scroll position with far less memory. See [chat transcript rendering](docs/features/chat-transcript-rendering.md).
+- **A compact single-bar file editor** with filter, find and a modal confirm, matching the web preview's header size.
+- **The web preview dock stays visible beside an open tool** from 1100 px: while Files, Git, CLI, MCP, artifacts, the file editor, screen capture or extensions are open, the dock becomes a fixed card on the right and the modal shifts left. See [web preview](docs/features/webpreview.md).
+- **Transparent inline MCP Apps** — `create_mcp_app` takes `inline: true|false`, and a server app UI resource can declare `_meta.ui.prefersBorder: false`, so the app blends into the conversation at its place in the chat rather than taking the bottom slot. See [MCP Apps](docs/features/mcp-apps.md).
+
+### Changed
+
+- **Stored records are no longer pruned on their own** — OAuth pending flows, hook runs, runs, finished wakes, webhook calls and background jobs stay until the user (or deleting a chat or webhook) removes them; listings cap how much they show. See [chat storage](docs/features/chat-storage.md).
+
+### Fixed
+
+- **The chat transcript scrollbar is visible again**, and the artifacts sheet sizes, centres and wears the app-consistent header.
+- **Settings write and project updates no longer lose concurrent changes**: setters take the write lock, overlapping file editor saves stay atomic, and unreadable project settings retry their migrations.
+- **Approval prompts and running subagents follow permission changes during a run**, and the subagent approval card offers every provider's models.
+- **The agent network** keeps delegation order when older rows are paged in, nests late-announced agents, ends orphaned runs, shows cooperative groups as a level of the tree, and fills the room it is given on a phone and full screen.
+- **The subagent card** keeps its model/context line in place, keeps an on-the-fly subagent's name in the parent's result, and names and instructs on-the-fly subagents without a saved agent.
+- **Settings pages** line up on one 10 px gutter, keep the same page titles and back arrows, and style the Agents and Custom actions lists again; the repeated prompt-style note is gone.
+- **The extension dock's Open/Close button stays on the title row**, hook notes no longer nest a scroll, and the mobile preview keeps its tap targets.
+- **A route view rebuilds when its projectId changes**, and custom actions route through one setter.
+- **The chat sends the thinking level and max output tokens from one stored copy.**
+
 ## [0.10.0] — 2026-11-21
 
 ### Removed
