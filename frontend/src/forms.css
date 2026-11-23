@@ -39,7 +39,7 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  padding: 6px 12px;
+  padding: 6px 10px;
   min-height: var(--tap);
   width: 100%;
   transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
@@ -132,7 +132,7 @@ select.input {
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  padding: 0 14px;
+  padding: 0 12px;
   min-height: var(--tap);
   font-size: 0.86rem;
   cursor: pointer;
@@ -208,14 +208,14 @@ select.input {
    one; `.menu-pop__sep` is a hairline divider. */
 .menu-pop {
   position: absolute;
-  min-width: 184px;
+  min-width: 180px;
   background: color-mix(in srgb, var(--surface-3) 96%, var(--surface));
   -webkit-backdrop-filter: saturate(160%) blur(18px);
   backdrop-filter: saturate(160%) blur(18px);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
   box-shadow: var(--shadow-lg);
-  padding: 5px;
+  padding: 4px;
   display: flex;
   flex-direction: column;
   gap: 2px;

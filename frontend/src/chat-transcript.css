@@ -7,12 +7,12 @@
 .chat-view__transcript {
   display: flex;
   flex-direction: column;
-  /* Comfortable vertical rhythm between turns and setup cards. */
-  gap: 8px;
+  /* Keep setup cards compact so the empty-chat landing area stays visible. */
+  gap: 4px;
   /* Reserve the rail's hit area on phones without shrinking the desktop
      reading column. Keep the 8px inline inset so rows match the head/rail
      reading column contract checked by test-responsive-layout.mjs. */
-  padding: 8px 8px 10px;
+  padding: 4px 8px 6px;
   /* The rail overlays the corner; it must not reserve a permanent strip in
      the transcript's content box. Its own hit area remains clear of text by
      position, while rows keep the full reading width on narrow phones. */
@@ -85,7 +85,7 @@
 .chat-msg {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 1px;
   max-width: 92%;
   align-self: flex-start;
   animation: mouaif-bubble-in var(--dur) var(--ease-out) both;
@@ -198,10 +198,10 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-lg) var(--r-lg) var(--r-lg) 4px;
-  padding: 9px 13px;
+  padding: 4px 8px;
   word-break: break-word;
-  font-size: 0.88rem;
-  line-height: 1.5;
+  font-size: 0.8rem;
+  line-height: 1.35;
   box-shadow: var(--shadow-sm);
 }
 .chat-msg--user .chat-msg__body {

@@ -97,9 +97,9 @@
   --font-mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   /* Radius scale — four stops, used everywhere. Soft, modern radii keep
      cards, bubbles, and sheets visually related without feeling heavy. */
-  --r-sm: 8px;    /* chips, inline code, small buttons */
-  --r-md: 12px;   /* inset groups, cards, bubbles */
-  --r-lg: 16px;   /* sheets, hero blocks, picker on phones */
+  --r-sm: 6px;    /* chips, inline code, small buttons */
+  --r-md: 10px;   /* inset groups, cards, bubbles */
+  --r-lg: 14px;   /* sheets, hero blocks, picker on phones */
   --r-pill: 999px;
 
   /* Motion: short, transform-only. The reduced-motion media query

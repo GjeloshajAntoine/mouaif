@@ -14,10 +14,9 @@
 display: flex;
 flex-wrap: wrap;
 align-items: center;
-/* Row gap 4 / column gap 6. Padding is explicit on all four sides so
-  controls breathe comfortably above the divider. */
-gap: 4px 6px;
-padding: 2px 10px 8px;
+/* Keep the header compact; the shell owns the space above it. */
+gap: 2px 4px;
+padding: 0 8px 6px;
 border-bottom: 1px solid var(--border);
 flex: 0 0 auto;
 position: relative;
@@ -183,9 +182,9 @@ max-width: 110px;
    chat header, so both stay compact and rely on being wide: the effective
    target is 110 x 26, not a 26 px square. Reverting this means owning the
    header height, not the target size — see docs/features/responsive-layout.md. */
-height: 28px;
-min-height: 28px;
-padding: 0 22px 0 10px;
+height: 26px;
+min-height: 26px;
+padding: 0 16px 0 8px;
   font-size: 0.72rem;
   color: var(--fg);
   background-color: var(--surface-2);
@@ -196,7 +195,7 @@ padding: 0 22px 0 10px;
   -webkit-appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath fill='%238a92a6' d='M1 2l3 3.5L7 2'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 9px center;
+  background-position: right 4px center;
   background-size: 8px 8px;
   position: relative;
   /* Show a small "🧠" label on the left so the user knows what it is */
@@ -875,11 +874,10 @@ max-width: 200px;
 
 /* The chat header keeps the picker compact beside the thinking control. */
 .mp--chat > .mp__trigger {
-  min-height: 28px;
-  height: 28px;
+  min-height: 26px;
+  height: 26px;
   padding-block: 0;
   border-radius: var(--r-pill);
-  padding-inline: 10px;
 }
 .mp--chat > .mp__trigger .mp__provider {
   display: none;
@@ -912,7 +910,7 @@ max-width: 200px;
 sync with chat: one line, no provider subline, and the same active
 border/fill. */
 .mp--sheet > .mp__trigger {
-padding-inline: 10px;
+padding-inline: 8px;
 gap: 4px;
 align-items: center;
 border-radius: var(--r-pill);

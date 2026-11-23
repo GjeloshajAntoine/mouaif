@@ -92,8 +92,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: calc(var(--tap) + 6px);
-  padding: 4px 4px 4px 14px;
+  min-height: var(--tap);
+  padding-left: 12px;
   /* A press-and-hold on the header lifts the card (useLongPressReorder), so
      the hold must not select text or open the browser's callout. */
   -webkit-user-select: none;
@@ -104,26 +104,21 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
 }
 .project-card__name {
   font-weight: 650;
-  font-size: 0.96rem;
-  letter-spacing: -0.01em;
+  font-size: 0.94rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  line-height: 1.25;
+  line-height: 1.2;
 }
 .project-card__cost {
   color: var(--fg-soft);
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--r-pill);
-  padding: 2px 8px;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -131,12 +126,12 @@
 }
 .project-card__path {
   color: var(--muted);
-  font-size: 0.71rem;
+  font-size: 0.7rem;
   font-family: var(--font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  line-height: 1.25;
+  line-height: 1.2;
 }
 
 /* Shared between .project-card__menu and .sprojects__menu: both render a
@@ -206,7 +201,7 @@ scrollbar-width: thin;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 6px 6px 14px;
+  padding: 6px 12px;
   background: transparent;
   cursor: pointer;
   transition: background 100ms ease;

@@ -7,14 +7,14 @@
   align-self: stretch;
   min-width: 0;
   margin: 2px 0 4px;
-  padding: 8px 10px 9px;
+  padding: 5px 7px 6px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 .chat-view__tools-card-head {
 display: flex;
@@ -58,14 +58,14 @@ flex-wrap: wrap;
   align-self: stretch;
   min-width: 0;
   margin: 2px 0 4px;
-  padding: 8px 10px 9px;
+  padding: 5px 7px 6px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 .chat-view__skills-head {
   display: flex;
@@ -146,14 +146,14 @@ flex-wrap: wrap;
   align-self: stretch;
   min-width: 0;
   margin: 2px 0 4px;
-  padding: 8px 10px 9px;
+  padding: 5px 7px 6px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 .chat-view__agent-files-head {
   display: flex;
