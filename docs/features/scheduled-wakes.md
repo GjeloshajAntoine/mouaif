@@ -57,7 +57,7 @@ The three tools follow the **mouaif** family gate in **Settings → Project** (O
 - **Safety net.** A recurring task opens a [run](long-running-runs.md) with limits sized to it: your `maxRuns` and `until`, otherwise one year and a large turn allowance, plus `maxCostUsd` if given. You can Pause, Resume or Stop it from the bar above the composer.
 - **Limits.** At most 20 pending schedules per chat, a first run between 10 seconds and 30 days away, an interval of at least a minute, and at most 10000 runs.
 - **Chats own their schedules.** A chat sees and cancels only its own. Deleting a chat cancels them. A chat with no selected model cannot schedule one.
-- **Finished wakes are kept for a week**, then removed.
+- **Finished wakes are kept**; mouaif never removes them on its own.
 - **At least once.** A wake is leased for five minutes while it is being delivered, so a crash mid-delivery repeats it instead of losing it.
 
 ## Past runs stay in the chat

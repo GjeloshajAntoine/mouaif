@@ -48,11 +48,10 @@ curl 'http://localhost:5732/api/settings/project?projectDir=/path/to/project'
   — therefore never reaches the browser, and a future key stashed in the app
   store cannot leak by accident.
 
-- **Abandoned OAuth flows are pruned** — an `authPending` record is only removed
-  on a successful exchange or an explicit cancel. If the user closes the sign-in
-  tab, the record (with its PKCE verifier) would leak forever. `auth.prunePending()`
-  drops records older than 1h and runs once at server start (`createServer()`),
-  best-effort.
+- **OAuth flows are never pruned on their own** — an `authPending` record is
+  only removed on a successful exchange or an explicit cancel. A flow the user
+  abandoned (closed the sign-in tab) stays in the app store; nothing deletes
+  stored data without the user asking.
 
 - Server wiring: [src/index.js](../../../src/index.js) → `handleSettings()`. Provider endpoints are `POST /api/settings/app/providers` and `DELETE /api/settings/app/providers/:id`; legacy app-model endpoints remain readable for backward compatibility but are not used by the current UI.
 - Store support: [src/settings.js](../../../src/settings.js) adds `setAppReplace(next)` for the reset path. The default `setApp(patch)` is shallow-merge; reset needs replace semantics to drop keys rather than re-set them.

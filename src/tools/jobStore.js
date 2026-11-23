@@ -11,7 +11,6 @@
 // real outcome is unknown. The log file on disk is the record of what ran.
 const { randomUUID } = require('node:crypto');
 
-const RETENTION_MS = 24 * 60 * 60 * 1000;
 const BOOT_ID = randomUUID();
 
 const CREATE = `
@@ -44,7 +43,7 @@ function rowToJob(row) {
 // database) turns persistence off instead of failing the command that was
 // being tracked.
 function createJobStore({ getDb = () => require('../settings.js').getDb(), now = Date.now,
-  retentionMs = RETENTION_MS, bootId = BOOT_ID } = {}) {
+  bootId = BOOT_ID } = {}) {
   let db = null;
   let broken = false;
   function open() {
@@ -56,8 +55,6 @@ function createJobStore({ getDb = () => require('../settings.js').getDb(), now =
       const lost = now();
       handle.prepare("UPDATE background_job SET state = 'lost', finished_at = ? WHERE state = 'running' AND boot_id != ?")
         .run(lost, bootId);
-      handle.prepare('DELETE FROM background_job WHERE finished_at IS NOT NULL AND finished_at <= ?')
-        .run(lost - retentionMs);
     } catch { broken = true; db = null; }
     return db;
   }
@@ -93,4 +90,4 @@ function createJobStore({ getDb = () => require('../settings.js').getDb(), now =
   };
 }
 
-module.exports = { createJobStore, RETENTION_MS, BOOT_ID };
+module.exports = { createJobStore, BOOT_ID };

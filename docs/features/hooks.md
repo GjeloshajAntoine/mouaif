@@ -25,7 +25,7 @@ Open **Settings → App defaults → Extensions** and tap **Hooks** (`#/settings
 - **New hook** opens an empty editor. **Start from an example** fills it with a working hook: block force pushes, ask before `rm -rf`, add the git branch to prompts, keep going until the tests pass, no notifications at night, or log every tool call.
 - Each hook card shows when it runs, what it matches and its command. Its switch turns that hook on or off. **Edit** opens the editor, and the arrows change the order hooks run in.
 - **Test** in the editor runs the hook once with a sample event and shows its decision, exit code, time and output. Nothing in a chat changes.
-- **Recent runs** lists the last 50 hook runs, newest first: the hook, its event, what it decided, how long it took and any error. A follow-up turn that was not started shows here as *skipped* with the reason. mouaif keeps the last 200 runs.
+- **Recent runs** lists the last 50 hook runs, newest first: the hook, its event, what it decided, how long it took and any error. A follow-up turn that was not started shows here as *skipped* with the reason. mouaif keeps every run.
 - **Edit as JSON** shows every hook as JSON to copy, paste or change; **Apply** replaces the whole list. **Download** saves `mouaif-hooks.json`, which **Edit as JSON** accepts back.
 
 The hooks in Settings are app-wide: they apply to every project and every chat. A project can ship its own (see [Project hooks](#project-hooks)), which stay off until you review them, so opening a cloned repository never runs its code. A chat can also have its own hooks (see [Hooks for one chat](#hooks-for-one-chat)). Hooks run app first, then project, then chat. A hook the model added carries an *added by the model* chip and the reason it gave.

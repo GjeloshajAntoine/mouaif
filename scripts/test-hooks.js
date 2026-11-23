@@ -335,7 +335,8 @@ async function testTurnEvents() {
   await hookTurns.fireTurnEnd(Object.assign({ origin: { kind: 'user' } }, base), { startTurn, isRunning: () => false });
   assert.equal(started[2].body.content, '[one] A\n\n[two] B');
 
-  // Run log: newest first, filtered by chat, follow-up outcomes included, capped.
+  // Run log: newest first, filtered by chat, follow-up outcomes included; a
+  // listing is capped, the log itself is never pruned.
   const runs = hooks.listRuns({ chatId: 'c-turn', limit: 200 });
   assert.ok(runs.length >= 10);
   assert.equal(runs[0].hook, 'one');
@@ -344,8 +345,10 @@ async function testTurnEvents() {
   assert.ok(runs.some((x) => x.decision === 'skipped' && /busy/.test(x.error)));
   assert.ok(runs.some((x) => x.decision === 'skipped' && /3 follow-ups/.test(x.error)));
   assert.equal(hooks.listRuns({ chatId: 'nope' }).length, 0);
-  for (let i = 0; i < 210; i++) hooks.logRun({ hook: 'bulk', event: 'turn.start', decision: 'continue', ms: 1 }, ctx);
+  for (let i = 0; i < 210; i++) hooks.logRun({ hook: 'bulk', event: 'turn.start', decision: 'continue', ms: 1 }, { ...ctx, chatId: 'c-bulk' });
   assert.equal(hooks.listRuns({ limit: 500 }).length, 200);
+  assert.equal(hooks.listRuns({ chatId: 'c-bulk', limit: 500 }).length, 200);
+  assert.equal(hooks.listRuns({ chatId: 'c-turn', limit: 200 }).length, runs.length, 'older runs are kept');
   setHooks([]);
 }
 

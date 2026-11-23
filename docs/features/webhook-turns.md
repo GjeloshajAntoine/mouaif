@@ -65,7 +65,7 @@ A chat with a webhook shows a link icon in its row. The card's filter has a **We
 - **Headers.** `Authorization`, `Cookie`, `X-Api-Key` and similar headers are recorded as `[redacted]` and never stored. Transport headers (`Host`, `Content-Length`, `Connection`…) are dropped.
 - **Runs never overlap.** Calls queue. If one arrives while the chat is streaming, it waits until the chat is free, then they run one at a time, oldest first. Waiting calls survive a restart.
 - **Failures retry.** A call whose turn cannot start (for example, the provider is down) is retried and marked `failed` after three attempts, with the last error kept. A chat with no model selected fails its calls at once.
-- **Limits.** At most 30 calls a minute and 20 waiting calls per webhook. Beyond either limit the link answers `429` with `Retry-After: 60`. The 100 latest calls are kept per webhook.
+- **Limits.** At most 30 calls a minute and 20 waiting calls per webhook. Beyond either limit the link answers `429` with `Retry-After: 60`. Every call is kept until you delete the webhook.
 - **Notifications.** No browser started the run, so its completion and errors go to every subscribed device, with the reply as the notification text, as for a recurring task.
 - **Permissions.** The three tools are in the **mouaif** family in **Settings → Project** (Off / Ask / Allow). A webhook's run uses the chat's normal tool permissions, so anything that needs approval waits for you.
 - **Chats own their webhook.** Deleting a chat deletes its webhook, and the link answers `404`.

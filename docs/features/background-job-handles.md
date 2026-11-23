@@ -5,7 +5,7 @@
 
 ## Overview
 
-Background `group_cli` results now include a stable `jobId` alongside the PID and log path. The record is kept for a day, across restarts.
+Background `group_cli` results now include a stable `jobId` alongside the PID and log path. The record is kept across restarts and is never deleted on its own.
 
 ## Usage
 

@@ -37,7 +37,7 @@ Pause, Resume and Stop are yours alone; the assistant has no tool for them.
 - **Cost counts priced turns only.** A model with no known price adds nothing, so set a turn limit too.
 - **After the end, no more scheduling.** `schedule_wake` refuses once a run is stopped, ended, exhausted or stalled, so the assistant cannot quietly carry on.
 - **The watchdog.** If a run has no turn streaming and no wake-up pending for 10 minutes, mouaif sends a check-in turn: continue or schedule the next check. After three check-ins with no progress the run is marked **stalled**, its wake-ups are cancelled and you are notified. A reminder costs a turn.
-- **One run per chat.** Starting another while one is running or paused is refused. A finished run is kept for a week.
+- **One run per chat.** Starting another while one is running or paused is refused. A finished run is kept until you delete the chat.
 - **Survives a restart.** Runs are stored in the app database, so a pause, a budget and turn counts persist.
 
 ## What is not included

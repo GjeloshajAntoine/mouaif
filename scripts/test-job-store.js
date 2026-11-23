@@ -67,18 +67,19 @@ waits.wait({ scope, until: 'shell:' + running.jobId, timeoutMs: 1000 }).then((re
   assert.equal(result.satisfied, true);
   assert.equal(result.outcome, 'lost');
 
-  // Finished jobs are pruned after the retention window.
+  // Finished jobs are kept, however old: nothing is deleted on its own.
   clock += 25 * 60 * 60 * 1000;
   const third = boot('boot-3', () => clock);
-  assert.throws(() => third.get(scope, done.jobId), { code: 'ENOTARGET' });
-  assert.deepEqual(third.list(scope).map((job) => [job.jobId, job.state]), [[fresh.jobId, 'lost']], 'only the job running at the last restart is kept');
+  assert.equal(third.get(scope, done.jobId).state, 'failed');
+  assert.deepEqual(third.list(scope).map((job) => job.jobId).sort(), [done.jobId, running.jobId, fresh.jobId].sort());
+  assert.equal(third.get(scope, fresh.jobId).state, 'lost', 'the job running at the last restart is lost');
 
   // Without a usable database the registry still works in memory.
   const memoryOnly = createRegistry({ store: createJobStore({ getDb() { throw new Error('no db'); } }) });
   const job = memoryOnly.create(scope, { workingDir: root });
   assert.equal(memoryOnly.get(scope, job.jobId).state, 'running');
 
-  console.log('job store: persistence, lost on restart, scope, retention and no-db fallback passed');
+  console.log('job store: persistence, lost on restart, scope, kept history and no-db fallback passed');
   fs.rmSync(root, { recursive: true, force: true });
   process.exit(0);
 }).catch((e) => { console.error(e); process.exit(1); });

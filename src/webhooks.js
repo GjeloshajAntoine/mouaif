@@ -24,7 +24,6 @@ const MAX_STORED_BODY_CHARS = 64 * 1024; // kept for the UI
 const MAX_PROMPT_BODY_CHARS = 20000;     // sent to the model
 const MAX_QUEUED_PER_HOOK = 20;
 const MAX_CALLS_PER_MINUTE = 30;
-const KEEP_EVENTS_PER_HOOK = 100;
 const MAX_ATTEMPTS = 3;
 const TICK_MS = 3000;
 
@@ -195,9 +194,6 @@ function createWebhookStore({ getDb = () => require('./settings.js').getDb(), no
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued')`).run(id, hook.id, time, request.method, JSON.stringify(request.query || {}),
         JSON.stringify(request.headers || {}), request.contentType || null, request.body || '', request.bodyBytes || 0, request.truncated ? 1 : 0);
       d.prepare('UPDATE chat_webhook SET call_count = call_count + 1, last_call_at = ? WHERE id = ?').run(time, hook.id);
-      // Keep the newest events per hook; older ones are only history.
-      d.prepare(`DELETE FROM webhook_event WHERE hook_id = ? AND status != 'queued' AND id NOT IN
-        (SELECT id FROM webhook_event WHERE hook_id = ? ORDER BY received_at DESC LIMIT ?)`).run(hook.id, hook.id, KEEP_EVENTS_PER_HOOK);
       return id;
     },
     events(id, limit = 50) {

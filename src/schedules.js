@@ -27,7 +27,6 @@ const MAX_ATTEMPTS = 3;
 const LEASE_MS = 5 * 60 * 1000;
 const TICK_MS = 5000;
 const MAX_FIRED_PER_TICK = 5;
-const KEEP_FINISHED_MS = 7 * 24 * 60 * 60 * 1000;
 
 const CREATE = `
   CREATE TABLE IF NOT EXISTS wake_schedule (
@@ -171,8 +170,6 @@ function createScheduleStore({ getDb = () => require('./settings.js').getDb(), n
       for (const [name, type] of [['anchor_at', 'INTEGER'], ['until_at', 'INTEGER'], ['spec', 'TEXT']]) {
         if (!columns.has(name)) handle.exec('ALTER TABLE wake_schedule ADD COLUMN ' + name + ' ' + type);
       }
-      handle.prepare("DELETE FROM wake_schedule WHERE status != 'pending' AND COALESCE(last_run_at, created_at) <= ?")
-        .run(now() - KEEP_FINISHED_MS);
       db = handle;
       return db;
     } catch (e) { throw err('ESTORE', 'Schedule store unavailable: ' + (e && e.message)); }

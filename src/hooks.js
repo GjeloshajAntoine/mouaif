@@ -92,7 +92,7 @@ const MAX_CONTEXT = 8 * 1024;
 const MAX_PAYLOAD_TEXT = 16 * 1024;
 const MAX_CHANGE_TEXT = 2000;
 const MAX_FOLLOW_UP = 4000;
-const KEEP_RUNS = 200;
+const MAX_LIST_RUNS = 200;
 const MAX_PER_EVENT = 4;
 const MAX_MODULE = 64 * 1024;
 const MAX_URL = 2048;
@@ -959,7 +959,7 @@ function hasHooks(event, ctx) {
 
 // ---- Run log -----------------------------------------------------------------
 //
-// The last KEEP_RUNS hook runs app-wide, for Settings → Extensions → Hooks. Logging is
+// Every hook run app-wide (never pruned), for Settings → Extensions → Hooks. Logging is
 // best-effort: a broken store never fails a hook.
 
 const RUN_TABLE = `
@@ -999,7 +999,6 @@ function logRun(note, ctx = {}) {
       String(note.event || ''), ctx.projectDir || null, ctx.chatId || null, String(note.decision || ''),
       Number.isFinite(note.ms) ? Math.round(note.ms) : null, detail ? clip(detail, 300) : null,
       note.error ? clip(note.error, 300) : null);
-    d.prepare('DELETE FROM hook_run WHERE id <= (SELECT id FROM hook_run ORDER BY id DESC LIMIT 1 OFFSET ?)').run(KEEP_RUNS);
     // The chat's hooks dock lists these runs.
     if (ctx.projectDir && ctx.chatId) require('./app-events.js').projectChanged(ctx.projectDir, 'chat_hooks', ctx.chatId);
   } catch { /* the log is best-effort */ }
@@ -1007,7 +1006,7 @@ function logRun(note, ctx = {}) {
 
 // listRuns({ projectDir?, chatId?, limit? }) -> newest first
 function listRuns({ projectDir, chatId, limit } = {}) {
-  const n = Math.max(1, Math.min(KEEP_RUNS, Number(limit) || 50));
+  const n = Math.max(1, Math.min(MAX_LIST_RUNS, Number(limit) || 50));
   const where = [];
   const params = [];
   if (projectDir) { where.push('project_dir = ?'); params.push(projectDir); }

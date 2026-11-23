@@ -26,7 +26,6 @@ const MAX_NUDGES = 3;
 // maxRuns / until / maxCostUsd from the schedule replaces them.
 const RECURRING_MAX_TURNS = 100000;
 const RECURRING_MAX_MS = 365 * 24 * 60 * 60 * 1000;
-const KEEP_ENDED_MS = 7 * 24 * 60 * 60 * 1000;
 
 const CREATE = `
   CREATE TABLE IF NOT EXISTS agent_run (
@@ -67,8 +66,6 @@ function createRunStore({ getDb = () => require('./settings.js').getDb(), now = 
       if (!handle.prepare('PRAGMA table_info(agent_run)').all().some((c) => c.name === 'kind')) {
         handle.exec("ALTER TABLE agent_run ADD COLUMN kind TEXT NOT NULL DEFAULT 'run'");
       }
-      handle.prepare("DELETE FROM agent_run WHERE status NOT IN ('running', 'paused') AND COALESCE(ended_at, updated_at) <= ?")
-        .run(now() - KEEP_ENDED_MS);
       db = handle;
       return db;
     } catch (e) { throw err('ESTORE', 'Run store unavailable: ' + (e && e.message)); }

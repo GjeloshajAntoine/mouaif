@@ -318,7 +318,7 @@ the system block, so prompt caching stays intact.
   context", "failed"). Tap → sheet with input, output, duration, stderr.
 - On a prompt: the collapsed hook-context block.
 - **Settings → Extensions → Hooks**: every hook from every scope, its source, an Off switch,
-  and a run log (last 200 runs, `hook_run` table: hook, event, chat, decision, ms, error).
+  and a run log (every run, listed up to 200 at a time, `hook_run` table: hook, event, chat, decision, ms, error).
 - `?safe` disables all hooks and all UI surfaces, like it does for theme scripts. A banner says
   so.
 

@@ -566,15 +566,6 @@ function createServer(port = DEFAULT_PORT, options = {}) {
   // Initialise push notification tables and VAPID keys.
   try { push.ensureTable(); } catch (e) { console.warn('[mouaif] push table init failed:', e.message); }
   try { push.ensureVapidKeys(publicOrigin); } catch (e) { console.warn('[mouaif] VAPID key init failed:', e.message); }
-  // Drop OAuth flows the user abandoned (closed the tab mid-sign-in). They
-  // are never consumed and would otherwise accumulate PKCE verifiers in the
-  // app store forever. Best-effort: a failure here must not stop the server.
-  try {
-    const pruned = auth.prunePending();
-    if (pruned > 0) console.log(`[mouaif] pruned ${pruned} stale OAuth flow${pruned === 1 ? '' : 's'}`);
-  } catch (e) {
-    console.warn('[mouaif] could not prune stale OAuth flows:', e.message);
-  }
   const sessionToken = crypto.randomBytes(32).toString('base64url');
   const lifecycle = (options && typeof options === 'object') ? (options.lifecycle || {}) : {};
   const mcpAppsHost = require('./server-handlers-mcp-apps.js').createMcpAppsHost(lifecycle);

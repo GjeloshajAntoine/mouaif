@@ -64,7 +64,6 @@ const stub = (() => {
       return pending.splice(idx, 1)[0];
     },
     clearPending: () => {},
-    prunePending: () => 0,
     registerExchange: (p, fn) => exchanges.set(p, fn),
     getExchange: (p) => exchanges.get(p) || null,
     registerRefresher: (p, fn) => refreshers.set(p, fn),
