@@ -303,23 +303,23 @@
 
 .dictation__refresh {
   font: inherit;
-  font-size: 0.76rem;
-  font-weight: 600;
-  color: var(--accent);
-  background: transparent;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--fg);
+  background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-sm);
   /* The project's tap floor is 44px and this is a real touch target, so it
      gets the full height even though the row it sits in is dense. */
-  min-height: 44px;
+  min-height: var(--tap);
   padding: 0 14px;
   cursor: pointer;
   flex: 0 0 auto;
-  transition: background 80ms ease, border-color 80ms ease;
+  transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease;
 }
 
 @media (hover: hover) {
-  .dictation__refresh:hover:not(:disabled)  { background: var(--surface-2); border-color: var(--border-strong); }
+  .dictation__refresh:hover:not(:disabled)  { background: var(--surface-3); border-color: var(--border-strong); }
 }
 .dictation__refresh:active:not(:disabled) { background: var(--surface-3); }
 .dictation__refresh:disabled { opacity: 0.55; cursor: not-allowed; }

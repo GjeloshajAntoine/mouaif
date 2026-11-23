@@ -40,10 +40,10 @@ margin-inline: auto;
 
 .chat-view__back {
 font: inherit;
-color: var(--fg-soft);
+color: var(--accent);
 background: transparent;
 border: 0;
-border-radius: var(--r-sm);
+border-radius: var(--r-md);
 padding: 0;
 /* 44 px: the head's first row is already as tall as the stacked icon
   column beside it, so a full-size back target costs no layout. */
@@ -51,16 +51,16 @@ min-height: var(--tap);
 min-width: var(--tap);
 width: var(--tap);
 height: var(--tap);
-font-size: 0.95rem;
+font-size: 1.1rem;
 line-height: 1;
 cursor: pointer;
 display: inline-flex;
 align-items: center;
 justify-content: center;
-transition: background 80ms ease, color 80ms ease;
+transition: background var(--dur-fast) ease, opacity var(--dur-fast) ease;
 }
 @media (hover: hover) {
-  .chat-view__back:hover { background: var(--surface-2); color: var(--fg); }
+  .chat-view__back:hover { background: var(--surface-2); }
 }
 .chat-view__back:active { background: var(--surface-3); }
 

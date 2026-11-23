@@ -441,7 +441,8 @@ box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 32%, transparent), inset 
 }
 .page-bar__add--label {
   width: auto;
-  padding: 0 12px;
+  padding: 0 14px;
+  border-radius: var(--r-sm);
   font-size: 0.86rem;
   font-weight: 600;
   white-space: nowrap;
