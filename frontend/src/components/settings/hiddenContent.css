@@ -181,7 +181,7 @@ border-top: 1px solid var(--border); background: var(--bg); display: grid; gap: 
 .hidden-content__detail { font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
 .hidden-content__badge {
   font-size: 0.6875rem; font-weight: 600; padding: 0.0625rem 0.4375rem;
-  border-radius: var(--r-pill); color: var(--warn, #e3b341); background: rgba(227, 179, 65, 0.14);
+  border-radius: var(--r-pill); color: var(--warning); background: var(--warning-soft);
 }
 .hidden-content__manual-toggle { flex: 0 0 auto; font-size: 0.85rem; }
 .hidden-content__manual-toggle[aria-expanded="true"] { background: var(--surface-2); color: var(--fg); }

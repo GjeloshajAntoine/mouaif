@@ -1163,7 +1163,7 @@ textarea#projectEditor {
    The standing description of the saved choice lives in the row's note, not
    here — painting a permanent sentence green made it read as unread feedback. */
 .settings-project__shell-review-warn {
-  color: var(--warn, #c98a1a);
+  color: var(--warning);
 }
 
 /* Tool wording page (docs/features/tool-overrides.md): one collapsible row per
@@ -1260,7 +1260,7 @@ textarea#projectEditor {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-md);
 }
 .tool-ov__savebar-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .tool-ov__savebar-count { font-weight: 600; font-size: 0.86rem; }

@@ -3098,7 +3098,7 @@ overflow: hidden;
 .wp__prompt-sheet {
 flex: 0 1 520px;
 border: 1px solid var(--border-strong);
-box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+box-shadow: var(--shadow-lg);
 }
 }
 .wp__prompt-form {
@@ -3289,9 +3289,9 @@ background: var(--surface);
   gap: 4px;
 }
 
-.tool-card__review[data-tone="safe"] { border-left-color: var(--success, #2f9e5f); }
-.tool-card__review[data-tone="caution"] { border-left-color: var(--warn, #c98a1a); }
-.tool-card__review[data-tone="danger"] { border-left-color: var(--danger, #d04545); }
+.tool-card__review[data-tone="safe"] { border-left-color: var(--success); }
+.tool-card__review[data-tone="caution"] { border-left-color: var(--warning); }
+.tool-card__review[data-tone="danger"] { border-left-color: var(--danger); }
 
 .tool-card__review-head {
   display: flex;
@@ -3318,9 +3318,9 @@ background: var(--surface);
   color: var(--fg);
 }
 
-.tool-card__review[data-tone="safe"] .tool-card__review-verdict { background: rgba(47, 158, 95, 0.16); color: var(--success, #2f9e5f); }
-.tool-card__review[data-tone="caution"] .tool-card__review-verdict { background: rgba(201, 138, 26, 0.16); color: var(--warn, #c98a1a); }
-.tool-card__review[data-tone="danger"] .tool-card__review-verdict { background: rgba(208, 69, 69, 0.16); color: var(--danger, #d04545); }
+.tool-card__review[data-tone="safe"] .tool-card__review-verdict { background: var(--success-soft); color: var(--success); }
+.tool-card__review[data-tone="caution"] .tool-card__review-verdict { background: var(--warning-soft); color: var(--warning); }
+.tool-card__review[data-tone="danger"] .tool-card__review-verdict { background: var(--danger-soft); color: var(--danger); }
 
 .tool-card__review-model {
   font-size: 0.62rem;

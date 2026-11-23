@@ -121,7 +121,7 @@
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--surface);
-  box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+  box-shadow: var(--shadow-md);
 }
 .ext-menu__item {
   display: flex;

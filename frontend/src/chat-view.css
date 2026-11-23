@@ -340,7 +340,7 @@ transition: background 80ms ease;
   background: var(--surface-3);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-sm);
-  box-shadow: 0 4px 12px rgba(0,0,0,.25);
+  box-shadow: var(--shadow-md);
   z-index: 10;
   display: flex;
   flex-direction: column;
@@ -978,7 +978,7 @@ overflow: hidden;
 touch-action: manipulation;
 overscroll-behavior: none;
 border-radius: var(--r-lg) var(--r-lg) 0 0;
-  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-lg);
 }
 /* Avoid iOS focus zoom without disabling input or changing page scale. */
 .mp__search,
