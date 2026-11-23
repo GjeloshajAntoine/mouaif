@@ -159,7 +159,7 @@
   color: var(--fg-soft);
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   cursor: pointer;
   min-height: var(--tap);
   min-width: var(--tap);

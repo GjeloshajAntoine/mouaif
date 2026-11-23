@@ -363,8 +363,7 @@ export function JsConsole(props) {
         placeholder('Evaluate JavaScript in the page…'),
         EditorView.theme({
           '&': { height: 'auto', fontSize: '13px' },
-          '.cm-content': { padding: '8px 0', caretColor: '#528bff' },
-          '.cm-gutters': { backgroundColor: '#282c34', borderRight: '1px solid #21252b' },
+          '.cm-content': { padding: '8px 0', caretColor: 'var(--accent)' },
           '.cm-line': { padding: '0 8px' }
         }),
       ]

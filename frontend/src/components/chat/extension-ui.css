@@ -152,7 +152,7 @@
 /* mouaif/message.annotate: small badges in a saved message's head. */
 .chat-msg__notes { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 6px; }
 .chat-msg__note {
-  font-size: 0.72rem; line-height: 1.5; padding: 0 6px; border-radius: 999px;
+  font-size: 0.72rem; line-height: 1.5; padding: 0 6px; border-radius: var(--r-pill);
   background: var(--accent-soft, var(--surface-2)); color: var(--accent, var(--fg)); white-space: nowrap;
 }
 .chat-msg__note[data-tone="ok"] { background: var(--success-soft); color: var(--success); }

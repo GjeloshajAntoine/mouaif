@@ -21,7 +21,7 @@
   color: var(--fg-soft);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   min-height: 24px;
   /* Subtract the 10 px side margins from the viewport-budget so the
      pill fits inside the parent's content width. The inline-flex
@@ -59,20 +59,20 @@
    (busy) where the user already knows something is happening. */
 .inspector__statuspill--danger {
   color: var(--danger);
-  background: var(--danger-soft, rgba(255, 138, 138, 0.12));
-  border-color: rgba(255, 138, 138, 0.4);
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
 }
 .inspector__statuspill--danger .inspector__statuspill-dot { background: var(--danger); }
 .inspector__statuspill--warn {
   color: var(--warning);
-  background: var(--warning-soft, rgba(240, 196, 106, 0.12));
-  border-color: rgba(240, 196, 106, 0.4);
+  background: var(--warning-soft);
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
 }
 .inspector__statuspill--warn .inspector__statuspill-dot { background: var(--warning); }
 .inspector__statuspill--ok {
   color: var(--success);
-  background: rgba(111, 212, 154, 0.12);
-  border-color: rgba(111, 212, 154, 0.4);
+  background: var(--success-soft);
+  border-color: color-mix(in srgb, var(--success) 40%, transparent);
 }
 .inspector__statuspill--ok .inspector__statuspill-dot { background: var(--success); }
 .inspector__statuspill--busy .inspector__statuspill-dot {
@@ -210,7 +210,7 @@
   align-items: center;
   gap: 6px;
   border: 1px solid var(--border-strong);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--surface-2);
   color: var(--fg-soft);
   font-family: var(--font-mono);
@@ -320,7 +320,7 @@
   color: var(--on-accent);
   background: var(--accent);
   border-color: var(--accent);
-  box-shadow: 0 1px 0 rgba(255,255,255,.2) inset, 0 1px 4px rgba(110,168,254,.2);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.2) inset, var(--shadow-sm);
 }
 /* Corner pill: a small absolute-positioned count badge on chips that
    have entries. Sits in the top-right of the chip; on a tiny 22 px
@@ -333,7 +333,7 @@
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--danger);
   color: #fff;
   font-size: 0.62rem;

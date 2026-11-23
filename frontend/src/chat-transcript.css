@@ -688,7 +688,7 @@
 .chat-view__scroll-nav[data-expanded="false"] > .chat-view__nav-btn,
 .chat-view__scroll-nav[data-expanded="false"] > .chat-view__nav-btn:disabled {
   transform: translateY(var(--fold)) scale(0.2);
-  background: var(--fg-muted, var(--fg));
+  background: var(--fg-soft);
   border-color: transparent;
   box-shadow: none;
   opacity: 0.6;

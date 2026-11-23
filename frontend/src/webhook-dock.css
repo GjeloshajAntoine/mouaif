@@ -115,7 +115,7 @@
 .webhook-call__status {
   margin-left: auto;
   padding: 1px 8px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   font-size: 0.68rem;
   background: var(--surface-2);
   color: var(--muted);

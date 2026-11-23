@@ -437,7 +437,7 @@ letter-spacing: 0.04em;
 text-transform: uppercase;
 color: var(--on-accent);
 background: var(--accent);
-border-radius: 999px;
+border-radius: var(--r-pill);
 }
 /* The priority badge — a declaration the element stores as `!important`.
 Outlined rather than filled, so it never competes with the `changed` chip for
@@ -453,7 +453,7 @@ letter-spacing: 0.01em;
 color: var(--accent);
 background: transparent;
 border: 1px solid var(--accent);
-border-radius: 999px;
+border-radius: var(--r-pill);
 }
 .inspector__styles-val {
 flex: 1 1 auto;
@@ -670,7 +670,7 @@ font-weight: 600;
 text-align: center;
 color: var(--fg-soft);
 background: var(--surface-3);
-border-radius: 999px;
+border-radius: var(--r-pill);
 }
 /* "Show rules" / "Hide rules" is a labelled button, not a chevron: the rest
 of this panel labels its buttons, and a bare glyph would need a tooltip that
@@ -787,7 +787,7 @@ font-weight: 600;
 font-variant-numeric: tabular-nums;
 color: var(--fg-soft);
 background: var(--surface-3);
-border-radius: 999px;
+border-radius: var(--r-pill);
 }
 /* The selector is the identity of the rule, so it gets the monospace
 treatment and wraps rather than ellipsizing: a truncated comma-separated
@@ -815,7 +815,7 @@ letter-spacing: 0.04em;
 text-transform: uppercase;
 color: var(--fg-soft);
 background: var(--surface-3);
-border-radius: 999px;
+border-radius: var(--r-pill);
 }
 /* A long `@media (min-width: …) and (…)` condition would otherwise push the
 header past its 44 px target by wrapping. Bounded and ellipsized; the full
@@ -906,7 +906,7 @@ font-weight: 600;
 font-variant-numeric: tabular-nums;
 color: var(--fg-soft);
 background: var(--surface-3);
-border-radius: 999px;
+border-radius: var(--r-pill);
 }
 /* "Show" turns the chips into a filter rather than a second row of tabs. The
 label rides inside the same flex item as the chips (see the comment in
@@ -1313,7 +1313,7 @@ font-weight: 600;
 color: var(--fg-soft);
 background: var(--surface-2);
 border: 1px solid var(--border-strong);
-border-radius: 999px;
+border-radius: var(--r-pill);
 cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
@@ -1341,7 +1341,7 @@ top: 2px;
 right: 3px;
 min-width: 1em;
 padding: 0 2px;
-border-radius: 999px;
+border-radius: var(--r-pill);
 font-size: 0.56rem;
 font-weight: 700;
 line-height: 1.3;

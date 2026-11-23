@@ -374,13 +374,13 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  background: #282c34;
-  color: #abb2bf;
+  background: var(--surface);
+  color: var(--fg-soft);
 }
-.fe__editor-host .cm-editor { height: 100%; }
+.fe__editor-host .cm-editor { height: 100%; background: var(--surface); }
 .fe__editor-host .cm-scroller { font-family: var(--font-mono); font-size: 12.5px; line-height: 1.45; }
 .fe__editor-host .cm-content { padding: 6px 0; }
-.fe__editor-host .cm-gutters { background: #282c34; border-right: 1px solid #21252b; }
+.fe__editor-host .cm-gutters { background: var(--surface); border-right: 1px solid var(--border); }
 /* Match CodeMirror's built-in search panel to the compact modal theme */
 .fe__editor-host .cm-panels {
   background: var(--surface-2);
@@ -464,7 +464,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #1f2227;
+  background: var(--bg);
   color: var(--fg-soft);
   padding: 10px;
   -webkit-overflow-scrolling: touch;

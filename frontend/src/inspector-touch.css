@@ -786,7 +786,7 @@ border-radius: 50%;
 inset: 14px 16px 20px 12px;
 background: var(--surface-3);
 border: 1px solid var(--border-strong);
-box-shadow: 4px 6px 10px rgba(0, 0, 0, 0.55);
+box-shadow: var(--shadow-md);
 }
 .inspector__propcard--border .inspector__propcard-box {
 inset: 10px;
@@ -806,7 +806,7 @@ background: var(--warning);
    before the tap, which is the whole reason the picture exists. */
 .inspector__propcard--gradient .inspector__propcard-box {
 inset: 6px;
-background: linear-gradient(135deg, #4f8cff 0%, #8b5cf6 100%);
+background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hi-2) 100%);
 border-radius: var(--r-sm);
 }
 .inspector__propcard--gradient .inspector__propcard-mark {

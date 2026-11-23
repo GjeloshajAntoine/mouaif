@@ -113,7 +113,7 @@ color: var(--fg-soft); cursor: pointer;
 }
 .prompts__dirty {
   margin: 4px 0 0;
-  color: var(--warning, #f0c46a); /* amber: warn, not error */
+  color: var(--warning); /* amber: warn, not error */
   font-size: 0.74rem;
 }
 /* Scope segment fills the row so both halves are equal tap targets. */
@@ -1194,7 +1194,7 @@ textarea#projectEditor {
   color: var(--accent);
   font-size: 0.66rem;
   border: 1px solid var(--accent);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   padding: 0 7px;
 }
 .tool-ov__source { margin-left: auto; color: var(--muted); font-size: 0.7rem; }
@@ -1215,7 +1215,7 @@ textarea#projectEditor {
 .tool-ov__fields { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .tool-ov__field { display: flex; flex-direction: column; gap: 4px; }
 .tool-ov__field-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 0.8rem; }
-.tool-ov__type { color: var(--muted); font-size: 0.66rem; border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; }
+.tool-ov__type { color: var(--muted); font-size: 0.66rem; border: 1px solid var(--border); border-radius: var(--r-pill); padding: 0 6px; }
 .tool-ov__filter { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; min-height: var(--tap); }
 .tool-ov__empty { padding: 8px 4px; }
 .tool-ov__sample { margin: 4px 0; padding: 6px 8px; overflow-x: auto; font-size: 0.72rem; background: var(--surface-2); border-radius: var(--r-sm); }
@@ -1327,7 +1327,7 @@ textarea#projectEditor {
 /* The card is surface-2, the plain button's own colour: lift its buttons a step so they read as buttons. */
 .tool-ov__card .btn:not(.btn--primary):not(.btn--danger),
 .tool-ov__body .btn:not(.btn--primary):not(.btn--danger) { background: var(--surface-3); }
-.tool-ov__card .btn--danger { border: 1px solid rgba(255,138,138,.3); }
+.tool-ov__card .btn--danger { border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); }
 .tool-ov__card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: var(--tap); }
 .tool-ov__card-title { font-weight: 700; font-size: 1rem; overflow-wrap: anywhere; }
 .tool-ov__card-name { flex: 1 1 auto; min-width: 0; font-weight: 700; }

@@ -922,7 +922,7 @@ font-weight: 700;
 letter-spacing: 0.04em;
 color: var(--on-accent);
 background: var(--accent);
-border-radius: 999px;
+border-radius: var(--r-pill);
 pointer-events: none;
 }
 .webpreview-dock__dismiss {
@@ -976,6 +976,9 @@ gap: 2px;
 padding: 3px 2px 3px 4px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
+  /* Deliberately between --r-md and --r-lg: the composer is a pill-shaped
+     input, and a full --r-pill on a two-line box would round the toolbar
+     row into a lozenge. */
   border-radius: 1.4rem;
   flex: 1 1 auto;
   min-width: 0;
@@ -2447,7 +2450,6 @@ asks the model to recapture the same URL. */
   --sheet-width: 960px;
   --sheet-max-width: 1120px;
   --sheet-height: min(82vh, 820px);
-  --sheet-shadow: rgba(0, 0, 0, 0.55);
 }
 
 .wp__head {
@@ -2997,7 +2999,7 @@ position: static;
   color: var(--fg-soft);
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   cursor: pointer;
 }
 .wp-cmp__pick--on { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
@@ -3040,7 +3042,7 @@ position: static;
   font-weight: 700;
   color: #fff;
   background: rgba(0, 0, 0, 0.6);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   pointer-events: none;
 }
 .wp-cmp__tag--before { left: 4px; }
@@ -3313,7 +3315,7 @@ background: var(--surface);
   font-weight: 700;
   letter-spacing: 0.03em;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--surface-3);
   color: var(--fg);
 }

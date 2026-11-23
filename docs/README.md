@@ -198,7 +198,7 @@ Published pages about how the app is built. They are reachable by URL but not li
 - [Routing](features/routing.md) — every hash the app answers and its parameters.
 - [Modal sheets](features/modal-sheets.md) — shared Escape, Tab, and focus behavior for full-screen sheets.
 - [Back closes the open sheet](features/sheet-back-gesture.md) — the phone's Back gesture closes a sheet or picker instead of leaving the page.
-- [Design tokens and shared UI styles](features/design-tokens.md) — the CSS tokens, the shared overflow menu, and the spinner every screen reuses.
+- [Design tokens and shared UI styles](features/design-tokens.md) — the CSS token set (surfaces, text, radius, elevation, motion), the shared overflow menu, and the spinner every screen reuses.
 - [Content Security Policy](features/content-security-policy.md) — the policy the app shell ships with.
 - [Docker smoke test](features/docker-smoke-test.md) — build and verify mouaif in containers.
 - [Cross-process race test](features/docker-race-test.md) — run two servers over one store and expose the races that need two processes.

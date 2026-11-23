@@ -23,21 +23,22 @@ function escapeXml(str) {
     .replace(/'/g, '&#39;');
 }
 
-// Palette tuned to match mouaif's dark theme tokens so the rendered SVG works
-// both inline and inside the dark full-screen image lightbox (where CSS custom
-// properties from the page are not inherited by an `<img>` data URI).
+// Palette mirroring base.css's dark theme tokens (midnight) so the rendered
+// SVG matches inline and inside the dark full-screen image lightbox, where CSS
+// custom properties from the page are not inherited by an `<img>` data URI.
+// Keep these literals in step with frontend/src/base.css.
 const PALETTE = {
-  bg: '#131824',
-  surface: '#1c2333',
-  surfaceHi: '#273046',
-  border: '#3b4866',
+  bg: '#0a0d12',
+  surface: '#121722',
+  surfaceHi: '#252f44',
+  border: '#323e56',
   accent: '#6ea8fe',
   accentSoft: '#1e2d4a',
-  fg: '#eceaf1',
-  fgSoft: '#b6bac9',
-  muted: '#8b8a98',
-  success: '#6fd49a',
-  warning: '#f0c46a',
+  fg: '#eff1f7',
+  fgSoft: '#bcc3d4',
+  muted: '#8a92a6',
+  success: '#63d494',
+  warning: '#f0c264',
   fontSans: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
   fontMono: 'ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace'
 };

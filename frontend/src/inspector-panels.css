@@ -23,8 +23,8 @@ min-height: 0;
 .inspector__jsconsole {
 display: flex;
 flex-direction: column;
-background: #282c34;
-color: #abb2bf;
+background: var(--surface);
+color: var(--fg-soft);
 border: 1px solid var(--border);
 border-radius: var(--r-md);
 overflow: hidden;
@@ -41,10 +41,10 @@ gap: 6px;
 /* No vertical padding: the 44 px button sets the strip's height, so the row is
 exactly one tap target tall instead of a target inside a taller box. */
 padding: 0 4px 0 10px;
-background: #21252b;
-border-bottom: 1px solid #21252b;
+background: var(--surface-2);
+border-bottom: 1px solid var(--border);
 font-size: 0.66rem;
-color: #7d8799;
+color: var(--muted);
 }
 .inspector__jsconsole-hint {
 /* `flex-basis: 120px` is what lets the hint and the button share one 366 px
@@ -67,9 +67,9 @@ justify-content: center;
 min-width: var(--tap);
 min-height: var(--tap);
 padding: 0;
-background: #ffffff0d;
-color: #abb2bf;
-border: 1px solid #3a4049;
+background: var(--surface-3);
+color: var(--fg-soft);
+border: 1px solid var(--border-strong);
 border-radius: var(--r-sm);
 font: inherit;
 font-size: 1rem;
@@ -78,9 +78,9 @@ cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 }
 @media (hover: hover) {
-  .inspector__jsconsole-btn:hover { background: #ffffff17; color: #e6e6e6; }
+  .inspector__jsconsole-btn:hover { background: var(--surface-2); color: var(--fg); }
 }
-.inspector__jsconsole-btn:active { background: #ffffff22; }
+.inspector__jsconsole-btn:active { background: var(--border-strong); }
 /* The editor is one line tall while the placeholder is all there is, and grows
 with what has been typed. A fixed 108 px box was dead space above the log — on
 a phone the card was more empty than used, and the placeholder (the only thing
@@ -106,15 +106,15 @@ font-size: 13px;
 line-height: 1.5;
 }
 .inspector__jsconsole-editor .cm-content { padding: 8px 0; }
-.inspector__jsconsole-editor .cm-gutters { background: #282c34; border-right: 1px solid #21252b; }
-.inspector__jsconsole-editor .cm-activeLine { background: #6699ff0b; }
+.inspector__jsconsole-editor .cm-gutters { background: var(--surface); border-right: 1px solid var(--border); }
+.inspector__jsconsole-editor .cm-activeLine { background: var(--accent-soft); }
 .inspector__jsconsole-editor .cm-focused { outline: none; }
 /* The autocomplete picker matches the inspector's dark surfaces and
 mobile-friendly 44px touch rows (CodeMirror's default is ~1.1rem,
 which is tight on a phone). */
 .mouaif-console-autocomplete.cm-tooltip {
 border: 1px solid var(--border-strong) !important;
-background: #353a42 !important;
+background: var(--surface-3) !important;
 border-radius: var(--r-md) !important;
 box-shadow: var(--shadow-lg) !important;
 }
@@ -135,7 +135,7 @@ display: flex !important;
 align-items: center;
 }
 .mouaif-console-autocomplete ul li[aria-selected] {
-background: #2c313a !important;
+background: var(--surface-2) !important;
 }
 .mouaif-console-autocomplete .cm-completionIcon {
 width: 1em;

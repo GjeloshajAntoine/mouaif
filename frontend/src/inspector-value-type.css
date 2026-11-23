@@ -99,7 +99,7 @@
   font-family: var(--font-mono);
   font-size: 0.72rem;
   border: 1px solid var(--border-strong);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--surface-2);
   color: var(--fg-soft);
   cursor: pointer;
