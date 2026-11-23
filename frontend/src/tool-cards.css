@@ -19,7 +19,13 @@
 .tool-card--call .tool-card__name { color: var(--fg-soft); }
 .tool-card--result { cursor: default; }
 .tool-card--subagent { border-color: transparent; }
-.tool-card--authorization { border-color: var(--warning); background: color-mix(in srgb, var(--warning) 7%, transparent); }
+.tool-card--authorization {
+  padding: 6px 10px 8px;
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface));
+  box-shadow: var(--shadow-sm);
+}
 
 .tool-card.is-expanded {
   background: transparent;
@@ -443,8 +449,9 @@ color: var(--fg-soft);
 .tool-card.tool-card--subagent .tool-card__body {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  padding: 4px 6px;
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
+  padding: 6px 8px;
   /* One delegated run is bounded, however long it runs. Uncapped, a run
      with twenty rounds grew the card past the viewport and pushed the rest
      of the transcript off screen — the card the user was reading about had

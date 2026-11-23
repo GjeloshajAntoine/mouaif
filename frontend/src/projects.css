@@ -51,9 +51,17 @@
    the last row instead (see .project-card__new-actions). */
 .project-card {
   background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
+  transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
+}
+@media (hover: hover) {
+  .project-card:hover {
+    border-color: color-mix(in srgb, var(--border-strong) 72%, var(--border));
+  }
 }
 /* Reordering: the dragged card is lifted above the others, which slide aside.
    `translate` / `scale` (not `transform`) so they add to the entrance
@@ -84,8 +92,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: var(--tap);
-  padding-left: 12px;
+  min-height: calc(var(--tap) + 6px);
+  padding: 4px 4px 4px 14px;
   /* A press-and-hold on the header lifts the card (useLongPressReorder), so
      the hold must not select text or open the browser's callout. */
   -webkit-user-select: none;
@@ -96,29 +104,39 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .project-card__name {
-  font-weight: 600;
-  font-size: 0.94rem;
+  font-weight: 650;
+  font-size: 0.96rem;
+  letter-spacing: -0.01em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  line-height: 1.2;
+  line-height: 1.25;
 }
 .project-card__cost {
-  color: var(--muted);
-  font-size: 0.75rem;
+  color: var(--fg-soft);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   flex-shrink: 0;
 }
 .project-card__path {
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: 0.71rem;
   font-family: var(--font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  line-height: 1.2;
+  line-height: 1.25;
 }
 
 /* Shared between .project-card__menu and .sprojects__menu: both render a
@@ -188,10 +206,10 @@ scrollbar-width: thin;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
+  padding: 6px 6px 6px 14px;
   background: transparent;
   cursor: pointer;
-  transition: background 80ms ease;
+  transition: background 100ms ease;
   min-height: var(--tap);
   border-top: 1px solid var(--border);
   /* The capped list scrolls instead of shrinking its rows. */
@@ -354,7 +372,8 @@ flex-shrink: 0;
 .project-card__new-actions {
 display: flex; align-items: stretch; overflow-x: auto; scrollbar-width: none;
 border-top: 1px solid var(--border);
-border-radius: 0 0 var(--r-md) var(--r-md);
+background: color-mix(in srgb, var(--surface-2) 45%, var(--surface));
+border-radius: 0 0 calc(var(--r-md) - 1px) calc(var(--r-md) - 1px);
 }
 .project-card__new-actions::-webkit-scrollbar { display: none; }
 .project-card__new, .project-card__prompt-new {

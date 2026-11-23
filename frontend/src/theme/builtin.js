@@ -15,18 +15,18 @@ export const DEFAULT_THEME_ID = 'midnight';
 // a theme leaves the token unset.
 export const COLOR_TOKENS = [
   { name: '--bg', label: 'Page', value: '#0a0d12' },
-  { name: '--surface', label: 'Cards', value: '#131824' },
-  { name: '--surface-2', label: 'Raised rows', value: '#1c2333' },
-  { name: '--surface-3', label: 'Menus & code', value: '#273046' },
-  { name: '--border-strong', label: 'Edges', value: '#333d52' },
-  { name: '--fg', label: 'Text', value: '#eceaf1' },
-  { name: '--fg-soft', label: 'Secondary text', value: '#b6bac9' },
-  { name: '--muted', label: 'Muted text', value: '#8b8a98' },
+  { name: '--surface', label: 'Cards', value: '#121722' },
+  { name: '--surface-2', label: 'Raised rows', value: '#1a2232' },
+  { name: '--surface-3', label: 'Menus & code', value: '#252f44' },
+  { name: '--border-strong', label: 'Edges', value: '#323e56' },
+  { name: '--fg', label: 'Text', value: '#eff1f7' },
+  { name: '--fg-soft', label: 'Secondary text', value: '#bcc3d4' },
+  { name: '--muted', label: 'Muted text', value: '#8a92a6' },
   { name: '--accent', label: 'Accent', value: '#6ea8fe' },
-  { name: '--on-accent', label: 'Text on accent', value: '#0a1428' },
-  { name: '--success', label: 'Success', value: '#6fd49a' },
-  { name: '--warning', label: 'Warning', value: '#f0c46a' },
-  { name: '--danger', label: 'Danger', value: '#ff8a8a' }
+  { name: '--on-accent', label: 'Text on accent', value: '#091326' },
+  { name: '--success', label: 'Success', value: '#63d494' },
+  { name: '--warning', label: 'Warning', value: '#f0c264' },
+  { name: '--danger', label: 'Danger', value: '#ff8585' }
 ];
 
 const FLAT_BACKGROUND = 'html, body { background: var(--bg); }';

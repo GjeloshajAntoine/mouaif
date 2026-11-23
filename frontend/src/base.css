@@ -7,53 +7,50 @@
      lightness apart, so cards floated on a near-identical page and the
      hierarchy read as "flat fog". Each step is now clearly distinct. */
   --bg:           #0a0d12;   /* page background */
-  --surface:      #131824;   /* cards, scrollers */
-  --surface-2:    #1c2333;   /* hovered / pressed rows, deeper panels */
-  --surface-3:    #273046;   /* popovers, menus, code blocks */
+  --surface:      #121722;   /* cards, scrollers */
+  --surface-2:    #1a2232;   /* hovered / pressed rows, deeper panels */
+  --surface-3:    #252f44;   /* popovers, menus, code blocks */
 
   /* Borders + dividers. The hairline is an alpha so it recedes at
      mobile density (a solid #232a35 line on every row felt heavy);
      --border-strong stays solid for container edges and focus states. */
-  --border:        rgba(255, 255, 255, 0.07);
-  --border-strong: #333d52;
+  --border:        rgba(220, 232, 255, 0.085);
+  --border-strong: #323e56;
 
-  /* Text — warmed slightly so the cool blue accent reads as an
-     intentional choice, not the default against cold greys. */
-  --fg:        #eceaf1;
-  --fg-soft:   #b6bac9;
-  --muted:     #8b8a98;
-  --muted-2:   #62616e;
-  /* Tab-bar label color. The default --muted (#7b8694) fails WCAG AA
-     against --bg at the tab label's 0.66rem / weight 500 size
-     (≈4.0:1). --tab-label uses --fg-soft (≈9:1) so inactive tab
-     labels stay legible in daylight without competing with the
-     active --accent state. Reserve --muted for tertiary meta text
-     (right-aligned row details, captions) where the lower contrast
-     is correct. */
+  /* Text — crisp cool-neutral hierarchy with high legibility. */
+  --fg:        #eff1f7;
+  --fg-soft:   #bcc3d4;
+  --muted:     #8a92a6;
+  --muted-2:   #60687c;
+  /* Tab-bar label color. The default --muted fails WCAG AA against --bg
+     at the tab label's small size. --tab-label uses --fg-soft so inactive
+     tab labels stay legible in daylight without competing with the active
+     --accent state. Reserve --muted for tertiary meta text (right-aligned
+     row details, captions) where the lower contrast is correct. */
   --tab-label: var(--fg-soft);
 
-  /* Accent — slightly more saturated than the old #7fb1ff, which read
-     grey-blue on dark surfaces. --accent-soft is an alpha tint (not a
-     solid #2a3a55) so chips adapt to whatever surface they sit on. */
+  /* Accent — clean cobalt-blue that reads crisp on dark surfaces and
+     stays vibrant without neon glare. --accent-soft is an alpha tint
+     so chips adapt to whatever surface they sit on. */
   --accent:        #6ea8fe;
   --accent-soft:   rgba(110, 168, 254, 0.16);
-  --accent-press:  #5b93f0;
+  --accent-press:  #5690ee;
   --accent-hi:     #9cc2ff;   /* lighter accent for gradient ends / cost text */
-  --accent-hi-2:   #b9d4ff;
-  --on-accent:     #0a1428;   /* readable text on accent */
+  --accent-hi-2:   #bdd7ff;
+  --on-accent:     #091326;   /* readable text on accent */
 
   /* Semantic */
-  --success: #6fd49a;
-  --success-soft: rgba(111, 212, 154, 0.14);
-  --warning: #f0c46a;
-  --warning-soft: rgba(240, 196, 106, 0.14);
-  --danger:  #ff8a8a;
-  --danger-soft: #3a2024;
+  --success: #63d494;
+  --success-soft: rgba(99, 212, 148, 0.14);
+  --warning: #f0c264;
+  --warning-soft: rgba(240, 194, 100, 0.14);
+  --danger:  #ff8585;
+  --danger-soft: #3a1f24;
 
-  /* Effects */
-  --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
-  --shadow-md: 0 4px 16px rgba(0,0,0,.35);
-  --shadow-lg: 0 12px 32px rgba(0,0,0,.45);
+  /* Effects — layered elevation so cards and popovers feel grounded. */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .36), 0 1px 0 rgba(255, 255, 255, .03) inset;
+  --shadow-md: 0 6px 20px rgba(0, 0, 0, .38), 0 1px 3px rgba(0, 0, 0, .28);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, .50), 0 2px 8px rgba(0, 0, 0, .30);
 
   /* Layout */
   --safe-top:    env(safe-area-inset-top, 0px);
@@ -98,12 +95,11 @@
   --tabbar-h: 44px;   /* minimum touch row; the tab bar adds the iOS inset */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  /* Radius scale — four stops, used everywhere. The codebase used to
-     mix 4/5/6/8/10/12/14/18px one-offs; consolidation keeps cards,
-     bubbles, and sheets visually related. */
-  --r-sm: 6px;    /* chips, inline code, small buttons */
-  --r-md: 10px;   /* inset groups, cards, bubbles */
-  --r-lg: 14px;   /* sheets, hero blocks, picker on phones */
+  /* Radius scale — four stops, used everywhere. Soft, modern radii keep
+     cards, bubbles, and sheets visually related without feeling heavy. */
+  --r-sm: 8px;    /* chips, inline code, small buttons */
+  --r-md: 12px;   /* inset groups, cards, bubbles */
+  --r-lg: 16px;   /* sheets, hero blocks, picker on phones */
   --r-pill: 999px;
 
   /* Motion: short, transform-only. The reduced-motion media query
@@ -144,21 +140,24 @@ html {
      inset strips at the top/bottom would otherwise show the default
      white canvas. */
   background:
-    radial-gradient(900px 420px at 50% 110%, rgba(110, 168, 254, 0.045), transparent 60%),
+    radial-gradient(720px 360px at 14% -6%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 64%),
+    radial-gradient(900px 420px at 50% 112%, color-mix(in srgb, var(--accent) 5.5%, transparent), transparent 60%),
     var(--bg);
 }
 
 body {
   width: 100%;
   min-width: 0;
-  /* Flat near-black page; cards and the project hero bring their own
-     surfaces so the hierarchy stays clear. A very faint accent glow at
-     the bottom anchors the tab bar. */
+  /* Subtle top-left and bottom ambient accents lift the dark canvas
+     without competing with cards or text. */
   background:
-    radial-gradient(900px 420px at 50% 110%, rgba(110, 168, 254, 0.045), transparent 60%),
+    radial-gradient(720px 360px at 14% -6%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 64%),
+    radial-gradient(900px 420px at 50% 112%, color-mix(in srgb, var(--accent) 5.5%, transparent), transparent 60%),
     var(--bg);
   color: var(--fg);
   font: 15px/1.45 var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;

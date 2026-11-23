@@ -191,6 +191,7 @@ background: var(--surface-2); color: var(--fg); cursor: pointer;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
   overflow: visible;
   display: flex;
   align-items: center;
@@ -287,7 +288,9 @@ font-size: 0.78rem;
 }
 .provider-row {
   background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 .provider-row__main {

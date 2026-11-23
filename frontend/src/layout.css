@@ -21,7 +21,9 @@
   margin: 0 auto;
   position: relative;
   overflow: hidden;
-  background: var(--bg);
+  /* Transparent so the subtle ambient gradients on html/body shine through
+     on default and animated themes alike. */
+  background: transparent;
   /* Safe-area insets live in the app chrome, not on <html>/<body>: the
 document is locked to the viewport (base.css) so it can never become
 a scroll container that competes with inner scrollers on iOS. The
@@ -92,7 +94,7 @@ padding-top: 0;
   flex-direction: column;
   min-height: 0;
   overflow: visible;
-  background: var(--bg);
+  background: transparent;
 }
 /* Chat moves the safe-area inset into its painted status row, avoiding a
 second empty strip below the composer. Other drill-in views keep the
@@ -126,26 +128,26 @@ padding-bottom: 0;
 }
 
 /* Groups: iOS-style inset lists. A <section class="group"> holds a
-   title (optional, .group__title) and a list of rows. The list has
-   no border, no shadow, and only a single rounded container — the
-   mobile-native shape (vs. "stacked cards" on a desktop UI). */
+   title (optional, .group__title) and a list of rows. A crisp 1px
+   hairline and subtle elevation give each group clear definition on
+   both dark and light themes. */
 .group {
-  margin: 10px 10px 0;
+  margin: 14px 12px 0;
   padding: 0;
   border: 0;
 }
-.group:first-of-type { margin-top: 6px; }
+.group:first-of-type { margin-top: 8px; }
 .group__title {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
-  margin: 0 4px 4px;
+  margin: 0 4px 6px;
   padding: 0;
 }
 /* The trailing context note on a group title (e.g. the active project
@@ -163,9 +165,10 @@ padding-bottom: 0;
 /* Placeholder shown in a group when there is nothing to link to yet
    (e.g. no active project). Sits where the .group__list would be. */
 .settings-home__empty {
-  margin: 0 4px;
-  padding: 10px 12px;
+  margin: 0;
+  padding: 12px 14px;
   background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--r-md);
 }
 .group__list {
@@ -173,7 +176,9 @@ padding-bottom: 0;
   margin: 0;
   padding: 0;
   background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 .group__list > li + li { border-top: 1px solid var(--border); }
@@ -186,27 +191,28 @@ padding-bottom: 0;
 .providers__list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 .group__row {
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: var(--tap);
-  padding: 6px 12px;
+  padding: 8px 14px;
   text-decoration: none;
   color: var(--fg);
   border: 0;
   background: transparent;
   font: inherit;
   font-size: 0.9rem;
+  font-weight: 500;
   cursor: pointer;
   width: 100%;
   text-align: left;
-  transition: background 80ms ease;
+  transition: background 100ms ease;
 }
 @media (hover: hover) {
   .group__row:hover { background: var(--surface-2); }
@@ -222,7 +228,8 @@ padding-bottom: 0;
 }
 .group__row-detail {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 400;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -232,10 +239,18 @@ padding-bottom: 0;
 }
 .group__row-chev {
   color: var(--muted-2);
-  font-size: 0.95rem;
+  font-size: 1rem;
   line-height: 1;
   flex-shrink: 0;
-  width: 8px;
+  width: 10px;
+  text-align: right;
+  transition: transform var(--dur-fast) var(--ease), color var(--dur-fast) ease;
+}
+@media (hover: hover) {
+  .group__row:hover .group__row-chev {
+    color: var(--fg-soft);
+    transform: translateX(2px);
+  }
 }
 .group__row-body {
   flex: 1;
@@ -328,15 +343,15 @@ chat view's fixed model-picker sheet. */
 
 .app__header {
 /* Paint through the status-bar safe area and place the compact brand
-inside it. On devices without a top inset, keep the existing 16px row;
+inside it. On devices without a top inset, keep a slim 24px row;
 on notched devices the inset itself becomes the row height, so main
 content starts at the safe-area edge with no extra header strip. */
-min-height: max(16px, var(--safe-top));
-padding: 0 8px;
+min-height: max(24px, var(--safe-top));
+padding: 4px 12px 0;
 display: flex;
 align-items: center;
 justify-content: flex-start;
-gap: 4px;
+gap: 6px;
 }
 
 .app__brand {
@@ -347,26 +362,26 @@ gap: 4px;
 }
 
 .app__logo {
-width: 16px;
-height: 16px;
+width: 18px;
+height: 18px;
 flex-shrink: 0;
-border-radius: var(--r-sm);
-background: linear-gradient(135deg, var(--accent) 0%, var(--accent-press) 100%);
+border-radius: 5px;
+background: linear-gradient(135deg, var(--accent-hi) 0%, var(--accent) 48%, var(--accent-press) 100%);
 display: inline-flex;
 align-items: center;
 justify-content: center;
 color: var(--on-accent);
-box-shadow: 0 1px 4px rgba(110,168,254,.25), inset 0 1px 0 rgba(255,255,255,.25);
+box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 32%, transparent), inset 0 1px 0 rgba(255,255,255,.32);
 }
 .app__logo svg { display: block; }
 
 .app__title {
-  /* The header only carries the logo now; the wordmark is hidden
-     by default to keep the chrome minimal on a phone. Views that
-     need a title (Settings) render their own h1 inside .group__title
-     or a dedicated .view-title. The class is kept so a future
-     header action can re-enable it. */
-  display: none;
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  line-height: 1;
 }
 
 /* (No right-side header spacer. The brand is the only header
@@ -385,16 +400,14 @@ box-shadow: 0 1px 4px rgba(110,168,254,.25), inset 0 1px 0 rgba(255,255,255,.25)
 .view-head {
   display: flex;
   align-items: center;
-  gap: 6px;
-  /* The tab bar below handles the bottom inset; this only needs a
-     little air under the title. */
-  padding: 2px 10px 4px;
+  gap: 8px;
+  padding: 6px 12px 10px;
 }
 .page-bar__title,
 .view-title {
-  font-size: 1.05rem;
+  font-size: 1.25rem;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   margin: 0;
   /* Pages that wrap their head in a <section> (Access, Dictation, Add
      project, Shared with me) would otherwise pick up the small uppercase
@@ -410,12 +423,12 @@ box-shadow: 0 1px 4px rgba(110,168,254,.25), inset 0 1px 0 rgba(255,255,255,.25)
 .page-bar__add {
   font: inherit;
   color: var(--on-accent);
-  background: var(--accent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-hi) 30%, var(--accent)) 0%, var(--accent) 100%);
   border: 0;
-  border-radius: var(--r-sm);
+  border-radius: var(--r-md);
   width: var(--tap);
   height: var(--tap);
-  font-size: 1.15rem;
+  font-size: 1.25rem;
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
@@ -424,17 +437,21 @@ box-shadow: 0 1px 4px rgba(110,168,254,.25), inset 0 1px 0 rgba(255,255,255,.25)
   justify-content: center;
   padding: 0;
   text-decoration: none;
-  transition: background 80ms ease, transform 80ms ease;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 28%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  transition: background 100ms ease, transform 100ms ease, box-shadow 120ms ease;
 }
 .page-bar__add--label {
   width: auto;
-  padding: 0 12px;
+  padding: 0 14px;
   font-size: 0.86rem;
-  font-weight: 500;
+  font-weight: 600;
   white-space: nowrap;
 }
 @media (hover: hover) {
-  .page-bar__add:hover  { background: var(--accent-press); }
+  .page-bar__add:hover  {
+    background: var(--accent-press);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 36%, transparent);
+  }
 }
 .page-bar__add:active { transform: scale(0.95); }
 
@@ -444,18 +461,18 @@ box-shadow: 0 1px 4px rgba(110,168,254,.25), inset 0 1px 0 rgba(255,255,255,.25)
   position: sticky;
   bottom: 0;
   /* Extend the bar surface through the home-indicator area. Controls remain
-     in the 50px content row; only the background/padding reaches the edge. */
-  padding: 0 4px calc(2px + var(--safe-bottom));
+     in the content row; only the background/padding reaches the edge. */
+  padding: 4px 8px calc(4px + var(--safe-bottom));
   /* Opaque fallback matters on iOS versions without color-mix(): without it,
      the declaration is dropped and the safe-area portion looks like a gap. */
   background: var(--surface);
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  -webkit-backdrop-filter: saturate(160%) blur(20px);
-  backdrop-filter: saturate(160%) blur(20px);
+  background: color-mix(in srgb, var(--surface) 88%, var(--bg));
+  -webkit-backdrop-filter: saturate(170%) blur(22px);
+  backdrop-filter: saturate(170%) blur(22px);
   z-index: 30;
   min-height: var(--tabbar-h);
-  /* Subtle top border using CSS variable */
-  box-shadow: 0 -1px 0 var(--border);
+  /* Subtle top border + soft lift above content */
+  box-shadow: 0 -1px 0 var(--border), 0 -8px 24px rgba(0, 0, 0, 0.14);
 }
 
 .app__tablist {
@@ -497,10 +514,9 @@ box-shadow: 0 1px 4px rgba(110,168,254,.25), inset 0 1px 0 rgba(255,255,255,.25)
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 3px;
   min-height: var(--tabbar-h);
-  padding: 4px 2px 0;
-  transform: translateY(2px);
+  padding: 3px 4px 2px;
   border-radius: var(--r-sm);
   text-decoration: none;
   color: var(--tab-label);
@@ -508,7 +524,7 @@ box-shadow: 0 1px 4px rgba(110,168,254,.25), inset 0 1px 0 rgba(255,255,255,.25)
   border: 0;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: color 80ms ease;
+  transition: color 120ms ease, transform 100ms ease;
 }
 @media (hover: hover) {
   .app__tab:hover        { color: var(--fg); }
@@ -520,21 +536,21 @@ box-shadow: 0 1px 4px rgba(110,168,254,.25), inset 0 1px 0 rgba(255,255,255,.25)
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--r-sm);
+  width: 44px;
+  height: 26px;
+  border-radius: var(--r-pill);
   color: inherit;
-  transition: background 120ms ease;
+  transition: background 150ms var(--ease), transform 150ms var(--ease);
 }
-.app__tab-icon svg { display: block; }
+.app__tab-icon svg { display: block; width: 20px; height: 20px; }
 .app__tab.is-active .app__tab-icon {
   background: var(--accent-soft);
 }
 
 .app__tab-label {
-  font-size: 0.65rem;
-  font-weight: 500;
-  letter-spacing: 0;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   line-height: 1.1;
 }
 

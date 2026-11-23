@@ -37,17 +37,21 @@
   font: inherit;
   color: var(--fg);
   background: var(--surface);
-  border: 0;
+  border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  padding: 6px 10px;
+  padding: 6px 12px;
   min-height: var(--tap);
   width: 100%;
-  transition: background 80ms ease, box-shadow 80ms ease;
+  transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
 }
 @media (hover: hover) {
-  .input:hover  { background: var(--surface-2); }
+  .input:hover  { background: var(--surface-2); border-color: var(--border-strong); }
 }
-.input:focus  { background: var(--surface-2); box-shadow: 0 0 0 2px var(--accent); }
+.input:focus  {
+  background: var(--surface-2);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
 .input::placeholder { color: var(--muted-2); }
 
 select.input {
@@ -126,16 +130,16 @@ select.input {
   font-weight: 500;
   color: var(--fg);
   background: var(--surface-2);
-  border: 0;
+  border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  padding: 0 12px;
+  padding: 0 14px;
   min-height: var(--tap);
   font-size: 0.86rem;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 80ms ease, transform 80ms ease, color 80ms ease;
+  transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease, transform var(--dur-fast) ease, color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
   white-space: nowrap;
   /* Some buttons are links (`+ Add agent`, `+ Add action`). */
   text-decoration: none;
@@ -148,18 +152,24 @@ select.input {
 
 .btn--primary {
   color: var(--on-accent);
-  background: var(--accent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-hi) 26%, var(--accent)) 0%, var(--accent) 100%);
+  border-color: transparent;
   font-weight: 600;
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--accent) 26%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.24);
 }
 @media (hover: hover) {
-  .btn--primary:hover  { background: var(--accent-press); }
+  .btn--primary:hover  {
+    background: var(--accent-press);
+    border-color: transparent;
+    box-shadow: 0 3px 12px color-mix(in srgb, var(--accent) 34%, transparent);
+  }
 }
 .btn--primary:active { background: var(--accent-press); transform: scale(0.98); }
 
 .btn--danger {
   color: var(--danger);
   background: transparent;
-  border-color: rgba(255,138,138,.3);
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
 }
 @media (hover: hover) {
   .btn--danger:hover  { background: var(--danger-soft); border-color: var(--danger); }
@@ -198,12 +208,14 @@ select.input {
    one; `.menu-pop__sep` is a hairline divider. */
 .menu-pop {
   position: absolute;
-  min-width: 180px;
-  background: var(--surface-3);
+  min-width: 184px;
+  background: color-mix(in srgb, var(--surface-3) 96%, var(--surface));
+  -webkit-backdrop-filter: saturate(160%) blur(18px);
+  backdrop-filter: saturate(160%) blur(18px);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
-  box-shadow: var(--shadow-md);
-  padding: 4px;
+  box-shadow: var(--shadow-lg);
+  padding: 5px;
   display: flex;
   flex-direction: column;
   gap: 2px;
