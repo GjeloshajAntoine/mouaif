@@ -77,7 +77,7 @@ Imported by style.css. */
   color: var(--fg);
   background: var(--surface-2);
   border: 1px dashed var(--border);
-  border-radius: 10px;
+  border-radius: var(--r-md);
   cursor: copy;
 }
 .provider-form__more > summary {

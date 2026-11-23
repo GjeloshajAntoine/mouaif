@@ -404,7 +404,7 @@ inset: 0;
 /* The reference's centre is one pale folder-shaped object. The plate remains
 as the depth carrier, but its own rectangular paint is transparent so it can
 never read as a second card behind the folder. */
-border-radius: 5px;
+border-radius: var(--r-sm);
 background: transparent;
 box-shadow: none;
 display: flex;
@@ -1913,7 +1913,7 @@ min-height: var(--tap);
   text-align: center;
   color: #fff;
   background: var(--danger);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }

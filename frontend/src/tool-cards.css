@@ -323,7 +323,7 @@ color: var(--fg-soft);
   border-radius: 50%;
   box-sizing: border-box;
 }
-.tool-card__ask-options--multi .tool-card__ask-option-mark { border-radius: 4px; }
+.tool-card__ask-options--multi .tool-card__ask-option-mark { border-radius: var(--r-sm); }
 .tool-card__ask-option.is-selected .tool-card__ask-option-mark {
   border-color: var(--accent);
   background: var(--accent);
@@ -1270,7 +1270,7 @@ padding-right: 10px;
   padding: 4px 8px;
   box-sizing: border-box;
   border: 1px solid var(--danger);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   font-size: 0.8rem;
 }
 .subagent-retry-dock__text {

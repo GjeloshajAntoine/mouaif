@@ -495,7 +495,7 @@ font-size: 0.78rem;
 .settings-project__section-icon > span { display: block; position: relative; }
 .ico-sliders { width: 12px; height: 10px; border-top: 2px solid currentColor; border-bottom: 2px solid currentColor; }
 .ico-sliders::before { content: ''; position: absolute; top: -4px; left: 2px; width: 4px; height: 4px; border-radius: 50%; background: currentColor; box-shadow: 4px 8px 0 currentColor; }
-.ico-chat { width: 12px; height: 9px; border: 2px solid currentColor; border-radius: 4px; }
+.ico-chat { width: 12px; height: 9px; border: 2px solid currentColor; border-radius: var(--r-sm); }
 .ico-chat::after { content: ''; position: absolute; bottom: -5px; left: 1px; border: 3px solid transparent; border-top-color: currentColor; border-left-color: currentColor; }
 .ico-wrench { width: 11px; height: 11px; border: 2px solid currentColor; border-radius: 50%; border-right-color: transparent; border-bottom-color: transparent; transform: rotate(45deg); }
 .ico-wrench::after { content: ''; position: absolute; right: -6px; bottom: -6px; width: 7px; height: 3px; border-radius: 2px; background: currentColor; }
@@ -826,7 +826,7 @@ a.mcps-card__cta,
   flex: 0 0 auto;
   width: 40px;
   height: 40px;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1701,7 +1701,7 @@ textarea#projectEditor {
   flex: none;
   width: 38px;
   height: 38px;
-  border-radius: 11px;
+  border-radius: var(--r-md);
   display: grid;
   place-items: center;
   font-weight: 700;

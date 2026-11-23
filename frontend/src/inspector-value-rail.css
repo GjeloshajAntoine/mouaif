@@ -81,7 +81,7 @@ left: 0;
 right: 0;
 top: 27px;
 height: 8px;
-border-radius: 4px;
+border-radius: var(--r-sm);
 background: var(--surface-3);
 }
 .inspector__rail-fill {
@@ -89,7 +89,7 @@ position: absolute;
 left: 0;
 top: 27px;
 height: 8px;
-border-radius: 4px 0 0 4px;
+border-radius: var(--r-sm) 0 0 var(--r-sm);
 background: var(--accent);
 opacity: 0.55;
 }
@@ -231,7 +231,7 @@ margin-top: 2px;
 .inspector__rail-seg {
 display: inline-flex;
 border: 1px solid var(--border-strong);
-border-radius: 7px;
+border-radius: var(--r-md);
 overflow: hidden;
 }
 /* 44 px target: the segment is one tap, never a modifier key. */
@@ -257,7 +257,7 @@ gap: 4px;
 .inspector__rail-unitchip {
 min-height: 44px;
 padding: 0 9px;
-border-radius: 7px;
+border-radius: var(--r-md);
 border: 1px solid var(--border-strong);
 background: var(--surface);
 color: var(--fg-soft);
@@ -296,7 +296,7 @@ flex-wrap: wrap;
 .inspector__rail-presetchip {
 min-height: 44px;
 padding: 0 10px;
-border-radius: 7px;
+border-radius: var(--r-md);
 border: 1px solid var(--border-strong);
 background: var(--surface);
 color: var(--fg-soft);
@@ -314,7 +314,7 @@ color: var(--accent);
 .inspector__rail-leave {
 min-height: 44px;
 padding: 0 10px;
-border-radius: 7px;
+border-radius: var(--r-md);
 border: 1px solid var(--border-strong);
 background: var(--surface);
 color: var(--fg-soft);

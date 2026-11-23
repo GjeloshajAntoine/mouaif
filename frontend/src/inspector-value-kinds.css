@@ -48,7 +48,7 @@ left: 0;
 right: 0;
 top: 19px;
 height: 8px;
-border-radius: 4px;
+border-radius: var(--r-sm);
 background: var(--surface-3);
 }
 .inspector__rtrack-fill {
@@ -56,7 +56,7 @@ position: absolute;
 left: 0;
 top: 19px;
 height: 8px;
-border-radius: 4px 0 0 4px;
+border-radius: var(--r-sm) 0 0 var(--r-sm);
 background: rgba(255, 255, 255, 0.18);
 }
 .inspector__rthumb {
@@ -99,7 +99,7 @@ position: absolute;
 left: 0;
 top: 11px;
 height: 8px;
-border-radius: 4px 0 0 4px;
+border-radius: var(--r-sm) 0 0 var(--r-sm);
 background: var(--accent);
 opacity: 0.5;
 }
@@ -110,7 +110,7 @@ left: 0;
 right: 0;
 top: 11px;
 height: 8px;
-border-radius: 4px;
+border-radius: var(--r-sm);
 background: var(--surface-3);
 }
 .inspector__subrail-thumb {
@@ -187,7 +187,7 @@ gap: 6px;
 .inspector__shape-chip {
 min-height: 44px;
 padding: 0 12px;
-border-radius: 9px;
+border-radius: var(--r-md);
 border: 1px solid var(--border-strong);
 background: var(--surface-2);
 color: var(--fg);
@@ -227,7 +227,7 @@ line-height: 1.35;
 .inspector__shape-thumb {
 width: 22px;
 height: 22px;
-border-radius: 5px;
+border-radius: var(--r-sm);
 background: var(--surface-3) center / cover no-repeat;
 border: 1px solid var(--border-strong);
 flex: 0 0 auto;

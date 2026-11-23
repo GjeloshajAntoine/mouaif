@@ -101,7 +101,7 @@ align-items: center;
 gap: 6px;
 min-height: 44px;
 padding: 0 11px;
-border-radius: 9px;
+border-radius: var(--r-md);
 border: 1px solid var(--border-strong);
 background: var(--surface-2);
 color: var(--fg);
@@ -201,7 +201,7 @@ text-decoration: line-through;
 .inspector__suggest-snap-btn {
 min-height: 44px;
 padding: 0 10px;
-border-radius: 9px;
+border-radius: var(--r-md);
 border: 1px solid var(--warning);
 background: transparent;
 color: var(--warning);
@@ -215,7 +215,7 @@ transparent or near-background colour is still visible as a chip. */
 .inspector__suggest-sw {
 width: 14px;
 height: 14px;
-border-radius: 4px;
+border-radius: var(--r-sm);
 border: 1px solid rgba(255, 255, 255, 0.25);
 flex: 0 0 auto;
 }
@@ -226,7 +226,7 @@ the danger colour, because an unreadable text colour is a warning. */
 font: inherit;
 font-size: 0.58rem;
 padding: 2px 4px;
-border-radius: 4px;
+border-radius: var(--r-sm);
 background: var(--success-soft);
 color: var(--success);
 white-space: nowrap;
