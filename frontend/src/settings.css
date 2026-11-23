@@ -14,6 +14,7 @@ Imported by style.css. */
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 .prompts__list > li + li { border-top: 1px solid var(--border); }
@@ -70,7 +71,10 @@ width: 100%; min-width: 0; min-height: var(--tap); text-align: left; cursor: poi
 position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0;
 max-height: min(18rem, 55dvh); overflow-y: auto; overscroll-behavior: contain;
 border: 1px solid var(--border); border-radius: var(--r-md);
-background: var(--surface-2); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.32);
+background: color-mix(in srgb, var(--surface-3) 90%, transparent);
+backdrop-filter: blur(12px);
+-webkit-backdrop-filter: blur(12px);
+box-shadow: var(--shadow-lg);
 }
 .prompts__picker-option {
 display: flex; align-items: center; gap: 8px; width: 100%; min-height: var(--tap);
