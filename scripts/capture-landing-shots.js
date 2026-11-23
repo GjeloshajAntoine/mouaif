@@ -39,7 +39,7 @@ const OUT_DIR = path.join(ROOT, 'docs/features/images/landing');
 // Shared with scripts/capture-draft-craft-shots.js: the Chrome finder, the
 // CDP client, and the throwaway demo project both capture scripts shoot.
 const {
-  findChrome, createCdp, waitForFile, isPortFree, freePort,
+  ensureFreshWebBuild, findChrome, createCdp, waitForFile, isPortFree, freePort,
   writeFixtureProject, gitInit, listenFixtureUpstream
 } = require(path.join(ROOT, 'scripts/lib/capture-fixture.js'));
 
@@ -526,6 +526,8 @@ const SHOTS = [
 const state = { chatId: '', emptyChatId: '', projectDir: '', previewUrl: '', base: '', cdpBase: '', attachedImage: '', subagentAuth: null, providersBefore: null, idleProvider: null };
 
 async function main() {
+  // An external --base serves its own bundle, so only check the local one.
+  if (!EXTERNAL_BASE) ensureFreshWebBuild();
   const chromeBin = findChrome();
   if (!chromeBin) {
     console.error('[shots] no Chrome found. Set CHROME_PATH to the browser binary.');

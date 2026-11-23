@@ -31,7 +31,7 @@ const { spawn } = require('child_process');
 const ROOT = path.resolve(__dirname, '..');
 const OUT_DIR = path.join(ROOT, 'docs/features/images/draft-craft');
 const {
-  findChrome, createCdp, waitForFile, isPortFree, freePort,
+  ensureFreshWebBuild, findChrome, createCdp, waitForFile, isPortFree, freePort,
   writeFixtureProject, gitInit, listenFixtureUpstream
 } = require(path.join(ROOT, 'scripts/lib/capture-fixture.js'));
 
@@ -349,6 +349,7 @@ function attachInspector() {
 // ---- main ---------------------------------------------------------------
 
 async function main() {
+  ensureFreshWebBuild();
   const chromeBin = findChrome();
   if (!chromeBin) {
     console.error('[shots] no Chrome found. Set CHROME_PATH to the browser binary.');

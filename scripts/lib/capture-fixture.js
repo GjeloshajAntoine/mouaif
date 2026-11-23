@@ -17,7 +17,53 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
+
+// ---- web bundle freshness ----------------------------------------------
+//
+// The capture scripts boot src/index.js, which serves frontend/dist/ — the
+// last `npm run build:web`, not frontend/src/. Shooting after a UI change
+// without a rebuild silently re-captures the old UI, so check first.
+
+const FRONTEND = path.resolve(__dirname, '../../frontend');
+
+function newestMtime(dir) {
+  let newest = 0;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const abs = path.join(dir, entry.name);
+    if (entry.isDirectory()) newest = Math.max(newest, newestMtime(abs));
+    else if (entry.isFile()) newest = Math.max(newest, fs.statSync(abs).mtimeMs);
+  }
+  return newest;
+}
+
+// ensureFreshWebBuild() rebuilds frontend/dist/ (gently, with nice) when any
+// frontend source, public asset, index.html or the Vite config is newer than
+// dist/index.html, which Vite writes last. Pass `--no-build` to a capture
+// script to skip the check.
+function ensureFreshWebBuild() {
+  if (process.argv.includes('--no-build')) return;
+  const distIndex = path.join(FRONTEND, 'dist/index.html');
+  let newest = 0;
+  for (const dir of ['src', 'public']) {
+    const abs = path.join(FRONTEND, dir);
+    if (fs.existsSync(abs)) newest = Math.max(newest, newestMtime(abs));
+  }
+  for (const name of ['index.html', 'vite.config.js']) {
+    const abs = path.join(FRONTEND, name);
+    if (fs.existsSync(abs)) newest = Math.max(newest, fs.statSync(abs).mtimeMs);
+  }
+  const built = fs.existsSync(distIndex) ? fs.statSync(distIndex).mtimeMs : 0;
+  if (built >= newest) return;
+  console.error('[shots] frontend/dist is older than frontend sources; running build:web first…');
+  const result = spawnSync('nice', ['-n', '19', 'npm', 'run', 'build:web'], {
+    cwd: path.dirname(FRONTEND),
+    stdio: ['ignore', process.stderr, process.stderr]
+  });
+  if (result.error || result.status !== 0) {
+    throw new Error('build:web failed; refusing to capture a stale UI');
+  }
+}
 
 // ---- Chrome discovery ---------------------------------------------------
 
@@ -300,6 +346,7 @@ function listenFixtureUpstream({ models, port = 0 } = {}) {
 }
 
 module.exports = {
+  ensureFreshWebBuild,
   findChrome,
   createCdp,
   waitForFile,
