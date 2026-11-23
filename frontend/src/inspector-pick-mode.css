@@ -29,10 +29,12 @@
      screenshot, and every pixel it takes is a pixel of the page hidden. */
   padding: 0 6px 0 10px;
   min-height: var(--tap);
-  background: rgba(10, 13, 18, 0.94);
+  background: color-mix(in srgb, var(--surface-3) 88%, transparent);
+  -webkit-backdrop-filter: saturate(160%) blur(18px);
+  backdrop-filter: saturate(160%) blur(18px);
   border: 1px solid var(--accent);
   border-radius: var(--r-md);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-lg);
 }
 .inspector__pickban--fs {
   position: sticky;

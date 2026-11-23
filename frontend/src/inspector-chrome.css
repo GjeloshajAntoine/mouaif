@@ -237,6 +237,7 @@ display: flex;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
   min-height: 0;
 }
@@ -537,9 +538,9 @@ transition: background 120ms ease, color 120ms ease;
   border: 1px solid var(--border);
 }
 .inspector__row--error .inspector__row-level,
-.inspector__row--exception .inspector__row-level { color: var(--danger); border-color: rgba(255,138,138,.3); background: var(--danger-soft); }
-.inspector__row--warning .inspector__row-level { color: var(--warning); border-color: rgba(240,196,106,.3); }
-.inspector__row--info .inspector__row-level { color: var(--accent); border-color: rgba(110,168,254,.3); }
+.inspector__row--exception .inspector__row-level { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, transparent); background: var(--danger-soft); }
+.inspector__row--warning .inspector__row-level { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 30%, transparent); }
+.inspector__row--info .inspector__row-level { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
 .inspector__row-text { flex: 1; }
 .inspector__row--error .inspector__row-text,
 .inspector__row--exception .inspector__row-text { color: var(--danger); }
@@ -568,8 +569,8 @@ transition: background 120ms ease, color 120ms ease;
   color: var(--muted);
   border: 1px solid var(--border);
 }
-.inspector__row-status--ok       { color: var(--success); border-color: rgba(111,212,154,.3); }
-.inspector__row-status--redirect { color: var(--warning); border-color: rgba(240,196,106,.3); }
+.inspector__row-status--ok       { color: var(--success); border-color: color-mix(in srgb, var(--success) 30%, transparent); }
+.inspector__row-status--redirect { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 30%, transparent); }
 .inspector__row-status--error,
-.inspector__row-status--failed  { color: var(--danger);  border-color: rgba(255,138,138,.3); }
+.inspector__row-status--failed  { color: var(--danger);  border-color: color-mix(in srgb, var(--danger) 30%, transparent); }
 .inspector__row-status--pending { color: var(--muted); }

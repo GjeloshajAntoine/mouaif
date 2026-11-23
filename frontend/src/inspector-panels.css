@@ -115,8 +115,8 @@ which is tight on a phone). */
 .mouaif-console-autocomplete.cm-tooltip {
 border: 1px solid var(--border-strong) !important;
 background: #353a42 !important;
-border-radius: var(--r-sm) !important;
-box-shadow: var(--shadow-md) !important;
+border-radius: var(--r-md) !important;
+box-shadow: var(--shadow-lg) !important;
 }
 .mouaif-console-autocomplete .cm-completionLabel {
 font-family: var(--font-mono);

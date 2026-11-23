@@ -31,6 +31,8 @@
 }
 .inspector__sheet {
   background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-bottom: 0;
   border-radius: var(--r-lg) var(--r-lg) 0 0;
   /* `vh` first, then `dvh`: the same fallback base.css uses for html/body. A
      browser that does not understand `dvh` (iOS Safari before 15.4, older

@@ -96,12 +96,12 @@ border: 1px solid var(--border);
 }
 .inspector__row-target--accent  .inspector__row-target-chip {
 color: var(--accent);
-border-color: rgba(110, 168, 254, 0.32);
+border-color: color-mix(in srgb, var(--accent) 32%, transparent);
 background: var(--accent-soft);
 }
 .inspector__row-target--warning .inspector__row-target-chip {
 color: var(--warning);
-border-color: rgba(240, 196, 106, 0.32);
+border-color: color-mix(in srgb, var(--warning) 32%, transparent);
 background: var(--warning-soft);
 }
 .inspector__row-target--muted   .inspector__row-target-chip {
@@ -203,6 +203,7 @@ padding: 18px 10px;
 background: var(--surface);
 border: 1px solid var(--border);
 border-radius: var(--r-md);
+box-shadow: var(--shadow-sm);
 text-align: center;
 color: var(--muted);
 font-size: 0.82rem;

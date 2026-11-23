@@ -216,7 +216,7 @@ transparent or near-background colour is still visible as a chip. */
 width: 14px;
 height: 14px;
 border-radius: var(--r-sm);
-border: 1px solid rgba(255, 255, 255, 0.25);
+border: 1px solid var(--border-strong);
 flex: 0 0 auto;
 }
 .inspector__suggest-colour { gap: 6px; }
@@ -236,5 +236,5 @@ background: var(--danger-soft);
 color: var(--danger);
 }
 .inspector__suggest-colour.is-unreadable {
-border-color: rgba(255, 138, 138, 0.4);
+border-color: color-mix(in srgb, var(--danger) 40%, transparent);
 }
